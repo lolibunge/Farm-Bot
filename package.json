@@ -1,0 +1,27 @@
+{
+  "name": "farm-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lolibunge/Farm-Bot.git"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/lolibunge/Farm-Bot/issues"
+  },
+  "homepage": "https://github.com/lolibunge/Farm-Bot#readme",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "pg": "^8.20.0",
+    "telegraf": "^4.16.3"
+  }
+}
