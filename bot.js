@@ -65,6 +65,17 @@ function formatDateForReply(dateValue) {
   return String(dateValue).slice(0, 10);
 }
 
+function formatDateTimeForReply(dateValue) {
+  if (!dateValue) return 'N/A';
+
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return String(dateValue);
+  }
+
+  return date.toISOString().slice(0, 16).replace('T', ' ');
+}
+
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -639,7 +650,7 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
             const dose = lastTreatmentLogResult.rows[0];
             reply += `\n\nLast dose
 - ${dose.medication} ${dose.dosage}
-- given at: ${String(dose.administered_at).slice(0, 16)}`;
+- given at: ${formatDateTimeForReply(dose.administered_at)}`;
           } else {
             reply += `\n\nLast dose
 - No dose logs`;
@@ -735,7 +746,10 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
         }
 
         const lines = fullHistoryResult.rows.map((row) => {
-          const when = String(row.sort_at).slice(0, 16).replace('T', ' ');
+          const when =
+            row.category === 'dose'
+              ? formatDateTimeForReply(row.sort_at)
+              : formatDateForReply(row.sort_at);
           return `- [${row.category}] ${when} | ${row.detail}`;
         });
 
