@@ -76,6 +76,40 @@ function formatDateTimeForReply(dateValue) {
   return date.toISOString().slice(0, 16).replace('T', ' ');
 }
 
+function formatDateWithWeekdayForReply(dateValue) {
+  if (!dateValue) return 'N/A';
+
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return String(dateValue);
+  }
+
+  const weekday = date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    timeZone: 'UTC',
+  });
+  const isoDate = date.toISOString().slice(0, 10);
+
+  return `${weekday} ${isoDate}`;
+}
+
+function formatDateTimeWithWeekdayForReply(dateValue) {
+  if (!dateValue) return 'N/A';
+
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return String(dateValue);
+  }
+
+  const weekday = date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    timeZone: 'UTC',
+  });
+  const isoDateTime = date.toISOString().slice(0, 16).replace('T', ' ');
+
+  return `${weekday} ${isoDateTime}`;
+}
+
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -748,8 +782,8 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
         const lines = fullHistoryResult.rows.map((row) => {
           const when =
             row.category === 'dose'
-              ? formatDateTimeForReply(row.sort_at)
-              : formatDateForReply(row.sort_at);
+              ? formatDateTimeWithWeekdayForReply(row.sort_at)
+              : formatDateWithWeekdayForReply(row.sort_at);
           return `- [${row.category}] ${when} | ${row.detail}`;
         });
 
