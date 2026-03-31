@@ -196,6 +196,8 @@ async function markAlertAsSentForToday(alertKey) {
 }
 
 async function sendRemindersToAlertChat() {
+  await ensureReminderAlertsTable();
+
   if (!alertChatId) {
     return;
   }
@@ -1993,18 +1995,10 @@ Raw message ID: ${rawMessageId}`
   }
 });
 
-bot
-  .launch()
-  .then(async () => {
-    await startReminderScheduler();
-    console.log(
-      'BOT RUNNING WITH FEED + STOCK + HORSE + DEWORM + FARRIER + DATES + REMINDERS + MULTILINE + ALERTS'
-    );
-    console.log(
-      `REMINDER CONFIG: daysAhead=${DEWORM_ALERT_DAYS_AHEAD}, lowStockThreshold=${LOW_STOCK_THRESHOLD}, intervalMinutes=${ALERT_CHECK_INTERVAL_MINUTES}, alertChat=${alertChatId || 'auto'}`
-    );
-  })
-  .catch((error) => {
-    console.error('BOT FAILED TO START:', error);
-    process.exit(1);
-  });
+module.exports = {
+  bot,
+  pool,
+  sendRemindersToAlertChat,
+  startReminderScheduler,
+  ensureReminderAlertsTable,
+};
