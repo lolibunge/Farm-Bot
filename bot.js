@@ -878,37 +878,58 @@ Raw message ID: ${rawMessageId}`
       }
 
       // -----------------------------
-      // STOCK USE (consume without horse)
+      // STOCK USE (consume without horse) + history log
+      // stock use <feed item> <quantity> <unit> [YYYY-MM-DD] [notes...]
+      // Example:
+      // stock use alfalfa 1 bale
+      // stock use alfalfa 1 bale 2026-03-30
+      // stock use alfalfa 1 bale 2026-03-30 opened new bale
       // -----------------------------
       if (lowerMessage.startsWith('stock use ')) {
         const remainder = messageText.slice('stock use '.length).trim();
         const remainderParts = remainder.split(/\s+/).filter(Boolean);
 
-        if (remainderParts.length < 2) {
-          await ctx.reply('Use: stock use <feed item> <quantity> [unit]');
+        if (remainderParts.length < 3) {
+          await ctx.reply(
+            'Use: stock use <feed item> <quantity> <unit> [YYYY-MM-DD] [notes]'
+          );
           continue;
         }
 
-        let quantity;
-        let unit;
-        let itemName;
+        let eventDate = todayDateString();
+        let notes = '';
+        let workingParts = [...remainderParts];
 
-        const compactQuantityUnit = parseCompactQuantityUnit(
-          remainderParts[remainderParts.length - 1]
-        );
+        const maybeDateIndex = workingParts.findIndex((part) => looksLikeDateString(part));
 
-        if (compactQuantityUnit) {
-          quantity = compactQuantityUnit.quantity;
-          unit = compactQuantityUnit.unit;
-          itemName = remainderParts.slice(0, -1).join(' ').toLowerCase();
-        } else {
-          quantity = Number(remainderParts[remainderParts.length - 2]);
-          unit = remainderParts[remainderParts.length - 1].toLowerCase();
-          itemName = remainderParts.slice(0, -2).join(' ').toLowerCase();
+        if (maybeDateIndex !== -1) {
+          const maybeDate = workingParts[maybeDateIndex];
+
+          if (!isValidDateString(maybeDate)) {
+            await ctx.reply(`Invalid calendar date: ${maybeDate}`);
+            continue;
+          }
+
+          eventDate = maybeDate;
+          notes = workingParts.slice(maybeDateIndex + 1).join(' ').trim();
+          workingParts = workingParts.slice(0, maybeDateIndex);
         }
 
+        if (workingParts.length < 3) {
+          await ctx.reply(
+            'Use: stock use <feed item> <quantity> <unit> [YYYY-MM-DD] [notes]'
+          );
+          continue;
+        }
+
+        const unit = workingParts[workingParts.length - 1].toLowerCase();
+        const quantity = Number(workingParts[workingParts.length - 2]);
+        const itemName = workingParts.slice(0, -2).join(' ').toLowerCase();
+
         if (!itemName || Number.isNaN(quantity) || quantity <= 0) {
-          await ctx.reply('Invalid stock command. Example: stock use alfalfa 1 bale');
+          await ctx.reply(
+            'Invalid stock command. Example: stock use alfalfa 1 bale 2026-03-30 opened new bale'
+          );
           continue;
         }
 
@@ -941,12 +962,29 @@ Raw message ID: ${rawMessageId}`
           [quantity, feedItem.id]
         );
 
+        await pool.query(
+          `
+          INSERT INTO stock_events (
+            feed_item_id,
+            event_type,
+            quantity,
+            unit,
+            event_date,
+            notes,
+            telegram_user_id
+          )
+          VALUES ($1, 'use', $2, $3, $4, $5, $6)
+          `,
+          [feedItem.id, quantity, unit, eventDate, notes || null, telegramUserId]
+        );
+
         await ctx.reply(
           `Stock used ✅
 
 Feed: ${feedItem.name}
 Used: ${quantity} ${unit}
-Remaining stock: ${updatedStockResult.rows[0].current_stock} ${unit}
+Date: ${eventDate}
+${notes ? `Notes: ${notes}\n` : ''}Remaining stock: ${updatedStockResult.rows[0].current_stock} ${unit}
 Raw message ID: ${rawMessageId}`
         );
 
@@ -957,37 +995,58 @@ Raw message ID: ${rawMessageId}`
       }
 
       // -----------------------------
-      // STOCK ADD
+      // STOCK ADD + history log
+      // stock add <feed item> <quantity> <unit> [YYYY-MM-DD] [notes...]
+      // Example:
+      // stock add alfalfa 10 bale
+      // stock add alfalfa 10 bale 2026-03-30
+      // stock add alfalfa 10 bale 2026-03-30 bought from Juan
       // -----------------------------
       if (lowerMessage.startsWith('stock add ')) {
         const remainder = messageText.slice('stock add '.length).trim();
         const remainderParts = remainder.split(/\s+/).filter(Boolean);
 
-        if (remainderParts.length < 2) {
-          await ctx.reply('Use: stock add <feed item> <quantity> [unit]');
+        if (remainderParts.length < 3) {
+          await ctx.reply(
+            'Use: stock add <feed item> <quantity> <unit> [YYYY-MM-DD] [notes]'
+          );
           continue;
         }
 
-        let quantity;
-        let unit;
-        let itemName;
+        let eventDate = todayDateString();
+        let notes = '';
+        let workingParts = [...remainderParts];
 
-        const compactQuantityUnit = parseCompactQuantityUnit(
-          remainderParts[remainderParts.length - 1]
-        );
+        const maybeDateIndex = workingParts.findIndex((part) => looksLikeDateString(part));
 
-        if (compactQuantityUnit) {
-          quantity = compactQuantityUnit.quantity;
-          unit = compactQuantityUnit.unit;
-          itemName = remainderParts.slice(0, -1).join(' ').toLowerCase();
-        } else {
-          quantity = Number(remainderParts[remainderParts.length - 2]);
-          unit = remainderParts[remainderParts.length - 1].toLowerCase();
-          itemName = remainderParts.slice(0, -2).join(' ').toLowerCase();
+        if (maybeDateIndex !== -1) {
+          const maybeDate = workingParts[maybeDateIndex];
+
+          if (!isValidDateString(maybeDate)) {
+            await ctx.reply(`Invalid calendar date: ${maybeDate}`);
+            continue;
+          }
+
+          eventDate = maybeDate;
+          notes = workingParts.slice(maybeDateIndex + 1).join(' ').trim();
+          workingParts = workingParts.slice(0, maybeDateIndex);
         }
 
+        if (workingParts.length < 3) {
+          await ctx.reply(
+            'Use: stock add <feed item> <quantity> <unit> [YYYY-MM-DD] [notes]'
+          );
+          continue;
+        }
+
+        const unit = workingParts[workingParts.length - 1].toLowerCase();
+        const quantity = Number(workingParts[workingParts.length - 2]);
+        const itemName = workingParts.slice(0, -2).join(' ').toLowerCase();
+
         if (!itemName || Number.isNaN(quantity) || quantity <= 0) {
-          await ctx.reply('Invalid stock command. Example: stock add oats 50 kg');
+          await ctx.reply(
+            'Invalid stock command. Example: stock add alfalfa 10 bale 2026-03-30 bought from Juan'
+          );
           continue;
         }
 
@@ -1013,12 +1072,29 @@ Raw message ID: ${rawMessageId}`
           [quantity, feedItem.id]
         );
 
+        await pool.query(
+          `
+          INSERT INTO stock_events (
+            feed_item_id,
+            event_type,
+            quantity,
+            unit,
+            event_date,
+            notes,
+            telegram_user_id
+          )
+          VALUES ($1, 'add', $2, $3, $4, $5, $6)
+          `,
+          [feedItem.id, quantity, unit, eventDate, notes || null, telegramUserId]
+        );
+
         await ctx.reply(
           `Stock added ✅
 
 Feed: ${feedItem.name}
 Added: ${quantity} ${unit}
-Current stock: ${updatedStockResult.rows[0].current_stock} ${unit}
+Date: ${eventDate}
+${notes ? `Notes: ${notes}\n` : ''}Current stock: ${updatedStockResult.rows[0].current_stock} ${unit}
 Raw message ID: ${rawMessageId}`
         );
 
@@ -1048,6 +1124,54 @@ Raw message ID: ${rawMessageId}`
         );
 
         await ctx.reply(`Current stock\n\n${lines.join('\n')}`);
+        continue;
+      }
+
+      // -----------------------------
+      // STOCK HISTORY
+      // stock history <feed item>
+      // -----------------------------
+      if (lowerMessage.startsWith('stock history ')) {
+        const itemName = messageText.slice('stock history '.length).trim().toLowerCase();
+
+        if (!itemName) {
+          await ctx.reply('Use: stock history <feed item>');
+          continue;
+        }
+
+        const feedItem = await findFeedItemByName(itemName);
+
+        if (!feedItem) {
+          await ctx.reply(`Feed item not found: ${itemName}`);
+          continue;
+        }
+
+        const result = await pool.query(
+          `
+          SELECT
+            event_type,
+            quantity,
+            unit,
+            event_date,
+            notes
+          FROM stock_events
+          WHERE feed_item_id = $1
+          ORDER BY event_date DESC, id DESC
+          LIMIT 20
+          `,
+          [feedItem.id]
+        );
+
+        if (result.rows.length === 0) {
+          await ctx.reply(`No stock history found for ${feedItem.name}.`);
+          continue;
+        }
+
+        const lines = result.rows.map((row) => {
+          return `- ${row.event_type} ${row.quantity} ${row.unit} on ${formatDateForReply(row.event_date)}${row.notes ? ` | ${row.notes}` : ''}`;
+        });
+
+        await ctx.reply(`Stock history: ${feedItem.name}\n\n${lines.join('\n')}`);
         continue;
       }
 
