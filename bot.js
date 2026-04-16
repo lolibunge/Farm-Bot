@@ -1,13 +1,10 @@
 require('dotenv').config();
 
 const { Telegraf } = require('telegraf');
-const { Pool } = require('pg');
+const { pool } = require('./lib/db');
+const { ensureHorseProfileColumns } = require('./lib/horse-profile');
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
 function parsePositiveInt(value, fallbackValue) {
   const parsed = Number.parseInt(value, 10);
@@ -112,6 +109,52 @@ function formatDateTimeWithWeekdayForReply(dateValue) {
 
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeTrainingStatusForReply(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
+
+  if (!normalized) {
+    return 'N/A';
+  }
+
+  if (normalized === 'in training' || normalized === 'training' || normalized === 'intraining') {
+    return 'In Training';
+  }
+
+  if (
+    normalized === 'breaking in' ||
+    normalized === 'breaking' ||
+    normalized === 'break in' ||
+    normalized === 'breakingin' ||
+    normalized === 'for breaking in' ||
+    normalized === 'horse for breaking in'
+  ) {
+    return 'Breaking In';
+  }
+
+  return normalized
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function buildHorseProfileBlockForReply(horseProfile) {
+  if (!horseProfile) {
+    return '';
+  }
+
+  return `Profile
+- date of birth: ${formatDateForReply(horseProfile.date_of_birth)}
+- age: ${horseProfile.age_years == null ? 'N/A' : horseProfile.age_years}
+- color: ${horseProfile.color || 'N/A'}
+- activity: ${horseProfile.activity || 'N/A'}
+- sex: ${horseProfile.sex || 'N/A'}
+- training status: ${normalizeTrainingStatusForReply(horseProfile.training_status)}`;
 }
 
 function addDaysToDateString(dateString, daysToAdd) {
@@ -527,6 +570,31 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
           continue;
         }
 
+        await ensureHorseProfileColumns();
+        const horseProfileResult = await pool.query(
+          `
+          SELECT
+            id,
+            name,
+            date_of_birth,
+            color,
+            activity,
+            sex,
+            training_status,
+            CASE
+              WHEN date_of_birth IS NULL THEN NULL
+              ELSE DATE_PART('year', AGE(CURRENT_DATE, date_of_birth))::int
+            END AS age_years
+          FROM horses
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [horse.id]
+        );
+        const horseProfile = horseProfileResult.rows[0] || null;
+        const horseDisplayName = horseProfile?.name || horse.name;
+        const horseProfileBlock = buildHorseProfileBlockForReply(horseProfile);
+
         // -----------------------------
         // QUICK SUMMARY
         // -----------------------------
@@ -627,7 +695,10 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
             [horse.id]
           );
 
-          let reply = `Horse history: ${horse.name}\n`;
+          let reply = `Horse history: ${horseDisplayName}\n`;
+          if (horseProfileBlock) {
+            reply += `\n\n${horseProfileBlock}`;
+          }
 
           if (lastFeedResult.rows.length > 0) {
             const feed = lastFeedResult.rows[0];
@@ -691,7 +762,7 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
           }
 
           reply += `\n\nFor full timeline use:
-- history full ${horse.name}`;
+- history full ${horseDisplayName}`;
 
           await ctx.reply(reply);
           continue;
@@ -769,13 +840,13 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
 
           ) history_rows
           ORDER BY sort_at DESC
-          LIMIT 50
+          LIMIT 120
           `,
           [horse.id]
         );
 
         if (fullHistoryResult.rows.length === 0) {
-          await ctx.reply(`No history records found for ${horse.name}.`);
+          await ctx.reply(`No history records found for ${horseDisplayName}.`);
           continue;
         }
 
@@ -789,12 +860,15 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
 
         // Telegram messages can get too long, so split if needed
         const chunks = [];
-        let currentChunk = `Full history: ${horse.name}\n\n`;
+        let currentChunk = `Full history: ${horseDisplayName}\n\n`;
+        if (horseProfileBlock) {
+          currentChunk += `${horseProfileBlock}\n\n`;
+        }
 
         for (const line of lines) {
           if ((currentChunk + line + '\n').length > 3500) {
             chunks.push(currentChunk);
-            currentChunk = `Full history: ${horse.name} (continued)\n\n`;
+            currentChunk = `Full history: ${horseDisplayName} (continued)\n\n`;
           }
           currentChunk += `${line}\n`;
         }
@@ -1310,6 +1384,128 @@ Feed event ID: ${feedEventResult.rows[0].id}`
         continue;
       }
 
+            // -----------------------------
+            // RAIN TODAY
+            // -----------------------------
+            if (lowerMessage === 'rain today') {
+              const result = await pool.query(
+                `
+                SELECT event_date, rain_mm, notes
+                FROM rain_registry
+                WHERE event_date = CURRENT_DATE
+                LIMIT 1
+                `
+              );
+
+              if (result.rows.length === 0) {
+                await ctx.reply(`No rain saved for today (${todayDateString()}).`);
+                continue;
+              }
+
+              const row = result.rows[0];
+              await ctx.reply(
+                `Rain today\n\nDate: ${formatDateForReply(row.event_date)}\nRain: ${Number(row.rain_mm)} mm${row.notes ? `\nNotes: ${row.notes}` : ''}`
+              );
+              continue;
+            }
+
+            // -----------------------------
+            // RAIN HISTORY
+            // rain history
+            // rain history 30
+            // -----------------------------
+            if (lowerMessage === 'rain history' || lowerMessage.startsWith('rain history ')) {
+              const rawLimit = messageText.slice('rain history'.length).trim();
+              const limit = Math.min(parsePositiveInt(rawLimit, 20), 100);
+
+              const result = await pool.query(
+                `
+                SELECT event_date, rain_mm, notes
+                FROM rain_registry
+                ORDER BY event_date DESC, id DESC
+                LIMIT $1
+                `,
+                [limit]
+              );
+
+              if (result.rows.length === 0) {
+                await ctx.reply('No rain records found.');
+                continue;
+              }
+
+              const lines = result.rows.map((row) => {
+                return `- ${formatDateForReply(row.event_date)}: ${Number(row.rain_mm)} mm${row.notes ? ` | ${row.notes}` : ''}`;
+              });
+
+              await ctx.reply(`Rain history (latest ${limit})\n\n${lines.join('\n')}`);
+              continue;
+            }
+
+            // -----------------------------
+            // RAIN SAVE / UPDATE
+            // rain <mm> [YYYY-MM-DD] [notes...]
+            // -----------------------------
+            if (lowerMessage.startsWith('rain ')) {
+              const remainder = messageText.slice('rain '.length).trim();
+
+              if (!remainder) {
+                await ctx.reply('Use: rain <mm> [YYYY-MM-DD] [notes]');
+                continue;
+              }
+
+              const rainParts = remainder.split(/\s+/).filter(Boolean);
+              const rainMm = Number(rainParts[0]);
+
+              if (!Number.isFinite(rainMm) || rainMm < 0) {
+                await ctx.reply('Rain must be a number >= 0. Example: rain 12.5 2026-04-12 heavy');
+                continue;
+              }
+
+              let eventDate = todayDateString();
+              let notesStartIndex = 1;
+
+              if (rainParts.length > 1 && looksLikeDateString(rainParts[1])) {
+                if (!isValidDateString(rainParts[1])) {
+                  await ctx.reply(`Invalid calendar date: ${rainParts[1]}`);
+                  continue;
+                }
+
+                eventDate = rainParts[1];
+                notesStartIndex = 2;
+              }
+
+              const notes = rainParts.slice(notesStartIndex).join(' ').trim();
+
+              const upsertResult = await pool.query(
+                `
+                INSERT INTO rain_registry (
+                  event_date,
+                  rain_mm,
+                  source,
+                  notes,
+                  telegram_user_id
+                )
+                VALUES ($1, $2, 'telegram', $3, $4)
+                ON CONFLICT (event_date) DO UPDATE
+                SET rain_mm = EXCLUDED.rain_mm,
+                    source = EXCLUDED.source,
+                    notes = EXCLUDED.notes,
+                    telegram_user_id = EXCLUDED.telegram_user_id,
+                    updated_at = NOW()
+                RETURNING event_date, rain_mm, notes
+                `,
+                [eventDate, rainMm, notes || null, telegramUserId]
+              );
+
+              const saved = upsertResult.rows[0];
+
+              await ctx.reply(
+                `Rain saved ✅\n\nDate: ${formatDateForReply(saved.event_date)}\nRain: ${Number(saved.rain_mm)} mm${saved.notes ? `\nNotes: ${saved.notes}` : ''}\nRaw message ID: ${rawMessageId}`
+              );
+              continue;
+            }
+
+            
       // -----------------------------
       // DEWORM DUE
       // -----------------------------
