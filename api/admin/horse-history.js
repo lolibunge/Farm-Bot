@@ -1,5 +1,10 @@
 const { pool } = require('../../lib/db');
 const { ensureHorseProfileColumns } = require('../../lib/horse-profile');
+const {
+  ensurePaddockTables,
+  listGrazingHistory,
+  getHorseCurrentGrazing,
+} = require('../../lib/paddocks');
 const { toIsoDateString } = require('../../lib/date-helpers');
 const { requireAdminApiAuth } = require('../../lib/admin-auth');
 
@@ -61,6 +66,7 @@ module.exports = async (req, res) => {
 
   try {
     await ensureHorseProfileColumns();
+    await ensurePaddockTables();
 
     const horseResult = await pool.query(
       `
@@ -94,6 +100,8 @@ module.exports = async (req, res) => {
       dewormHistoryResult,
       farrierHistoryResult,
       healthHistoryResult,
+      grazingHistoryRows,
+      currentGrazing,
     ] = await Promise.all([
       pool.query(
         `
@@ -150,6 +158,32 @@ module.exports = async (req, res) => {
             CONCAT(hh.event_type, ' | ', hh.description) AS detail
           FROM horse_health_events hh
           WHERE hh.horse_id = $1
+
+          UNION ALL
+
+          SELECT
+            COALESCE(ge.exited_at::timestamp, ge.entered_at::timestamp) AS sort_at,
+            'grazing' AS category,
+            CONCAT(
+              p.name,
+              ' | in: ',
+              ge.entered_at::text,
+              ' | out: ',
+              COALESCE(ge.exited_at::text, 'Current'),
+              ' | days: ',
+              CASE
+                WHEN ge.exited_at IS NULL
+                  THEN GREATEST(1, (CURRENT_DATE - ge.entered_at) + 1)
+                ELSE GREATEST(1, (ge.exited_at - ge.entered_at) + 1)
+              END,
+              COALESCE(CONCAT(' | group: ', sg.name), ''),
+              COALESCE(CONCAT(' | note: ', ge.entry_notes), ''),
+              COALESCE(CONCAT(' | exit note: ', ge.exit_notes), '')
+            ) AS detail
+          FROM grazing_events ge
+          JOIN paddocks p ON p.id = ge.paddock_id
+          LEFT JOIN horse_groups sg ON sg.id = ge.source_group_id
+          WHERE ge.horse_id = $1
 
           UNION ALL
 
@@ -261,6 +295,8 @@ module.exports = async (req, res) => {
         `,
         [horseId]
       ),
+      listGrazingHistory({ horseId, limit: 40 }),
+      getHorseCurrentGrazing(horseId),
     ]);
 
     res.status(200).json({
@@ -307,6 +343,31 @@ module.exports = async (req, res) => {
         event_type: row.event_type,
         description: row.description,
       })),
+      grazing_history: grazingHistoryRows.map((row) => ({
+        id: row.id,
+        paddock_id: row.paddock_id,
+        paddock_name: row.paddock_name,
+        entered_at: row.entered_at,
+        exited_at: row.exited_at,
+        grazing_days: row.grazing_days,
+        entry_notes: row.entry_notes,
+        exit_notes: row.exit_notes,
+        source_group_id: row.source_group_id,
+        source_group_name: row.source_group_name,
+        active: row.active,
+      })),
+      current_grazing: currentGrazing
+        ? {
+            id: currentGrazing.id,
+            paddock_id: currentGrazing.paddock_id,
+            paddock_name: currentGrazing.paddock_name,
+            entered_at: currentGrazing.entered_at,
+            grazing_days: currentGrazing.grazing_days,
+            entry_notes: currentGrazing.entry_notes,
+            source_group_id: currentGrazing.source_group_id,
+            source_group_name: currentGrazing.source_group_name,
+          }
+        : null,
     });
   } catch (error) {
     console.error('ADMIN HORSE HISTORY ERROR:', error);

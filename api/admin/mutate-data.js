@@ -1,5 +1,15 @@
 const { pool } = require('../../lib/db');
 const { ensureHorseProfileColumns } = require('../../lib/horse-profile');
+const {
+  ensurePaddockTables,
+  savePaddock,
+  saveHorseGroup,
+  setHorseGroupMembers,
+  moveHorseIntoPaddock,
+  moveHorseOutOfPaddock,
+  moveHorseGroupIntoPaddock,
+  moveHorseGroupOutOfPaddock,
+} = require('../../lib/paddocks');
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
 const { toIsoDateString } = require('../../lib/date-helpers');
 const { requireAdminApiAuth } = require('../../lib/admin-auth');
@@ -36,6 +46,51 @@ function parsePositiveInt(value) {
     return null;
   }
   return parsed;
+}
+
+function parseNonNegativeNumber(value) {
+  if (value == null || String(value).trim() === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function parseBooleanValue(value, fallbackValue = false) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) {
+    return fallbackValue;
+  }
+
+  if (['true', '1', 'yes', 'active', 'on'].includes(normalized)) {
+    return true;
+  }
+
+  if (['false', '0', 'no', 'inactive', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  return fallbackValue;
+}
+
+function parsePositiveIntArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value.map((entry) => parsePositiveInt(entry)).filter(Boolean))];
 }
 
 function looksLikeDateString(value) {
@@ -169,6 +224,7 @@ module.exports = async (req, res) => {
 
   try {
     await ensureHorseProfileColumns();
+    await ensurePaddockTables();
     await ensureRainRegistryTable();
 
     const body = await getJsonBody(req);
@@ -315,6 +371,250 @@ module.exports = async (req, res) => {
           sex: updateResult.rows[0].sex || null,
           training_status: normalizeTrainingStatus(updateResult.rows[0].training_status) || null,
         },
+      });
+      return;
+    }
+
+    if (action === 'paddock_save') {
+      const paddockName = String(body.paddockName || '').trim();
+      const zone = String(body.zone || '').trim();
+      const sizeHaValue = body.sizeHa == null ? '' : String(body.sizeHa).trim();
+      const notes = String(body.notes || '').trim();
+      const active = parseBooleanValue(body.active, true);
+      const sizeHa = parseNonNegativeNumber(sizeHaValue);
+
+      if (!paddockName) {
+        res.status(400).json({ ok: false, error: 'paddockName is required' });
+        return;
+      }
+
+      if (sizeHaValue && sizeHa == null) {
+        res.status(400).json({ ok: false, error: 'sizeHa must be a number >= 0' });
+        return;
+      }
+
+      const data = await savePaddock({
+        name: paddockName,
+        zone: zone || null,
+        sizeHa,
+        notes: notes || null,
+        active,
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        mode: data.mode,
+        paddock: data.paddock,
+      });
+      return;
+    }
+
+    if (action === 'horse_group_save') {
+      const groupName = String(body.groupName || '').trim();
+      const notes = String(body.notes || '').trim();
+      const active = parseBooleanValue(body.active, true);
+
+      if (!groupName) {
+        res.status(400).json({ ok: false, error: 'groupName is required' });
+        return;
+      }
+
+      const data = await saveHorseGroup({
+        name: groupName,
+        notes: notes || null,
+        active,
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        mode: data.mode,
+        group: data.group,
+      });
+      return;
+    }
+
+    if (action === 'horse_group_memberships_set') {
+      const groupId = parsePositiveInt(body.groupId);
+      const horseIds = parsePositiveIntArray(body.horseIds);
+
+      if (!groupId) {
+        res.status(400).json({ ok: false, error: 'groupId is required' });
+        return;
+      }
+
+      const data = await setHorseGroupMembers({
+        groupId,
+        horseIds,
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        group: data.group,
+        members: data.members,
+        reassigned_members: data.reassigned_members,
+      });
+      return;
+    }
+
+    if (action === 'grazing_move_in') {
+      const horseId = parsePositiveInt(body.horseId);
+      const paddockId = parsePositiveInt(body.paddockId);
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const notes = String(body.notes || '').trim();
+
+      if (!horseId) {
+        res.status(400).json({ ok: false, error: 'horseId is required' });
+        return;
+      }
+
+      if (!paddockId) {
+        res.status(400).json({ ok: false, error: 'paddockId is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate is invalid' });
+        return;
+      }
+
+      const data = await moveHorseIntoPaddock({
+        horseId,
+        paddockId,
+        enteredAt: eventDateRaw,
+        entryNotes: notes || null,
+        source: 'admin_panel',
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        horse: data.horse,
+        paddock: data.paddock,
+        grazing_event: data.grazing_event,
+        paddock_occupancy_count: data.paddock_occupancy_count,
+      });
+      return;
+    }
+
+    if (action === 'grazing_move_out') {
+      const horseId = parsePositiveInt(body.horseId);
+      const paddockId = body.paddockId == null ? null : parsePositiveInt(body.paddockId);
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const notes = String(body.notes || '').trim();
+
+      if (!horseId) {
+        res.status(400).json({ ok: false, error: 'horseId is required' });
+        return;
+      }
+
+      if (body.paddockId != null && !paddockId) {
+        res.status(400).json({ ok: false, error: 'paddockId is invalid' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate is invalid' });
+        return;
+      }
+
+      const data = await moveHorseOutOfPaddock({
+        horseId,
+        paddockId,
+        exitedAt: eventDateRaw,
+        exitNotes: notes || null,
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        horse: data.horse,
+        paddock: data.paddock,
+        grazing_event: data.grazing_event,
+      });
+      return;
+    }
+
+    if (action === 'grazing_group_move_in') {
+      const groupId = parsePositiveInt(body.groupId);
+      const paddockId = parsePositiveInt(body.paddockId);
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const notes = String(body.notes || '').trim();
+
+      if (!groupId) {
+        res.status(400).json({ ok: false, error: 'groupId is required' });
+        return;
+      }
+
+      if (!paddockId) {
+        res.status(400).json({ ok: false, error: 'paddockId is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate is invalid' });
+        return;
+      }
+
+      const data = await moveHorseGroupIntoPaddock({
+        groupId,
+        paddockId,
+        enteredAt: eventDateRaw,
+        entryNotes: notes || null,
+        source: 'admin_group',
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        group: data.group,
+        paddock: data.paddock,
+        horses: data.horses,
+        grazing_events: data.grazing_events,
+        moved_count: data.moved_count,
+        paddock_occupancy_count: data.paddock_occupancy_count,
+      });
+      return;
+    }
+
+    if (action === 'grazing_group_move_out') {
+      const groupId = parsePositiveInt(body.groupId);
+      const paddockId = parsePositiveInt(body.paddockId);
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const notes = String(body.notes || '').trim();
+
+      if (!groupId) {
+        res.status(400).json({ ok: false, error: 'groupId is required' });
+        return;
+      }
+
+      if (!paddockId) {
+        res.status(400).json({ ok: false, error: 'paddockId is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate is invalid' });
+        return;
+      }
+
+      const data = await moveHorseGroupOutOfPaddock({
+        groupId,
+        paddockId,
+        exitedAt: eventDateRaw,
+        exitNotes: notes || null,
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        group: data.group,
+        paddock: data.paddock,
+        horses: data.horses,
+        grazing_events: data.grazing_events,
+        moved_count: data.moved_count,
       });
       return;
     }
@@ -1446,13 +1746,17 @@ module.exports = async (req, res) => {
       return;
     }
 
-    res.status(400).json({
-      ok: false,
-      error:
-        'Unsupported action. Use horse_add, horse_rename, feed_item_save, feed_event_add, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, feed_event_update, feed_event_delete, or horse_profile_save.',
-    });
+      res.status(400).json({
+        ok: false,
+        error:
+          'Unsupported action. Use horse_add, horse_rename, paddock_save, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_move_out, feed_item_save, feed_event_add, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, feed_event_update, feed_event_delete, or horse_profile_save.',
+      });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ ok: false, error: error.message });
+      return;
+    }
     res.status(500).json({ ok: false, error: 'Internal Server Error' });
   }
 };

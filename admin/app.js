@@ -11,6 +11,10 @@ const RAIN_REGISTRY_COLLAPSED_STORAGE_KEY = 'farm_bot_admin_rain_registry_collap
 
 const SUMMARY_METRICS = [
   { key: 'horses_count', defaultLabel: 'Horses' },
+  { key: 'horse_groups_count', defaultLabel: 'Horse Groups' },
+  { key: 'paddocks_count', defaultLabel: 'Paddocks' },
+  { key: 'paddocks_occupied_count', defaultLabel: 'Paddocks Occupied' },
+  { key: 'paddocks_resting_count', defaultLabel: 'Paddocks Resting' },
   { key: 'feed_items_count', defaultLabel: 'Feed Items' },
   { key: 'low_stock_count', defaultLabel: 'Low Stock' },
   { key: 'deworm_overdue_count', defaultLabel: 'Deworm Overdue' },
@@ -23,6 +27,25 @@ const SUMMARY_METRICS = [
   { key: 'rain_7d_mm', defaultLabel: 'Rain 7d (mm)' },
   { key: 'rain_days_7', defaultLabel: 'Rainy Days (7d)' },
 ];
+
+const SUMMARY_CARD_TARGETS = {
+  horses_count: 'panel-horse-history',
+  horse_groups_count: 'panel-horse-groups-status',
+  paddocks_count: 'panel-paddock-status',
+  paddocks_occupied_count: 'panel-paddock-status',
+  paddocks_resting_count: 'panel-paddock-status',
+  feed_items_count: 'panel-current-inventory',
+  low_stock_count: 'panel-low-stock',
+  deworm_overdue_count: 'panel-deworming-alerts',
+  deworm_due_soon_count: 'panel-deworming-alerts',
+  farrier_overdue_count: 'panel-farrier-alerts',
+  farrier_due_soon_count: 'panel-farrier-alerts',
+  in_training_count: 'panel-in-training',
+  breaking_in_count: 'panel-breaking-in',
+  rain_today_mm: 'panel-rain-registry',
+  rain_7d_mm: 'panel-rain-registry',
+  rain_days_7: 'panel-rain-registry',
+};
 
 const RAIN_WINDOW_CONFIG = {
   '1d': { days: 1, label: 'Today' },
@@ -78,6 +101,8 @@ const horseFeedHistoryBody = document.getElementById('horse-feed-history-body');
 const horseDewormingHistoryBody = document.getElementById('horse-deworming-history-body');
 const horseFarrierHistoryBody = document.getElementById('horse-farrier-history-body');
 const horseHealthHistoryBody = document.getElementById('horse-health-history-body');
+const horseGrazingHistoryBody = document.getElementById('horse-grazing-history-body');
+const horseHistoryCurrentGrazing = document.getElementById('horse-history-current-grazing');
 const horseProfileForm = document.getElementById('horse-profile-form');
 const horseProfileIdInput = document.getElementById('horse-profile-id');
 const horseProfileNameInput = document.getElementById('horse-profile-name');
@@ -88,6 +113,43 @@ const horseProfileActivityInput = document.getElementById('horse-profile-activit
 const horseProfileSexInput = document.getElementById('horse-profile-sex');
 const horseProfileTrainingStatusInput = document.getElementById('horse-profile-training-status');
 const horseProfileMessage = document.getElementById('horse-profile-message');
+const horseGroupStatusBody = document.getElementById('horse-group-status-body');
+const paddockStatusBody = document.getElementById('paddock-status-body');
+const grazingHistoryBody = document.getElementById('grazing-history-body');
+const paddockSaveForm = document.getElementById('paddock-save-form');
+const paddockNameInput = document.getElementById('paddock-name-input');
+const paddockZoneInput = document.getElementById('paddock-zone-input');
+const paddockSizeInput = document.getElementById('paddock-size-input');
+const paddockActiveSelect = document.getElementById('paddock-active-select');
+const paddockNotesInput = document.getElementById('paddock-notes-input');
+const grazingMoveInForm = document.getElementById('grazing-move-in-form');
+const grazingMoveInHorseSelect = document.getElementById('grazing-move-in-horse-select');
+const grazingMoveInPaddockSelect = document.getElementById('grazing-move-in-paddock-select');
+const grazingMoveInDateInput = document.getElementById('grazing-move-in-date-input');
+const grazingMoveInNotesInput = document.getElementById('grazing-move-in-notes-input');
+const grazingMoveOutForm = document.getElementById('grazing-move-out-form');
+const grazingMoveOutHorseSelect = document.getElementById('grazing-move-out-horse-select');
+const grazingMoveOutDateInput = document.getElementById('grazing-move-out-date-input');
+const grazingMoveOutNotesInput = document.getElementById('grazing-move-out-notes-input');
+const horseGroupSaveForm = document.getElementById('horse-group-save-form');
+const horseGroupNameInput = document.getElementById('horse-group-name-input');
+const horseGroupActiveSelect = document.getElementById('horse-group-active-select');
+const horseGroupNotesInput = document.getElementById('horse-group-notes-input');
+const horseGroupMembersForm = document.getElementById('horse-group-members-form');
+const horseGroupMembersSelect = document.getElementById('horse-group-members-select');
+const horseGroupMembersSearchInput = document.getElementById('horse-group-members-search-input');
+const horseGroupMembersSummary = document.getElementById('horse-group-members-summary');
+const horseGroupMembersHorsesList = document.getElementById('horse-group-members-horses-list');
+const grazingGroupMoveInForm = document.getElementById('grazing-group-move-in-form');
+const grazingGroupMoveInGroupSelect = document.getElementById('grazing-group-move-in-group-select');
+const grazingGroupMoveInPaddockSelect = document.getElementById('grazing-group-move-in-paddock-select');
+const grazingGroupMoveInDateInput = document.getElementById('grazing-group-move-in-date-input');
+const grazingGroupMoveInNotesInput = document.getElementById('grazing-group-move-in-notes-input');
+const grazingGroupMoveOutForm = document.getElementById('grazing-group-move-out-form');
+const grazingGroupMoveOutGroupSelect = document.getElementById('grazing-group-move-out-group-select');
+const grazingGroupMoveOutPaddockSelect = document.getElementById('grazing-group-move-out-paddock-select');
+const grazingGroupMoveOutDateInput = document.getElementById('grazing-group-move-out-date-input');
+const grazingGroupMoveOutNotesInput = document.getElementById('grazing-group-move-out-notes-input');
 const horsesInTrainingBody = document.getElementById('horses-in-training-body');
 const horsesBreakingInBody = document.getElementById('horses-breaking-in-body');
 const stockActionForm = document.getElementById('stock-action-form');
@@ -140,9 +202,13 @@ const actionMessage = document.getElementById('action-message');
 const feedItemOptions = document.getElementById('feed-item-options');
 
 let currentHorseRows = [];
+let currentHorseGroupRows = [];
+let currentPaddockRows = [];
 let currentFeedHistoryRows = [];
+let currentGrazingHistoryRows = [];
 let currentDewormingHistoryRows = [];
 let currentFarrierHistoryRows = [];
+let currentHorseGroupMemberSelection = new Set();
 let summaryCardConfig = [];
 let latestDashboardPayload = null;
 let sessionAuthenticated = false;
@@ -647,9 +713,42 @@ function renderSummary(data) {
     .map((item) => {
       const value = data.summary?.[item.key];
       const safeValue = value == null ? 0 : value;
+      const targetId = SUMMARY_CARD_TARGETS[item.key];
+
+      if (targetId) {
+        return `
+          <button
+            type="button"
+            class="summary-card summary-card-button"
+            data-target-id="${escapeHtml(targetId)}"
+            aria-label="Jump to ${escapeHtml(item.label)} details"
+          >
+            <h3>${escapeHtml(item.label)}</h3>
+            <p>${escapeHtml(safeValue)}</p>
+            <p class="muted">View details</p>
+          </button>
+        `;
+      }
+
       return `<article class="summary-card"><h3>${escapeHtml(item.label)}</h3><p>${escapeHtml(safeValue)}</p></article>`;
     })
     .join('');
+}
+
+function focusSummaryTarget(targetId) {
+  const target = document.getElementById(targetId);
+  if (!target) {
+    return;
+  }
+
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  target.classList.remove('panel-flash');
+  void target.offsetWidth;
+  target.classList.add('panel-flash');
+
+  window.setTimeout(() => {
+    target.classList.remove('panel-flash');
+  }, 1400);
 }
 
 function renderSummaryEditor() {
@@ -754,6 +853,20 @@ function initSummaryCardCustomization() {
 
     summaryCardConfig = moveSummaryConfigItem(summaryCardConfig, fromIndex, toIndex);
     persistAndRerenderSummary();
+  });
+
+  summaryCards.addEventListener('click', (event) => {
+    const button = event.target.closest('.summary-card-button[data-target-id]');
+    if (!button) {
+      return;
+    }
+
+    const targetId = button.getAttribute('data-target-id');
+    if (!targetId) {
+      return;
+    }
+
+    focusSummaryTarget(targetId);
   });
 }
 
@@ -1354,11 +1467,51 @@ function renderHealthHistoryRows(rows) {
     .join('');
 }
 
+function setHorseCurrentGrazing(currentGrazing) {
+  if (!horseHistoryCurrentGrazing) {
+    return;
+  }
+
+  if (!currentGrazing) {
+    horseHistoryCurrentGrazing.textContent = 'Not currently assigned to a paddock.';
+    return;
+  }
+
+  const groupPart = currentGrazing.source_group_name ? ` via ${currentGrazing.source_group_name}` : '';
+  horseHistoryCurrentGrazing.textContent = `Current paddock: ${currentGrazing.paddock_name} since ${formatDate(
+    currentGrazing.entered_at
+  )} (${currentGrazing.grazing_days} day(s)${groupPart}).`;
+}
+
+function renderHorseGrazingHistoryRows(rows) {
+  if (!rows.length) {
+    horseGrazingHistoryBody.innerHTML = emptyStateRow(4, 'No grazing history.');
+    return;
+  }
+
+  horseGrazingHistoryBody.innerHTML = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(row.paddock_name)}</td>
+          <td>${escapeHtml(formatDate(row.entered_at))}</td>
+          <td>${escapeHtml(row.exited_at ? formatDate(row.exited_at) : 'Current')}</td>
+          <td>${escapeHtml(
+            `${row.grazing_days || '-'}${row.source_group_name ? ` (${row.source_group_name})` : ''}`
+          )}</td>
+        </tr>
+      `
+    )
+    .join('');
+}
+
 function clearHorseCategoryHistories() {
   renderFeedHistoryRows([]);
   renderDewormingHistoryRows([]);
   renderFarrierHistoryRows([]);
   renderHealthHistoryRows([]);
+  renderHorseGrazingHistoryRows([]);
+  setHorseCurrentGrazing(null);
 }
 
 function renderHorseCategoryHistories(payload) {
@@ -1366,6 +1519,125 @@ function renderHorseCategoryHistories(payload) {
   renderDewormingHistoryRows(payload.deworming_history || []);
   renderFarrierHistoryRows(payload.farrier_history || []);
   renderHealthHistoryRows(payload.health_history || []);
+  renderHorseGrazingHistoryRows(payload.grazing_history || []);
+  setHorseCurrentGrazing(payload.current_grazing || null);
+}
+
+function populatePaddockSelect(selectElement, rows, options = {}) {
+  if (!selectElement) {
+    return;
+  }
+
+  const previous = selectElement.value;
+  const filteredRows = options.activeOnly
+    ? rows.filter((row) => row.active)
+    : rows;
+
+  if (!filteredRows.length) {
+    selectElement.innerHTML = '<option value="">No paddocks</option>';
+    selectElement.disabled = true;
+    return;
+  }
+
+  selectElement.innerHTML = filteredRows
+    .map((row) => `<option value="${escapeHtml(row.id)}">${escapeHtml(row.name)}</option>`)
+    .join('');
+
+  const hasPrevious = filteredRows.some((row) => String(row.id) === String(previous));
+  selectElement.value = hasPrevious ? previous : String(filteredRows[0].id);
+  selectElement.disabled = false;
+}
+
+function renderPaddockStatusRows(rows) {
+  if (!rows.length) {
+    paddockStatusBody.innerHTML = emptyStateRow(7, 'No paddocks saved yet.');
+    return;
+  }
+
+  paddockStatusBody.innerHTML = rows
+    .map((row) => {
+      let badgeClass = 'neutral';
+      let statusLabel = 'Available';
+
+      if (row.occupancy_state === 'occupied') {
+        badgeClass = 'ok';
+        statusLabel = 'Occupied';
+      } else if (row.occupancy_state === 'resting') {
+        badgeClass = 'soon';
+        statusLabel = 'Resting';
+      } else if (row.occupancy_state === 'inactive') {
+        badgeClass = 'overdue';
+        statusLabel = 'Inactive';
+      }
+
+      return `
+        <tr>
+          <td>${escapeHtml(row.name)}</td>
+          <td>${escapeHtml(row.zone || '-')}</td>
+          <td><span class="badge ${badgeClass}">${escapeHtml(statusLabel)}</span></td>
+          <td>${escapeHtml(row.occupied_by || '-')}</td>
+          <td>${escapeHtml(row.occupied_since ? formatDate(row.occupied_since) : '-')}</td>
+          <td>${escapeHtml(row.grazing_days == null ? '-' : String(row.grazing_days))}</td>
+          <td>${escapeHtml(row.rest_days == null ? '-' : String(row.rest_days))}</td>
+        </tr>
+      `;
+    })
+    .join('');
+}
+
+function renderGrazingHistoryRows(rows) {
+  currentGrazingHistoryRows = rows;
+
+  if (!rows.length) {
+    grazingHistoryBody.innerHTML = emptyStateRow(6, 'No grazing history yet.');
+    return;
+  }
+
+  grazingHistoryBody.innerHTML = rows
+    .map((row) => {
+      const notes = [row.source_group_name ? `Group: ${row.source_group_name}` : '', row.entry_notes, row.exit_notes]
+        .filter(Boolean)
+        .join(' | ');
+      return `
+        <tr>
+          <td>${escapeHtml(row.paddock_name)}</td>
+          <td>${escapeHtml(row.horse_name)}</td>
+          <td>${escapeHtml(formatDate(row.entered_at))}</td>
+          <td>${escapeHtml(row.exited_at ? formatDate(row.exited_at) : 'Current')}</td>
+          <td>${escapeHtml(String(row.grazing_days || '-'))}</td>
+          <td>${escapeHtml(notes || '-')}</td>
+        </tr>
+      `;
+    })
+    .join('');
+}
+
+function renderHorseGroupRows(rows) {
+  if (!horseGroupStatusBody) {
+    return;
+  }
+
+  if (!rows.length) {
+    horseGroupStatusBody.innerHTML = emptyStateRow(5, 'No groups saved yet.');
+    return;
+  }
+
+  horseGroupStatusBody.innerHTML = rows
+    .map((row) => {
+      const members = row.member_names?.length ? row.member_names.join(', ') : '-';
+      return `
+        <tr>
+          <td>${escapeHtml(row.name)}</td>
+          <td><span class="badge ${row.active ? 'ok' : 'neutral'}">${escapeHtml(
+            row.active ? 'Active' : 'Inactive'
+          )}</span></td>
+          <td>${escapeHtml(members)}</td>
+          <td>${escapeHtml(row.current_paddock_names || '-')}</td>
+          <td>${escapeHtml(row.notes || '-')}</td>
+        </tr>
+      `;
+    })
+    .join('');
 }
 
 function populateHorseSelect(rows) {
@@ -1444,6 +1716,107 @@ function populateSimpleHorseSelect(selectElement, rows) {
   selectElement.disabled = false;
 }
 
+function populateSimpleGroupSelect(selectElement, rows, options = {}) {
+  if (!selectElement) {
+    return;
+  }
+
+  const previous = selectElement.value;
+  const filteredRows = options.activeOnly ? rows.filter((row) => row.active) : rows;
+
+  if (!filteredRows.length) {
+    selectElement.innerHTML = '<option value="">No groups</option>';
+    selectElement.disabled = true;
+    return;
+  }
+
+  selectElement.innerHTML = filteredRows
+    .map((row) => `<option value="${escapeHtml(row.id)}">${escapeHtml(row.name)}</option>`)
+    .join('');
+
+  const hasPrevious = filteredRows.some((row) => String(row.id) === String(previous));
+  selectElement.value = hasPrevious ? previous : String(filteredRows[0].id);
+  selectElement.disabled = false;
+}
+
+function updateHorseGroupMembersSummary() {
+  if (!horseGroupMembersSummary) {
+    return;
+  }
+
+  const selectedNames = currentHorseRows
+    .filter((row) => currentHorseGroupMemberSelection.has(String(row.id)))
+    .map((row) => row.name);
+
+  if (selectedNames.length === 0) {
+    horseGroupMembersSummary.textContent = 'No horses selected.';
+    return;
+  }
+
+  if (selectedNames.length <= 4) {
+    horseGroupMembersSummary.textContent = `${selectedNames.length} selected: ${selectedNames.join(', ')}`;
+    return;
+  }
+
+  const previewNames = selectedNames.slice(0, 4).join(', ');
+  horseGroupMembersSummary.textContent = `${selectedNames.length} selected: ${previewNames}, +${
+    selectedNames.length - 4
+  } more`;
+}
+
+function renderHorseGroupMembersChecklist(rows = currentHorseRows) {
+  if (!horseGroupMembersHorsesList) {
+    return;
+  }
+
+  const filterValue = String(horseGroupMembersSearchInput?.value || '')
+    .trim()
+    .toLowerCase();
+  const filteredRows = rows.filter((row) => row.name.toLowerCase().includes(filterValue));
+
+  if (!rows.length) {
+    horseGroupMembersHorsesList.innerHTML = '<p class="checkbox-list-empty">No horses found.</p>';
+    updateHorseGroupMembersSummary();
+    return;
+  }
+
+  if (!filteredRows.length) {
+    horseGroupMembersHorsesList.innerHTML =
+      '<p class="checkbox-list-empty">No horses match your search.</p>';
+    updateHorseGroupMembersSummary();
+    return;
+  }
+
+  horseGroupMembersHorsesList.innerHTML = filteredRows
+    .map((row) => {
+      const horseId = String(row.id);
+      const checked = currentHorseGroupMemberSelection.has(horseId) ? ' checked' : '';
+      return `
+        <label class="checkbox-list-item">
+          <input type="checkbox" value="${escapeHtml(horseId)}" data-group-member-checkbox${checked} />
+          <span>${escapeHtml(row.name)}</span>
+        </label>
+      `;
+    })
+    .join('');
+
+  updateHorseGroupMembersSummary();
+}
+
+function syncHorseGroupMembersSelection() {
+  const selectedGroupId = String(horseGroupMembersSelect?.value || '');
+  const group = currentHorseGroupRows.find((row) => String(row.id) === selectedGroupId);
+  currentHorseGroupMemberSelection = new Set(
+    (group?.members || []).map((member) => String(member.id))
+  );
+
+  if (horseGroupMembersSearchInput) {
+    horseGroupMembersSearchInput.value = '';
+  }
+
+  renderHorseGroupMembersChecklist(currentHorseRows);
+}
+
 function populateHorseActionSelects(rows) {
   [
     feedEntryHorseSelect,
@@ -1451,10 +1824,25 @@ function populateHorseActionSelects(rows) {
     farrierHorseSelect,
     healthHorseSelect,
     trainingHorseSelect,
+    grazingMoveInHorseSelect,
+    grazingMoveOutHorseSelect,
   ].forEach((selectElement) => populateSimpleHorseSelect(selectElement, rows));
 
   const selectedTrainingHorse = findHorseById(trainingHorseSelect.value);
   trainingStatusSelect.value = normalizeTrainingStatus(selectedTrainingHorse?.training_status) || '';
+}
+
+function populatePaddockActionSelects(rows) {
+  populatePaddockSelect(grazingMoveInPaddockSelect, rows, { activeOnly: true });
+  populatePaddockSelect(grazingGroupMoveInPaddockSelect, rows, { activeOnly: true });
+  populatePaddockSelect(grazingGroupMoveOutPaddockSelect, rows);
+}
+
+function populateHorseGroupActionSelects(rows) {
+  populateSimpleGroupSelect(horseGroupMembersSelect, rows);
+  populateSimpleGroupSelect(grazingGroupMoveInGroupSelect, rows, { activeOnly: true });
+  populateSimpleGroupSelect(grazingGroupMoveOutGroupSelect, rows);
+  syncHorseGroupMembersSelection();
 }
 
 function populateDewormHistoryHorseFilter(rows) {
@@ -1618,9 +2006,13 @@ async function syncSessionState() {
 function clearDashboardView() {
   latestDashboardPayload = null;
   currentHorseRows = [];
+  currentHorseGroupRows = [];
+  currentPaddockRows = [];
   currentFeedHistoryRows = [];
+  currentGrazingHistoryRows = [];
   currentDewormingHistoryRows = [];
   currentFarrierHistoryRows = [];
+  currentHorseGroupMemberSelection = new Set();
   lastUpdated.textContent = '-';
   summaryCards.innerHTML = '';
   dewormingBody.innerHTML = emptyStateRow(4, 'Log in to view data.');
@@ -1636,6 +2028,11 @@ function clearDashboardView() {
     rainYearlyBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
   }
   activityBody.innerHTML = emptyStateRow(4, 'Log in to view data.');
+  if (horseGroupStatusBody) {
+    horseGroupStatusBody.innerHTML = emptyStateRow(5, 'Log in to view data.');
+  }
+  paddockStatusBody.innerHTML = emptyStateRow(7, 'Log in to view data.');
+  grazingHistoryBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
   horsesInTrainingBody.innerHTML = emptyStateRow(3, 'Log in to view data.');
   horsesBreakingInBody.innerHTML = emptyStateRow(3, 'Log in to view data.');
   renderHorseHistoryRows([]);
@@ -1643,6 +2040,9 @@ function clearDashboardView() {
   populateHorseSelect([]);
   populateHorseRenameSelect([]);
   populateHorseActionSelects([]);
+  populateHorseGroupActionSelects([]);
+  populatePaddockActionSelects([]);
+  renderHorseGroupMembersChecklist([]);
   populateFeedItemOptions([]);
   populateHorseProfile(null);
   renderRainChartEmpty('Log in to view rain data.');
@@ -1752,10 +2152,15 @@ async function loadDashboard() {
     renderRainChart(payload.rain || null);
     renderActivityRows(payload.recent_activity);
     currentHorseRows = payload.horses || [];
+    currentHorseGroupRows = payload.horse_groups || [];
+    currentPaddockRows = payload.paddocks || [];
     currentHorseRows = currentHorseRows.map((horse) => ({
       ...horse,
       training_status: normalizeTrainingStatus(horse.training_status),
     }));
+    renderHorseGroupRows(currentHorseGroupRows);
+    renderPaddockStatusRows(currentPaddockRows);
+    renderGrazingHistoryRows(payload.grazing_history || []);
     currentDewormingHistoryRows = payload.deworming_history || [];
     currentFarrierHistoryRows = payload.farrier_history_registry || [];
     populateDewormHistoryHorseFilter(currentHorseRows);
@@ -1773,6 +2178,8 @@ async function loadDashboard() {
     populateHorseSelect(currentHorseRows);
     populateHorseRenameSelect(currentHorseRows);
     populateHorseActionSelects(currentHorseRows);
+    populateHorseGroupActionSelects(currentHorseGroupRows);
+    populatePaddockActionSelects(currentPaddockRows);
     populateFeedItemOptions(payload.stock?.all || []);
     const horseHistoryResult = await loadSelectedHorseHistory();
 
@@ -1911,6 +2318,36 @@ trainingHorseSelect.addEventListener('change', () => {
   const selectedHorse = findHorseById(trainingHorseSelect.value);
   trainingStatusSelect.value = normalizeTrainingStatus(selectedHorse?.training_status) || '';
 });
+
+if (horseGroupMembersSelect) {
+  horseGroupMembersSelect.addEventListener('change', () => {
+    syncHorseGroupMembersSelection();
+  });
+}
+
+if (horseGroupMembersSearchInput) {
+  horseGroupMembersSearchInput.addEventListener('input', () => {
+    renderHorseGroupMembersChecklist(currentHorseRows);
+  });
+}
+
+if (horseGroupMembersHorsesList) {
+  horseGroupMembersHorsesList.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('input[data-group-member-checkbox]');
+    if (!checkbox) {
+      return;
+    }
+
+    const horseId = String(checkbox.value);
+    if (checkbox.checked) {
+      currentHorseGroupMemberSelection.add(horseId);
+    } else {
+      currentHorseGroupMemberSelection.delete(horseId);
+    }
+
+    updateHorseGroupMembersSummary();
+  });
+}
 
 horseFeedHistoryBody.addEventListener('click', async (event) => {
   const button = event.target.closest('button[data-feed-action]');
@@ -2071,6 +2508,197 @@ horseRenameForm.addEventListener('submit', async (event) => {
       return;
     }
     setActionMessage(`Rename horse failed: ${error.message}`, true);
+  }
+});
+
+horseGroupSaveForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  try {
+    const data = await postJson(DATA_MUTATE_API_URL, {
+      action: 'horse_group_save',
+      groupName: horseGroupNameInput.value.trim(),
+      notes: horseGroupNotesInput.value.trim() || undefined,
+      active: horseGroupActiveSelect.value,
+    });
+
+    horseGroupNameInput.value = '';
+    horseGroupNotesInput.value = '';
+    horseGroupActiveSelect.value = 'true';
+    setActionMessage(`Group ${data.mode === 'created' ? 'saved' : 'updated'}: ${data.group.name}`);
+    await loadDashboard();
+  } catch (error) {
+    if (handleAuthError(error, 'Session expired. Please log in to save groups.')) {
+      clearDashboardView();
+      return;
+    }
+    setActionMessage(`Save group failed: ${error.message}`, true);
+  }
+});
+
+horseGroupMembersForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  try {
+    const selectedHorseIds = [...currentHorseGroupMemberSelection];
+    const data = await postJson(DATA_MUTATE_API_URL, {
+      action: 'horse_group_memberships_set',
+      groupId: horseGroupMembersSelect.value,
+      horseIds: selectedHorseIds,
+    });
+
+    const reassignedCount = Array.isArray(data.reassigned_members) ? data.reassigned_members.length : 0;
+    const reassignedMessage = reassignedCount > 0 ? ` ${reassignedCount} horse(s) were moved from another group.` : '';
+    setActionMessage(
+      `Saved ${data.members.length} horse(s) in ${data.group.name}.${reassignedMessage}`
+    );
+    await loadDashboard();
+  } catch (error) {
+    if (handleAuthError(error, 'Session expired. Please log in to update group members.')) {
+      clearDashboardView();
+      return;
+    }
+    setActionMessage(`Save members failed: ${error.message}`, true);
+  }
+});
+
+paddockSaveForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  try {
+    const data = await postJson(DATA_MUTATE_API_URL, {
+      action: 'paddock_save',
+      paddockName: paddockNameInput.value.trim(),
+      zone: paddockZoneInput.value.trim() || undefined,
+      sizeHa: paddockSizeInput.value.trim() || undefined,
+      notes: paddockNotesInput.value.trim() || undefined,
+      active: paddockActiveSelect.value,
+    });
+
+    paddockNameInput.value = '';
+    paddockZoneInput.value = '';
+    paddockSizeInput.value = '';
+    paddockNotesInput.value = '';
+    paddockActiveSelect.value = 'true';
+    setActionMessage(
+      `Paddock ${data.mode === 'created' ? 'saved' : 'updated'}: ${data.paddock.name}`
+    );
+    await loadDashboard();
+  } catch (error) {
+    if (handleAuthError(error, 'Session expired. Please log in to save paddocks.')) {
+      clearDashboardView();
+      return;
+    }
+    setActionMessage(`Save paddock failed: ${error.message}`, true);
+  }
+});
+
+grazingMoveInForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  try {
+    const data = await postJson(DATA_MUTATE_API_URL, {
+      action: 'grazing_move_in',
+      horseId: grazingMoveInHorseSelect.value,
+      paddockId: grazingMoveInPaddockSelect.value,
+      eventDate: grazingMoveInDateInput.value || undefined,
+      notes: grazingMoveInNotesInput.value.trim() || undefined,
+    });
+
+    grazingMoveInNotesInput.value = '';
+    setActionMessage(
+      `${data.horse.name} moved into ${data.paddock.name} on ${formatDate(data.grazing_event.entered_at)}.`
+    );
+    await loadDashboard();
+  } catch (error) {
+    if (handleAuthError(error, 'Session expired. Please log in to record grazing moves.')) {
+      clearDashboardView();
+      return;
+    }
+    setActionMessage(`Move in failed: ${error.message}`, true);
+  }
+});
+
+grazingMoveOutForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  try {
+    const data = await postJson(DATA_MUTATE_API_URL, {
+      action: 'grazing_move_out',
+      horseId: grazingMoveOutHorseSelect.value,
+      eventDate: grazingMoveOutDateInput.value || undefined,
+      notes: grazingMoveOutNotesInput.value.trim() || undefined,
+    });
+
+    grazingMoveOutNotesInput.value = '';
+    setActionMessage(
+      `${data.horse.name} moved out of ${data.paddock.name} on ${formatDate(
+        data.grazing_event.exited_at
+      )} after ${data.grazing_event.grazing_days} day(s).`
+    );
+    await loadDashboard();
+  } catch (error) {
+    if (handleAuthError(error, 'Session expired. Please log in to record grazing exits.')) {
+      clearDashboardView();
+      return;
+    }
+    setActionMessage(`Move out failed: ${error.message}`, true);
+  }
+});
+
+grazingGroupMoveInForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  try {
+    const data = await postJson(DATA_MUTATE_API_URL, {
+      action: 'grazing_group_move_in',
+      groupId: grazingGroupMoveInGroupSelect.value,
+      paddockId: grazingGroupMoveInPaddockSelect.value,
+      eventDate: grazingGroupMoveInDateInput.value || undefined,
+      notes: grazingGroupMoveInNotesInput.value.trim() || undefined,
+    });
+
+    grazingGroupMoveInNotesInput.value = '';
+    setActionMessage(
+      `${data.group.name} moved into ${data.paddock.name} on ${formatDate(
+        data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
+      )} (${data.moved_count} horse(s)).`
+    );
+    await loadDashboard();
+  } catch (error) {
+    if (handleAuthError(error, 'Session expired. Please log in to record group grazing moves.')) {
+      clearDashboardView();
+      return;
+    }
+    setActionMessage(`Group move in failed: ${error.message}`, true);
+  }
+});
+
+grazingGroupMoveOutForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  try {
+    const data = await postJson(DATA_MUTATE_API_URL, {
+      action: 'grazing_group_move_out',
+      groupId: grazingGroupMoveOutGroupSelect.value,
+      paddockId: grazingGroupMoveOutPaddockSelect.value,
+      eventDate: grazingGroupMoveOutDateInput.value || undefined,
+      notes: grazingGroupMoveOutNotesInput.value.trim() || undefined,
+    });
+
+    grazingGroupMoveOutNotesInput.value = '';
+    setActionMessage(
+      `${data.group.name} moved out of ${data.paddock.name} on ${formatDate(
+        data.grazing_events?.[0]?.exited_at || grazingGroupMoveOutDateInput.value
+      )} (${data.moved_count} horse(s)).`
+    );
+    await loadDashboard();
+  } catch (error) {
+    if (handleAuthError(error, 'Session expired. Please log in to record group grazing exits.')) {
+      clearDashboardView();
+      return;
+    }
+    setActionMessage(`Group move out failed: ${error.message}`, true);
   }
 });
 
@@ -2307,6 +2935,18 @@ if (dewormSecondDoseInput) {
 }
 farrierDateInput.value = todayDate;
 healthDateInput.value = todayDate;
+if (grazingMoveInDateInput) {
+  grazingMoveInDateInput.value = todayDate;
+}
+if (grazingMoveOutDateInput) {
+  grazingMoveOutDateInput.value = todayDate;
+}
+if (grazingGroupMoveInDateInput) {
+  grazingGroupMoveInDateInput.value = todayDate;
+}
+if (grazingGroupMoveOutDateInput) {
+  grazingGroupMoveOutDateInput.value = todayDate;
+}
 
 async function initializeAdminApp() {
   const session = await syncSessionState();

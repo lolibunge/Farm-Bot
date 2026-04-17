@@ -1,5 +1,11 @@
 const { pool } = require('../../lib/db');
 const { ensureHorseProfileColumns } = require('../../lib/horse-profile');
+const {
+  ensurePaddockTables,
+  listPaddockStatus,
+  listGrazingHistory,
+  listHorseGroups,
+} = require('../../lib/paddocks');
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
 const { toIsoDateString } = require('../../lib/date-helpers');
 const { requireAdminApiAuth } = require('../../lib/admin-auth');
@@ -96,11 +102,15 @@ module.exports = async (req, res) => {
 
   try {
     await ensureHorseProfileColumns();
+    await ensurePaddockTables();
     await ensureRainRegistryTable();
 
     const [
       horseCountResult,
       horsesResult,
+      paddockStatusRows,
+      horseGroupRows,
+      grazingHistoryRows,
       feedItemCountResult,
       lowStockCountResult,
       lowStockResult,
@@ -134,6 +144,9 @@ module.exports = async (req, res) => {
         ORDER BY name ASC
         `
       ),
+      listPaddockStatus(),
+      listHorseGroups(),
+      listGrazingHistory({ limit: 120 }),
       pool.query('SELECT COUNT(*)::int AS count FROM feed_items'),
       pool.query('SELECT COUNT(*)::int AS count FROM feed_items WHERE current_stock <= $1', [
         LOW_STOCK_THRESHOLD,
@@ -319,6 +332,36 @@ module.exports = async (req, res) => {
           UNION ALL
 
           SELECT
+            ge.entered_at::timestamp AS sort_at,
+            'grazing' AS category,
+            h.name AS horse_name,
+            CONCAT('entered ', p.name, COALESCE(CONCAT(' | ', ge.entry_notes), '')) AS detail
+          FROM grazing_events ge
+          JOIN horses h ON h.id = ge.horse_id
+          JOIN paddocks p ON p.id = ge.paddock_id
+
+          UNION ALL
+
+          SELECT
+            ge.exited_at::timestamp AS sort_at,
+            'grazing' AS category,
+            h.name AS horse_name,
+            CONCAT(
+              'left ',
+              p.name,
+              ' | stayed ',
+              GREATEST(1, (ge.exited_at - ge.entered_at) + 1),
+              ' days',
+              COALESCE(CONCAT(' | ', ge.exit_notes), '')
+            ) AS detail
+          FROM grazing_events ge
+          JOIN horses h ON h.id = ge.horse_id
+          JOIN paddocks p ON p.id = ge.paddock_id
+          WHERE ge.exited_at IS NOT NULL
+
+          UNION ALL
+
+          SELECT
             tl.administered_at AS sort_at,
             'dose' AS category,
             h.name AS horse_name,
@@ -426,6 +469,8 @@ module.exports = async (req, res) => {
 
     const horsesInTraining = horses.filter((horse) => horse.training_status === 'in training');
     const horsesBreakingIn = horses.filter((horse) => horse.training_status === 'breaking in');
+    const occupiedPaddocks = paddockStatusRows.filter((row) => row.occupancy_state === 'occupied');
+    const restingPaddocks = paddockStatusRows.filter((row) => row.occupancy_state === 'resting');
     const rainSummary = rainSummaryResult.rows[0] || {};
 
     res.status(200).json({
@@ -440,6 +485,10 @@ module.exports = async (req, res) => {
       },
       summary: {
         horses_count: normalizePgCount(horseCountResult.rows[0]?.count),
+        horse_groups_count: horseGroupRows.length,
+        paddocks_count: paddockStatusRows.length,
+        paddocks_occupied_count: occupiedPaddocks.length,
+        paddocks_resting_count: restingPaddocks.length,
         feed_items_count: normalizePgCount(feedItemCountResult.rows[0]?.count),
         low_stock_count: normalizePgCount(lowStockCountResult.rows[0]?.count),
         deworm_overdue_count: dewormingDue.overdue.length,
@@ -457,6 +506,47 @@ module.exports = async (req, res) => {
         in_training: horsesInTraining,
         breaking_in: horsesBreakingIn,
       },
+      paddocks: paddockStatusRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        zone: row.zone,
+        size_ha: row.size_ha,
+        notes: row.notes,
+        active: row.active,
+        horse_count: row.horse_count,
+        occupied_by: row.occupied_by,
+        occupied_since: row.occupied_since,
+        grazing_days: row.grazing_days,
+        last_exited_at: row.last_exited_at,
+        rest_days: row.rest_days,
+        occupancy_state: row.occupancy_state,
+      })),
+      horse_groups: horseGroupRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        notes: row.notes,
+        active: row.active,
+        member_count: row.member_count,
+        members: row.members,
+        member_names: row.member_names,
+        current_paddock_names: row.current_paddock_names,
+        grazing_member_count: row.grazing_member_count,
+      })),
+      grazing_history: grazingHistoryRows.map((row) => ({
+        id: row.id,
+        paddock_id: row.paddock_id,
+        paddock_name: row.paddock_name,
+        horse_id: row.horse_id,
+        horse_name: row.horse_name,
+        entered_at: row.entered_at,
+        exited_at: row.exited_at,
+        grazing_days: row.grazing_days,
+        entry_notes: row.entry_notes,
+        exit_notes: row.exit_notes,
+        source_group_id: row.source_group_id,
+        source_group_name: row.source_group_name,
+        active: row.active,
+      })),
       reminders: {
         deworming: dewormingDue,
         farrier: farrierDue,
