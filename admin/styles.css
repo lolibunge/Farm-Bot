@@ -68,6 +68,26 @@ body {
   margin-bottom: 16px;
 }
 
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.brand-logo {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 auto;
+  display: block;
+  border-radius: 18px;
+  box-shadow: 0 12px 28px rgba(53, 94, 59, 0.2);
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
 .eyebrow {
   margin: 0;
   letter-spacing: 0.08em;
@@ -1049,6 +1069,16 @@ tbody tr {
 
   .dashboard-header {
     grid-template-columns: 1fr;
+  }
+
+  .brand-lockup {
+    gap: 12px;
+  }
+
+  .brand-logo {
+    width: 60px;
+    height: 60px;
+    border-radius: 15px;
   }
 
   .panel-grid {
