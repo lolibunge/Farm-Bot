@@ -1,13 +1,26 @@
 require('dotenv').config();
 
 const { Telegraf } = require('telegraf');
-const { Pool } = require('pg');
+const { pool } = require('./lib/db');
+const { ensureHorseProfileColumns } = require('./lib/horse-profile');
+const {
+  ensurePaddockTables,
+  findPaddockByName,
+  listPaddockNames,
+  savePaddock,
+  findHorseGroupByName,
+  listHorseGroups,
+  saveHorseGroup,
+  moveHorseIntoPaddock,
+  moveHorseOutOfPaddock,
+  moveHorseGroupIntoPaddock,
+  moveHorseGroupOutOfPaddock,
+  listPaddockStatus,
+  listGrazingHistory,
+  getHorseCurrentGrazing,
+} = require('./lib/paddocks');
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
 function parsePositiveInt(value, fallbackValue) {
   const parsed = Number.parseInt(value, 10);
@@ -112,6 +125,52 @@ function formatDateTimeWithWeekdayForReply(dateValue) {
 
 function todayDateString() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeTrainingStatusForReply(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
+
+  if (!normalized) {
+    return 'N/A';
+  }
+
+  if (normalized === 'in training' || normalized === 'training' || normalized === 'intraining') {
+    return 'In Training';
+  }
+
+  if (
+    normalized === 'breaking in' ||
+    normalized === 'breaking' ||
+    normalized === 'break in' ||
+    normalized === 'breakingin' ||
+    normalized === 'for breaking in' ||
+    normalized === 'horse for breaking in'
+  ) {
+    return 'Breaking In';
+  }
+
+  return normalized
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function buildHorseProfileBlockForReply(horseProfile) {
+  if (!horseProfile) {
+    return '';
+  }
+
+  return `Profile
+- date of birth: ${formatDateForReply(horseProfile.date_of_birth)}
+- age: ${horseProfile.age_years == null ? 'N/A' : horseProfile.age_years}
+- color: ${horseProfile.color || 'N/A'}
+- activity: ${horseProfile.activity || 'N/A'}
+- sex: ${horseProfile.sex || 'N/A'}
+- training status: ${normalizeTrainingStatusForReply(horseProfile.training_status)}`;
 }
 
 function addDaysToDateString(dateString, daysToAdd) {
@@ -352,6 +411,97 @@ async function listHorseNames() {
   return result.rows.map((row) => row.name);
 }
 
+function findLongestPrefixMatch(input, names) {
+  const normalizedInput = String(input || '').trim().toLowerCase();
+  const sortedNames = [...names].sort((left, right) => right.length - left.length);
+
+  for (const name of sortedNames) {
+    const normalizedName = String(name || '').trim().toLowerCase();
+    if (!normalizedName) {
+      continue;
+    }
+
+    if (normalizedInput === normalizedName || normalizedInput.startsWith(`${normalizedName} `)) {
+      return name;
+    }
+  }
+
+  return null;
+}
+
+function parseNamedSegmentWithOptionalDateAndNotes(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) {
+    return {
+      name: '',
+      eventDate: todayDateString(),
+      notes: '',
+    };
+  }
+
+  const parts = rawValue.split(/\s+/).filter(Boolean);
+  const dateIndex = parts.findIndex((part) => looksLikeDateString(part));
+
+  if (dateIndex === -1) {
+    return {
+      name: rawValue,
+      eventDate: todayDateString(),
+      notes: '',
+    };
+  }
+
+  const eventDate = parts[dateIndex];
+  if (!isValidDateString(eventDate)) {
+    throw new Error(`Invalid calendar date: ${eventDate}`);
+  }
+
+  return {
+    name: parts.slice(0, dateIndex).join(' ').trim(),
+    eventDate,
+    notes: parts.slice(dateIndex + 1).join(' ').trim(),
+  };
+}
+
+function formatPaddockStatusLine(row) {
+  const prefix = row.zone ? `${row.name} (${row.zone})` : row.name;
+
+  if (row.occupancy_state === 'inactive') {
+    return `- ${prefix} | inactive`;
+  }
+
+  if (row.occupancy_state === 'occupied') {
+    return `- ${prefix} | occupied by ${row.occupied_by} | since ${formatDateForReply(
+      row.occupied_since
+    )} | ${row.grazing_days} day(s)`;
+  }
+
+  if (row.occupancy_state === 'resting') {
+    return `- ${prefix} | resting ${row.rest_days} day(s) | last exit: ${formatDateForReply(
+      row.last_exited_at
+    )}`;
+  }
+
+  return `- ${prefix} | available${row.notes ? ` | ${row.notes}` : ''}`;
+}
+
+function formatHorseGroupLine(row) {
+  const status = row.active ? 'active' : 'inactive';
+  const memberPart =
+    row.member_count > 0 ? `${row.member_count} horse(s): ${row.member_names.join(', ')}` : 'no horses assigned';
+  const paddockPart = row.current_paddock_names ? ` | paddocks: ${row.current_paddock_names}` : '';
+  return `- ${row.name} | ${status} | ${memberPart}${paddockPart}`;
+}
+
+function formatGrazingHistoryLine(row) {
+  const exitPart = row.exited_at ? formatDateForReply(row.exited_at) : 'Current';
+  const notes = [row.source_group_name ? `group: ${row.source_group_name}` : '', row.entry_notes, row.exit_notes]
+    .filter(Boolean)
+    .join(' | ');
+  return `- ${row.horse_name} | ${row.paddock_name} | in: ${formatDateForReply(
+    row.entered_at
+  )} | out: ${exitPart} | ${row.grazing_days} day(s)${notes ? ` | ${notes}` : ''}`;
+}
+
 async function findFeedItemByName(itemName) {
   const result = await pool.query(
     `
@@ -373,6 +523,20 @@ Commands:
 - horse add perla
 - horse list
 - history imperial
+- horse grazing imperial
+
+- group add manada
+- group list
+- group members manada
+- move group in manada potrero 1 2026-04-16
+- move group out manada potrero 1 2026-04-20
+
+- paddock add potrero 1
+- paddock list
+- paddock status
+- paddock history potrero 1
+- move in imperial potrero 1 2026-04-16
+- move out imperial potrero 1 2026-04-20
 
 - feed imperial oats 2 kg
 - feed fair halo oats 2 kg
@@ -391,6 +555,8 @@ Commands:
 - stock add oats 50 kg
 - stock set alfalfa 11 bale
 - stock use alfalfa 1 bale
+
+- Group members are assigned from the admin panel.
 
 You can also send multiple commands in one message using one line per command.`);
 });
@@ -437,6 +603,7 @@ bot.on('text', async (ctx) => {
       );
 
       const rawMessageId = rawResult.rows[0].id;
+      await ensurePaddockTables();
 
       // -----------------------------
       // HORSE LIST
@@ -493,6 +660,533 @@ Raw message ID: ${rawMessageId}`
       }
 
       // -----------------------------
+      // GROUP LIST
+      // -----------------------------
+      if (lowerMessage === 'group list') {
+        const groups = await listHorseGroups();
+
+        if (groups.length === 0) {
+          await ctx.reply('No groups found. Add one with: group add <group name>');
+          continue;
+        }
+
+        await ctx.reply(`Registered groups\n\n${groups.map(formatHorseGroupLine).join('\n')}`);
+        continue;
+      }
+
+      // -----------------------------
+      // GROUP ADD
+      // -----------------------------
+      if (lowerMessage.startsWith('group add ')) {
+        const groupName = messageText.slice('group add '.length).trim();
+
+        if (!groupName) {
+          await ctx.reply('Use: group add <group name>');
+          continue;
+        }
+
+        const data = await saveHorseGroup({
+          name: groupName,
+          active: true,
+        });
+
+        await ctx.reply(
+          `Group ${data.mode === 'created' ? 'added' : 'updated'} ✅
+
+Name: ${data.group.name}
+Status: ${data.group.active ? 'Active' : 'Inactive'}
+Group ID: ${data.group.id}
+Members: ${data.group.member_count}
+Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
+      // GROUP MEMBERS
+      // -----------------------------
+      if (lowerMessage.startsWith('group members ')) {
+        const groupName = messageText.slice('group members '.length).trim();
+
+        if (!groupName) {
+          await ctx.reply('Use: group members <group name>');
+          continue;
+        }
+
+        const group = await findHorseGroupByName(groupName);
+
+        if (!group) {
+          const groups = await listHorseGroups();
+          await ctx.reply(
+            `Group not found: ${groupName}
+
+Available groups:
+${groups.map((row) => `- ${row.name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        let reply = `Group: ${group.name}
+- status: ${group.active ? 'Active' : 'Inactive'}
+- members: ${group.member_count}`;
+
+        if (group.current_paddock_names) {
+          reply += `\n- current paddocks: ${group.current_paddock_names}`;
+        }
+
+        if (group.notes) {
+          reply += `\n- notes: ${group.notes}`;
+        }
+
+        if (group.members.length > 0) {
+          reply += `\n\nMembers
+${group.members.map((member) => `- ${member.name}`).join('\n')}`;
+        } else {
+          reply += `\n\nMembers
+- No horses assigned`;
+        }
+
+        await ctx.reply(reply);
+        continue;
+      }
+
+      // -----------------------------
+      // PADDOCK LIST
+      // -----------------------------
+      if (lowerMessage === 'paddock list') {
+        const paddocks = await listPaddockStatus();
+
+        if (paddocks.length === 0) {
+          await ctx.reply('No paddocks found. Add one with: paddock add <paddock name>');
+          continue;
+        }
+
+        await ctx.reply(`Registered paddocks\n\n${paddocks.map(formatPaddockStatusLine).join('\n')}`);
+        continue;
+      }
+
+      // -----------------------------
+      // PADDOCK ADD
+      // -----------------------------
+      if (lowerMessage.startsWith('paddock add ')) {
+        const paddockName = messageText.slice('paddock add '.length).trim();
+
+        if (!paddockName) {
+          await ctx.reply('Use: paddock add <paddock name>');
+          continue;
+        }
+
+        const data = await savePaddock({
+          name: paddockName,
+          active: true,
+        });
+
+        await ctx.reply(
+          `Paddock ${data.mode === 'created' ? 'added' : 'updated'} ✅
+
+Name: ${data.paddock.name}
+Status: ${data.paddock.active ? 'Active' : 'Inactive'}
+Paddock ID: ${data.paddock.id}
+Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
+      // PADDOCK STATUS
+      // -----------------------------
+      if (lowerMessage === 'paddock status') {
+        const paddocks = await listPaddockStatus();
+
+        if (paddocks.length === 0) {
+          await ctx.reply('No paddock status records found.');
+          continue;
+        }
+
+        await ctx.reply(`Paddock status\n\n${paddocks.map(formatPaddockStatusLine).join('\n')}`);
+        continue;
+      }
+
+      // -----------------------------
+      // PADDOCK HISTORY
+      // -----------------------------
+      if (lowerMessage.startsWith('paddock history ')) {
+        const paddockName = messageText.slice('paddock history '.length).trim();
+
+        if (!paddockName) {
+          await ctx.reply('Use: paddock history <paddock name>');
+          continue;
+        }
+
+        const paddock = await findPaddockByName(paddockName);
+
+        if (!paddock) {
+          const paddocks = await listPaddockNames();
+          await ctx.reply(
+            `Paddock not found: ${paddockName}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const historyRows = await listGrazingHistory({ paddockId: paddock.id, limit: 20 });
+
+        if (historyRows.length === 0) {
+          await ctx.reply(`No grazing history found for ${paddock.name}.`);
+          continue;
+        }
+
+        const lines = historyRows.map(formatGrazingHistoryLine);
+        await ctx.reply(`Paddock history: ${paddock.name}\n\n${lines.join('\n')}`);
+        continue;
+      }
+
+      // -----------------------------
+      // HORSE GRAZING
+      // -----------------------------
+      if (lowerMessage.startsWith('horse grazing ')) {
+        const horseName = messageText.slice('horse grazing '.length).trim();
+
+        if (!horseName) {
+          await ctx.reply('Use: horse grazing <horse name>');
+          continue;
+        }
+
+        const horse = await findHorseByName(horseName);
+
+        if (!horse) {
+          const horses = await listHorseNames();
+          await ctx.reply(
+            `Horse not found: ${horseName}
+
+Available horses:
+${horses.map((h) => `- ${h}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const [currentGrazing, grazingRows] = await Promise.all([
+          getHorseCurrentGrazing(horse.id),
+          listGrazingHistory({ horseId: horse.id, limit: 10 }),
+        ]);
+
+        let reply = `Horse grazing: ${horse.name}\n`;
+
+        if (currentGrazing) {
+          reply += `\nCurrent paddock
+- ${currentGrazing.paddock_name}
+- entered: ${formatDateForReply(currentGrazing.entered_at)}
+- days on paddock: ${currentGrazing.grazing_days}`;
+          if (currentGrazing.source_group_name) {
+            reply += `\n- group move: ${currentGrazing.source_group_name}`;
+          }
+          if (currentGrazing.entry_notes) {
+            reply += `\n- notes: ${currentGrazing.entry_notes}`;
+          }
+        } else {
+          reply += `\nCurrent paddock
+- Not currently assigned`;
+        }
+
+        if (grazingRows.length > 0) {
+          reply += `\n\nRecent grazing history
+${grazingRows.map(formatGrazingHistoryLine).join('\n')}`;
+        } else {
+          reply += `\n\nRecent grazing history
+- No grazing records`;
+        }
+
+        await ctx.reply(reply);
+        continue;
+      }
+
+      // -----------------------------
+      // GROUP MOVE IN
+      // move group in <group name> <paddock name> [YYYY-MM-DD] [notes...]
+      // -----------------------------
+      if (lowerMessage.startsWith('move group in ')) {
+        const remainder = messageText.slice('move group in '.length).trim();
+        const allGroups = await listHorseGroups();
+        const matchedGroupName = findLongestPrefixMatch(
+          remainder,
+          allGroups.map((group) => group.name)
+        );
+
+        if (!matchedGroupName) {
+          await ctx.reply(
+            `Group not found.
+
+Available groups:
+${allGroups.map((group) => `- ${group.name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const group = allGroups.find((row) => row.name === matchedGroupName) || (await findHorseGroupByName(matchedGroupName));
+        const afterGroup = remainder.slice(matchedGroupName.length).trim();
+        let moveData;
+
+        try {
+          moveData = parseNamedSegmentWithOptionalDateAndNotes(afterGroup);
+        } catch (error) {
+          await ctx.reply(error.message);
+          continue;
+        }
+
+        if (!moveData.name) {
+          await ctx.reply('Use: move group in <group name> <paddock name> [YYYY-MM-DD] [notes]');
+          continue;
+        }
+
+        const paddock = await findPaddockByName(moveData.name);
+
+        if (!paddock) {
+          const paddocks = await listPaddockNames();
+          await ctx.reply(
+            `Paddock not found: ${moveData.name}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const data = await moveHorseGroupIntoPaddock({
+          groupId: group.id,
+          paddockId: paddock.id,
+          enteredAt: moveData.eventDate,
+          entryNotes: moveData.notes || null,
+          source: 'telegram_group',
+          telegramUserId,
+        });
+
+        await ctx.reply(
+          `Group move in recorded ✅
+
+Group: ${data.group.name}
+Paddock: ${data.paddock.name}
+Entered: ${formatDateForReply(moveData.eventDate)}
+Moved horses: ${data.moved_count}
+Current occupancy: ${data.paddock_occupancy_count}
+${moveData.notes ? `Notes: ${moveData.notes}\n` : ''}Horses:
+${data.horses.map((horse) => `- ${horse.name}`).join('\n')}
+Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
+      // GROUP MOVE OUT
+      // move group out <group name> <paddock name> [YYYY-MM-DD] [notes...]
+      // -----------------------------
+      if (lowerMessage.startsWith('move group out ')) {
+        const remainder = messageText.slice('move group out '.length).trim();
+        const allGroups = await listHorseGroups();
+        const matchedGroupName = findLongestPrefixMatch(
+          remainder,
+          allGroups.map((group) => group.name)
+        );
+
+        if (!matchedGroupName) {
+          await ctx.reply(
+            `Group not found.
+
+Available groups:
+${allGroups.map((group) => `- ${group.name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const group = allGroups.find((row) => row.name === matchedGroupName) || (await findHorseGroupByName(matchedGroupName));
+        const afterGroup = remainder.slice(matchedGroupName.length).trim();
+        let moveData;
+
+        try {
+          moveData = parseNamedSegmentWithOptionalDateAndNotes(afterGroup);
+        } catch (error) {
+          await ctx.reply(error.message);
+          continue;
+        }
+
+        if (!moveData.name) {
+          await ctx.reply('Use: move group out <group name> <paddock name> [YYYY-MM-DD] [notes]');
+          continue;
+        }
+
+        const paddock = await findPaddockByName(moveData.name);
+
+        if (!paddock) {
+          const paddocks = await listPaddockNames();
+          await ctx.reply(
+            `Paddock not found: ${moveData.name}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const data = await moveHorseGroupOutOfPaddock({
+          groupId: group.id,
+          paddockId: paddock.id,
+          exitedAt: moveData.eventDate,
+          exitNotes: moveData.notes || null,
+        });
+
+        await ctx.reply(
+          `Group move out recorded ✅
+
+Group: ${data.group.name}
+Paddock: ${data.paddock.name}
+Exited: ${formatDateForReply(moveData.eventDate)}
+Moved horses: ${data.moved_count}
+${moveData.notes ? `Notes: ${moveData.notes}\n` : ''}Horses:
+${data.horses.map((horse) => `- ${horse.name}`).join('\n')}
+Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
+      // MOVE IN
+      // move in <horse name> <paddock name> [YYYY-MM-DD] [notes...]
+      // -----------------------------
+      if (lowerMessage.startsWith('move in ')) {
+        const remainder = messageText.slice('move in '.length).trim();
+        const allHorses = await listHorseNames();
+        const matchedHorseName = findLongestPrefixMatch(remainder, allHorses);
+
+        if (!matchedHorseName) {
+          await ctx.reply(
+            `Horse not found.
+
+Available horses:
+${allHorses.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const horse = await findHorseByName(matchedHorseName);
+        const afterHorse = remainder.slice(matchedHorseName.length).trim();
+        let moveData;
+
+        try {
+          moveData = parseNamedSegmentWithOptionalDateAndNotes(afterHorse);
+        } catch (error) {
+          await ctx.reply(error.message);
+          continue;
+        }
+
+        if (!moveData.name) {
+          await ctx.reply('Use: move in <horse name> <paddock name> [YYYY-MM-DD] [notes]');
+          continue;
+        }
+
+        const paddock = await findPaddockByName(moveData.name);
+
+        if (!paddock) {
+          const paddocks = await listPaddockNames();
+          await ctx.reply(
+            `Paddock not found: ${moveData.name}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const data = await moveHorseIntoPaddock({
+          horseId: horse.id,
+          paddockId: paddock.id,
+          enteredAt: moveData.eventDate,
+          entryNotes: moveData.notes || null,
+          source: 'telegram',
+          telegramUserId,
+        });
+
+        await ctx.reply(
+          `Grazing move in recorded ✅
+
+Horse: ${data.horse.name}
+Paddock: ${data.paddock.name}
+Entered: ${formatDateForReply(data.grazing_event.entered_at)}
+Current occupancy: ${data.paddock_occupancy_count}
+${moveData.notes ? `Notes: ${moveData.notes}\n` : ''}Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
+      // MOVE OUT
+      // move out <horse name> <paddock name> [YYYY-MM-DD] [notes...]
+      // -----------------------------
+      if (lowerMessage.startsWith('move out ')) {
+        const remainder = messageText.slice('move out '.length).trim();
+        const allHorses = await listHorseNames();
+        const matchedHorseName = findLongestPrefixMatch(remainder, allHorses);
+
+        if (!matchedHorseName) {
+          await ctx.reply(
+            `Horse not found.
+
+Available horses:
+${allHorses.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const horse = await findHorseByName(matchedHorseName);
+        const afterHorse = remainder.slice(matchedHorseName.length).trim();
+        let moveData;
+
+        try {
+          moveData = parseNamedSegmentWithOptionalDateAndNotes(afterHorse);
+        } catch (error) {
+          await ctx.reply(error.message);
+          continue;
+        }
+
+        if (!moveData.name) {
+          await ctx.reply('Use: move out <horse name> <paddock name> [YYYY-MM-DD] [notes]');
+          continue;
+        }
+
+        const paddock = await findPaddockByName(moveData.name);
+
+        if (!paddock) {
+          const paddocks = await listPaddockNames();
+          await ctx.reply(
+            `Paddock not found: ${moveData.name}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const data = await moveHorseOutOfPaddock({
+          horseId: horse.id,
+          paddockId: paddock.id,
+          exitedAt: moveData.eventDate,
+          exitNotes: moveData.notes || null,
+        });
+
+        await ctx.reply(
+          `Grazing move out recorded ✅
+
+Horse: ${data.horse.name}
+Paddock: ${data.paddock.name}
+Entered: ${formatDateForReply(data.grazing_event.entered_at)}
+Exited: ${formatDateForReply(data.grazing_event.exited_at)}
+Days on paddock: ${data.grazing_event.grazing_days}
+${moveData.notes ? `Notes: ${moveData.notes}\n` : ''}Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
       // HISTORY SUMMARY / FULL
       // history <horse name>
       // history full <horse name>
@@ -526,6 +1220,31 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
           );
           continue;
         }
+
+        await ensureHorseProfileColumns();
+        const horseProfileResult = await pool.query(
+          `
+          SELECT
+            id,
+            name,
+            date_of_birth,
+            color,
+            activity,
+            sex,
+            training_status,
+            CASE
+              WHEN date_of_birth IS NULL THEN NULL
+              ELSE DATE_PART('year', AGE(CURRENT_DATE, date_of_birth))::int
+            END AS age_years
+          FROM horses
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [horse.id]
+        );
+        const horseProfile = horseProfileResult.rows[0] || null;
+        const horseDisplayName = horseProfile?.name || horse.name;
+        const horseProfileBlock = buildHorseProfileBlockForReply(horseProfile);
 
         // -----------------------------
         // QUICK SUMMARY
@@ -626,8 +1345,15 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
             `,
             [horse.id]
           );
+          const [currentGrazing, grazingHistoryRows] = await Promise.all([
+            getHorseCurrentGrazing(horse.id),
+            listGrazingHistory({ horseId: horse.id, limit: 1 }),
+          ]);
 
-          let reply = `Horse history: ${horse.name}\n`;
+          let reply = `Horse history: ${horseDisplayName}\n`;
+          if (horseProfileBlock) {
+            reply += `\n\n${horseProfileBlock}`;
+          }
 
           if (lastFeedResult.rows.length > 0) {
             const feed = lastFeedResult.rows[0];
@@ -668,6 +1394,29 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
 - No health records`;
           }
 
+          if (currentGrazing) {
+            reply += `\n\nCurrent paddock
+- ${currentGrazing.paddock_name}
+- entered: ${formatDateForReply(currentGrazing.entered_at)}
+- days on paddock: ${currentGrazing.grazing_days}`;
+            if (currentGrazing.source_group_name) {
+              reply += `\n- group move: ${currentGrazing.source_group_name}`;
+            }
+          } else if (grazingHistoryRows.length > 0) {
+            const grazingRow = grazingHistoryRows[0];
+            reply += `\n\nLast grazing
+- ${grazingRow.paddock_name}
+- in: ${formatDateForReply(grazingRow.entered_at)}
+- out: ${formatDateForReply(grazingRow.exited_at)}
+- days on paddock: ${grazingRow.grazing_days}`;
+            if (grazingRow.source_group_name) {
+              reply += `\n- group move: ${grazingRow.source_group_name}`;
+            }
+          } else {
+            reply += `\n\nLast grazing
+- No grazing records`;
+          }
+
           if (lastTreatmentPlanResult.rows.length > 0) {
             const plan = lastTreatmentPlanResult.rows[0];
             reply += `\n\nLast treatment plan
@@ -691,7 +1440,7 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
           }
 
           reply += `\n\nFor full timeline use:
-- history full ${horse.name}`;
+- history full ${horseDisplayName}`;
 
           await ctx.reply(reply);
           continue;
@@ -742,6 +1491,32 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
             UNION ALL
 
             SELECT
+              COALESCE(ge.exited_at::timestamp, ge.entered_at::timestamp) AS sort_at,
+              'grazing' AS category,
+              CONCAT(
+                p.name,
+                ' | in: ',
+                ge.entered_at::text,
+                ' | out: ',
+                COALESCE(ge.exited_at::text, 'Current'),
+                ' | days: ',
+                CASE
+                  WHEN ge.exited_at IS NULL
+                    THEN GREATEST(1, (CURRENT_DATE - ge.entered_at) + 1)
+                  ELSE GREATEST(1, (ge.exited_at - ge.entered_at) + 1)
+                END,
+                COALESCE(CONCAT(' | group: ', sg.name), ''),
+                COALESCE(CONCAT(' | note: ', ge.entry_notes), ''),
+                COALESCE(CONCAT(' | exit note: ', ge.exit_notes), '')
+              ) AS detail
+            FROM grazing_events ge
+            JOIN paddocks p ON p.id = ge.paddock_id
+            LEFT JOIN horse_groups sg ON sg.id = ge.source_group_id
+            WHERE ge.horse_id = $1
+
+            UNION ALL
+
+            SELECT
               COALESCE(tp.start_date::timestamp, tp.created_at) AS sort_at,
               'treatment_plan' AS category,
               CONCAT(
@@ -769,13 +1544,13 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
 
           ) history_rows
           ORDER BY sort_at DESC
-          LIMIT 50
+          LIMIT 120
           `,
           [horse.id]
         );
 
         if (fullHistoryResult.rows.length === 0) {
-          await ctx.reply(`No history records found for ${horse.name}.`);
+          await ctx.reply(`No history records found for ${horseDisplayName}.`);
           continue;
         }
 
@@ -789,12 +1564,15 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
 
         // Telegram messages can get too long, so split if needed
         const chunks = [];
-        let currentChunk = `Full history: ${horse.name}\n\n`;
+        let currentChunk = `Full history: ${horseDisplayName}\n\n`;
+        if (horseProfileBlock) {
+          currentChunk += `${horseProfileBlock}\n\n`;
+        }
 
         for (const line of lines) {
           if ((currentChunk + line + '\n').length > 3500) {
             chunks.push(currentChunk);
-            currentChunk = `Full history: ${horse.name} (continued)\n\n`;
+            currentChunk = `Full history: ${horseDisplayName} (continued)\n\n`;
           }
           currentChunk += `${line}\n`;
         }
@@ -1310,6 +2088,128 @@ Feed event ID: ${feedEventResult.rows[0].id}`
         continue;
       }
 
+            // -----------------------------
+            // RAIN TODAY
+            // -----------------------------
+            if (lowerMessage === 'rain today') {
+              const result = await pool.query(
+                `
+                SELECT event_date, rain_mm, notes
+                FROM rain_registry
+                WHERE event_date = CURRENT_DATE
+                LIMIT 1
+                `
+              );
+
+              if (result.rows.length === 0) {
+                await ctx.reply(`No rain saved for today (${todayDateString()}).`);
+                continue;
+              }
+
+              const row = result.rows[0];
+              await ctx.reply(
+                `Rain today\n\nDate: ${formatDateForReply(row.event_date)}\nRain: ${Number(row.rain_mm)} mm${row.notes ? `\nNotes: ${row.notes}` : ''}`
+              );
+              continue;
+            }
+
+            // -----------------------------
+            // RAIN HISTORY
+            // rain history
+            // rain history 30
+            // -----------------------------
+            if (lowerMessage === 'rain history' || lowerMessage.startsWith('rain history ')) {
+              const rawLimit = messageText.slice('rain history'.length).trim();
+              const limit = Math.min(parsePositiveInt(rawLimit, 20), 100);
+
+              const result = await pool.query(
+                `
+                SELECT event_date, rain_mm, notes
+                FROM rain_registry
+                ORDER BY event_date DESC, id DESC
+                LIMIT $1
+                `,
+                [limit]
+              );
+
+              if (result.rows.length === 0) {
+                await ctx.reply('No rain records found.');
+                continue;
+              }
+
+              const lines = result.rows.map((row) => {
+                return `- ${formatDateForReply(row.event_date)}: ${Number(row.rain_mm)} mm${row.notes ? ` | ${row.notes}` : ''}`;
+              });
+
+              await ctx.reply(`Rain history (latest ${limit})\n\n${lines.join('\n')}`);
+              continue;
+            }
+
+            // -----------------------------
+            // RAIN SAVE / UPDATE
+            // rain <mm> [YYYY-MM-DD] [notes...]
+            // -----------------------------
+            if (lowerMessage.startsWith('rain ')) {
+              const remainder = messageText.slice('rain '.length).trim();
+
+              if (!remainder) {
+                await ctx.reply('Use: rain <mm> [YYYY-MM-DD] [notes]');
+                continue;
+              }
+
+              const rainParts = remainder.split(/\s+/).filter(Boolean);
+              const rainMm = Number(rainParts[0]);
+
+              if (!Number.isFinite(rainMm) || rainMm < 0) {
+                await ctx.reply('Rain must be a number >= 0. Example: rain 12.5 2026-04-12 heavy');
+                continue;
+              }
+
+              let eventDate = todayDateString();
+              let notesStartIndex = 1;
+
+              if (rainParts.length > 1 && looksLikeDateString(rainParts[1])) {
+                if (!isValidDateString(rainParts[1])) {
+                  await ctx.reply(`Invalid calendar date: ${rainParts[1]}`);
+                  continue;
+                }
+
+                eventDate = rainParts[1];
+                notesStartIndex = 2;
+              }
+
+              const notes = rainParts.slice(notesStartIndex).join(' ').trim();
+
+              const upsertResult = await pool.query(
+                `
+                INSERT INTO rain_registry (
+                  event_date,
+                  rain_mm,
+                  source,
+                  notes,
+                  telegram_user_id
+                )
+                VALUES ($1, $2, 'telegram', $3, $4)
+                ON CONFLICT (event_date) DO UPDATE
+                SET rain_mm = EXCLUDED.rain_mm,
+                    source = EXCLUDED.source,
+                    notes = EXCLUDED.notes,
+                    telegram_user_id = EXCLUDED.telegram_user_id,
+                    updated_at = NOW()
+                RETURNING event_date, rain_mm, notes
+                `,
+                [eventDate, rainMm, notes || null, telegramUserId]
+              );
+
+              const saved = upsertResult.rows[0];
+
+              await ctx.reply(
+                `Rain saved ✅\n\nDate: ${formatDateForReply(saved.event_date)}\nRain: ${Number(saved.rain_mm)} mm${saved.notes ? `\nNotes: ${saved.notes}` : ''}\nRaw message ID: ${rawMessageId}`
+              );
+              continue;
+            }
+
+            
       // -----------------------------
       // DEWORM DUE
       // -----------------------------
@@ -2163,6 +3063,10 @@ Raw message ID: ${rawMessageId}`
     }
   } catch (error) {
     console.error('ERROR:', error);
+    if (error?.statusCode && error.message) {
+      await ctx.reply(error.message);
+      return;
+    }
     await ctx.reply('Error processing message.');
   }
 });

@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Farm Bot Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <div class="background-shape shape-a"></div>
+    <div class="background-shape shape-b"></div>
+
+    <main class="dashboard">
+      <header class="dashboard-header">
+        <div>
+          <p class="eyebrow">Desktop Control Panel</p>
+          <h1>Farm Bot Admin</h1>
+          <p class="subtext">Live operational view for stock, reminders, and horse activity.</p>
+        </div>
+
+        <form id="auth-form" class="toolbar">
+          <label id="login-username-label" for="login-username">Admin User</label>
+          <input
+            id="login-username"
+            name="username"
+            type="text"
+            autocomplete="off"
+            placeholder="admin"
+          />
+          <label id="login-password-label" for="login-password">Password</label>
+          <input
+            id="login-password"
+            name="password"
+            type="password"
+            autocomplete="off"
+            placeholder="Enter password"
+          />
+          <button id="login-btn" type="submit">Login</button>
+          <button id="logout-btn" type="button" class="hidden">Logout</button>
+          <button id="refresh-btn" type="button">Refresh</button>
+        </form>
+      </header>
+
+      <section class="status-row">
+        <p id="status-message">Loading dashboard...</p>
+        <p id="last-updated">-</p>
+      </section>
+
+      <section class="summary-toolbar">
+        <button id="summary-edit-toggle-btn" type="button">Edit Quick View</button>
+        <button id="summary-reset-btn" type="button">Reset Quick View</button>
+      </section>
+
+      <section id="summary-editor" class="summary-editor hidden">
+        <p>Choose which quick-view blocks to show, rename them, and reorder.</p>
+        <div id="summary-editor-list"></div>
+      </section>
+
+      <section id="summary-cards" class="summary-grid"></section>
+
+      <section class="panel action-hub-panel">
+        <h2>Action Center</h2>
+        <p class="action-hub-subtext">
+          All write actions live here. The modules below are your read-only operational views.
+        </p>
+
+        <div class="action-hub-grid">
+          <article class="action-card">
+            <h3>Horses & Training</h3>
+
+            <form id="horse-add-form" class="action-form compact">
+              <label for="horse-add-input">Add Horse</label>
+              <input id="horse-add-input" name="horseName" placeholder="Horse name" required />
+              <button type="submit">Add Horse</button>
+            </form>
+
+            <form id="horse-rename-form" class="action-form compact">
+              <label for="horse-rename-select">Rename Horse</label>
+              <select id="horse-rename-select" name="horseId"></select>
+              <input id="horse-rename-input" name="newName" placeholder="New horse name" required />
+              <button type="submit">Rename</button>
+            </form>
+
+            <form id="training-status-form" class="action-form compact">
+              <label for="training-horse-select">Training Status</label>
+              <select id="training-horse-select" name="horseId"></select>
+              <select id="training-status-select" name="trainingStatus">
+                <option value="">No status</option>
+                <option value="in training">In Training</option>
+                <option value="breaking in">Breaking In</option>
+              </select>
+              <button type="submit">Save Status</button>
+            </form>
+          </article>
+
+          <article class="action-card">
+            <h3>Paddocks</h3>
+            <p class="action-card-note">
+              Keep paddock setup here. Group moves are the normal workflow now, so individual horse
+              moves are tucked below for rare corrections.
+            </p>
+
+            <form id="paddock-save-form" class="action-form">
+              <label for="paddock-name-input">Paddock Name</label>
+              <input id="paddock-name-input" name="paddockName" placeholder="Potrero 1" required />
+
+              <label for="paddock-zone-input">Zone</label>
+              <input id="paddock-zone-input" name="zone" placeholder="North / River / Upper" />
+
+              <label for="paddock-size-input">Size (ha)</label>
+              <input
+                id="paddock-size-input"
+                name="sizeHa"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="12.5"
+              />
+
+              <label for="paddock-active-select">Status</label>
+              <select id="paddock-active-select" name="active">
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+
+              <label for="paddock-notes-input">Notes</label>
+              <input id="paddock-notes-input" name="notes" placeholder="water, shade, narrow gate..." />
+
+              <button class="full-width" type="submit">Save Paddock</button>
+            </form>
+
+            <details class="action-card-details">
+              <summary>Manual Single-Horse Move</summary>
+              <p class="action-card-note">
+                Use this only when one horse needs a one-off correction outside the normal group
+                move flow.
+              </p>
+
+              <form id="grazing-move-in-form" class="action-form">
+                <label for="grazing-move-in-horse-select">Move In Horse</label>
+                <select id="grazing-move-in-horse-select" name="horseId"></select>
+
+                <label for="grazing-move-in-paddock-select">Paddock</label>
+                <select id="grazing-move-in-paddock-select" name="paddockId"></select>
+
+                <label for="grazing-move-in-date-input">Entry Date</label>
+                <input id="grazing-move-in-date-input" name="eventDate" type="date" />
+
+                <label for="grazing-move-in-notes-input">Notes</label>
+                <input
+                  id="grazing-move-in-notes-input"
+                  name="notes"
+                  placeholder="fresh pasture, moved after rain..."
+                />
+
+                <button class="full-width" type="submit">Move In</button>
+              </form>
+
+              <form id="grazing-move-out-form" class="action-form">
+                <label for="grazing-move-out-horse-select">Move Out Horse</label>
+                <select id="grazing-move-out-horse-select" name="horseId"></select>
+
+                <label for="grazing-move-out-date-input">Exit Date</label>
+                <input id="grazing-move-out-date-input" name="eventDate" type="date" />
+
+                <label for="grazing-move-out-notes-input">Notes</label>
+                <input
+                  id="grazing-move-out-notes-input"
+                  name="notes"
+                  placeholder="rest cycle, moved to another lot..."
+                />
+
+                <button class="full-width" type="submit">Move Out</button>
+              </form>
+            </details>
+          </article>
+
+          <article class="action-card action-card-span-full">
+            <h3>Horse Groups</h3>
+
+            <div class="action-section-grid">
+              <div class="action-section-stack">
+                <section class="action-section-card">
+                  <h4>Group Details</h4>
+
+                  <form id="horse-group-save-form" class="action-form action-form-stacked">
+                    <label for="horse-group-name-input">Group Name</label>
+                    <input id="horse-group-name-input" name="groupName" placeholder="Manada" required />
+
+                    <label for="horse-group-active-select">Status</label>
+                    <select id="horse-group-active-select" name="active">
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </select>
+
+                    <label for="horse-group-notes-input">Notes</label>
+                    <input
+                      id="horse-group-notes-input"
+                      name="notes"
+                      placeholder="broodmares, polo string, sick bay..."
+                    />
+
+                    <button class="full-width" type="submit">Save Group</button>
+                  </form>
+                </section>
+
+                <section class="action-section-card">
+                  <h4>Assign Members</h4>
+
+                  <form id="horse-group-members-form" class="action-form action-form-stacked">
+                    <label for="horse-group-members-select">Assign Group</label>
+                    <select id="horse-group-members-select" name="groupId"></select>
+
+                    <label for="horse-group-members-search-input">Find Horse</label>
+                    <input
+                      id="horse-group-members-search-input"
+                      type="search"
+                      placeholder="Search horses..."
+                      autocomplete="off"
+                    />
+
+                    <label>Horses In Group</label>
+                    <div class="full-span">
+                      <p id="horse-group-members-summary" class="action-form-hint">
+                        No horses selected.
+                      </p>
+                      <div id="horse-group-members-horses-list" class="checkbox-list" role="group"></div>
+                    </div>
+
+                    <button class="full-width" type="submit">Save Members</button>
+                  </form>
+                  <p class="action-form-hint">
+                    Use the checkboxes to add or remove horses without losing the current list.
+                  </p>
+                </section>
+              </div>
+
+              <div class="action-section-stack">
+                <section class="action-section-card">
+                  <h4>Move Group In</h4>
+
+                  <form id="grazing-group-move-in-form" class="action-form action-form-stacked">
+                    <label for="grazing-group-move-in-group-select">Move In Group</label>
+                    <select id="grazing-group-move-in-group-select" name="groupId"></select>
+
+                    <label for="grazing-group-move-in-paddock-select">Paddock</label>
+                    <select id="grazing-group-move-in-paddock-select" name="paddockId"></select>
+
+                    <label for="grazing-group-move-in-date-input">Entry Date</label>
+                    <input id="grazing-group-move-in-date-input" name="eventDate" type="date" />
+
+                    <label for="grazing-group-move-in-notes-input">Notes</label>
+                    <input
+                      id="grazing-group-move-in-notes-input"
+                      name="notes"
+                      placeholder="whole group moved after rain..."
+                    />
+
+                    <button class="full-width" type="submit">Move Group In</button>
+                  </form>
+                </section>
+
+                <section class="action-section-card">
+                  <h4>Move Group Out</h4>
+
+                  <form id="grazing-group-move-out-form" class="action-form action-form-stacked">
+                    <label for="grazing-group-move-out-group-select">Move Out Group</label>
+                    <select id="grazing-group-move-out-group-select" name="groupId"></select>
+
+                    <label for="grazing-group-move-out-paddock-select">Paddock</label>
+                    <select id="grazing-group-move-out-paddock-select" name="paddockId"></select>
+
+                    <label for="grazing-group-move-out-date-input">Exit Date</label>
+                    <input id="grazing-group-move-out-date-input" name="eventDate" type="date" />
+
+                    <label for="grazing-group-move-out-notes-input">Notes</label>
+                    <input
+                      id="grazing-group-move-out-notes-input"
+                      name="notes"
+                      placeholder="rotation complete, moving to rest..."
+                    />
+
+                    <button class="full-width" type="submit">Move Group Out</button>
+                  </form>
+                </section>
+              </div>
+            </div>
+          </article>
+
+          <article class="action-card">
+            <h3>Feed & Inventory</h3>
+
+            <form id="stock-action-form" class="action-form">
+              <label for="stock-action-type">Stock Action</label>
+              <select id="stock-action-type" name="action">
+                <option value="set">Set</option>
+                <option value="add">Add</option>
+                <option value="use">Use</option>
+              </select>
+
+              <label for="stock-item-input">Feed Item</label>
+              <input id="stock-item-input" name="itemName" list="feed-item-options" required />
+
+              <label for="stock-quantity-input">Quantity</label>
+              <input
+                id="stock-quantity-input"
+                name="quantity"
+                type="number"
+                step="0.01"
+                min="0"
+                required
+              />
+
+              <label for="stock-unit-input">Unit</label>
+              <input id="stock-unit-input" name="unit" placeholder="kg / bale / bag" required />
+
+              <label for="stock-date-input">Date (optional)</label>
+              <input id="stock-date-input" name="eventDate" type="date" />
+
+              <label for="stock-notes-input">Notes (optional)</label>
+              <input id="stock-notes-input" name="notes" placeholder="purchase, opened bale..." />
+
+              <button type="submit">Apply Stock Action</button>
+            </form>
+
+            <form id="feed-item-save-form" class="action-form compact">
+              <label for="feed-item-name-input">Save Feed Item</label>
+              <input
+                id="feed-item-name-input"
+                name="itemName"
+                list="feed-item-options"
+                placeholder="Feed name"
+                required
+              />
+              <input
+                id="feed-item-stock-input"
+                name="currentStock"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Stock"
+                required
+              />
+              <input id="feed-item-unit-input" name="unit" placeholder="Unit" required />
+              <button type="submit">Create / Update</button>
+            </form>
+
+            <form id="feed-entry-add-form" class="action-form compact">
+              <label for="feed-entry-horse-select">Add Feed Entry</label>
+              <select id="feed-entry-horse-select" name="horseId"></select>
+              <input
+                id="feed-entry-item-input"
+                name="itemName"
+                list="feed-item-options"
+                placeholder="Feed item"
+                required
+              />
+              <input
+                id="feed-entry-quantity-input"
+                name="quantity"
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="Qty"
+                required
+              />
+              <input id="feed-entry-unit-input" name="unit" placeholder="Unit" required />
+              <input id="feed-entry-date-input" name="eventDate" type="date" />
+              <button type="submit">Save Feed Entry</button>
+            </form>
+          </article>
+
+          <article class="action-card">
+            <h3>Deworm & Farrier</h3>
+
+            <form id="deworm-event-add-form" class="action-form">
+              <label for="deworm-horse-select">Horse</label>
+              <select id="deworm-horse-select" name="horseId"></select>
+
+              <label for="deworm-product-input">Product</label>
+              <input
+                id="deworm-product-input"
+                name="productName"
+                placeholder="Product name"
+                required
+              />
+
+              <label for="deworm-date-input">First Dose Date</label>
+              <input id="deworm-date-input" name="eventDate" type="date" required />
+
+              <label for="deworm-second-dose-input">Second Dose Date</label>
+              <input id="deworm-second-dose-input" name="secondDoseDate" type="date" required />
+              <button class="full-width" type="submit">Save Deworm Cycle</button>
+              <input id="deworm-next-due-input" name="nextDueDate" type="hidden" />
+            </form>
+            <p class="action-form-hint">
+              Enter first and second dose dates together. Next cycle due date is auto-set to 3 months after second dose.
+            </p>
+
+            <form id="farrier-event-add-form" class="action-form compact">
+              <label for="farrier-horse-select">Add Farrier Event</label>
+              <select id="farrier-horse-select" name="horseId"></select>
+              <input
+                id="farrier-service-input"
+                name="serviceType"
+                placeholder="Service type"
+                required
+              />
+              <input id="farrier-date-input" name="eventDate" type="date" />
+              <input id="farrier-next-due-input" name="nextDueDate" type="date" />
+              <button type="submit">Save Farrier Event</button>
+            </form>
+          </article>
+
+          <article class="action-card">
+            <h3>Horse Profile</h3>
+            <div class="history-toolbar action-toolbar">
+              <label for="horse-profile-select">Selected Horse</label>
+              <select id="horse-profile-select"></select>
+            </div>
+            <p class="action-form-hint">This stays synced with the horse picked in Horse History.</p>
+
+            <form id="horse-profile-form" class="action-form horse-profile-form">
+              <input id="horse-profile-id" name="horseId" type="hidden" />
+
+              <label for="horse-profile-name">Name</label>
+              <input id="horse-profile-name" name="horseName" required />
+
+              <label for="horse-profile-dob">Date of Birth</label>
+              <input id="horse-profile-dob" name="dateOfBirth" type="date" />
+
+              <label for="horse-profile-age">Age</label>
+              <input id="horse-profile-age" name="ageYears" readonly placeholder="Calculated" />
+
+              <label for="horse-profile-color">Color</label>
+              <select id="horse-profile-color" name="color">
+                <option value="">-</option>
+                <option value="bay">Bay</option>
+                <option value="gray">Gray</option>
+                <option value="black">Black</option>
+                <option value="chestnut">Chestnut</option>
+                <option value="dune">Dune</option>
+                <option value="dark bay">Dark Bay</option>
+                <option value="blue roan">Blue Roan</option>
+              </select>
+
+              <label for="horse-profile-activity">Activity</label>
+              <select id="horse-profile-activity" name="activity">
+                <option value="">-</option>
+                <option value="foal">Foal</option>
+                <option value="colt">Colt</option>
+                <option value="broke horse">Broke Horse</option>
+                <option value="new horse">New Horse</option>
+                <option value="polo pony">Polo Pony</option>
+                <option value="ranch horse">Ranch Horse</option>
+                <option value="brood mare">Brood Mare</option>
+                <option value="brood stallion">Brood Stallion</option>
+              </select>
+
+              <label for="horse-profile-sex">Sex</label>
+              <select id="horse-profile-sex" name="sex">
+                <option value="">-</option>
+                <option value="mare">Mare</option>
+                <option value="stallion">Stallion</option>
+                <option value="gelding">Gelding</option>
+                <option value="filly">Filly</option>
+                <option value="unknown">Unknown</option>
+              </select>
+
+              <label for="horse-profile-training-status">Training Status</label>
+              <select id="horse-profile-training-status" name="trainingStatus">
+                <option value="">-</option>
+                <option value="in training">In Training</option>
+                <option value="breaking in">Breaking In</option>
+              </select>
+
+              <button type="submit">Save Horse Profile</button>
+            </form>
+            <p id="horse-profile-message" class="action-message">
+              Choose a horse here or in Horse History to edit its profile.
+            </p>
+          </article>
+
+          <div class="action-card-stack">
+            <article class="action-card">
+              <h3>Horse Health</h3>
+
+              <form id="health-event-add-form" class="action-form compact">
+                <label for="health-horse-select">Add Health Event</label>
+                <select id="health-horse-select" name="horseId"></select>
+                <input id="health-type-input" name="eventType" placeholder="Type" required />
+                <input
+                  id="health-description-input"
+                  name="description"
+                  placeholder="Description"
+                  required
+                />
+                <input id="health-date-input" name="eventDate" type="date" />
+                <input id="health-notes-input" name="notes" placeholder="Notes (optional)" />
+                <button type="submit">Save Health Event</button>
+              </form>
+            </article>
+
+            <article class="action-card">
+              <h3>Rain Registry</h3>
+
+              <form id="rain-save-form" class="action-form compact">
+                <label for="rain-date-input">Save Rain</label>
+                <input id="rain-date-input" name="eventDate" type="date" />
+                <input
+                  id="rain-mm-input"
+                  name="rainMm"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="Rain (mm)"
+                  required
+                />
+                <input id="rain-notes-input" name="notes" placeholder="Notes (optional)" />
+                <button type="submit">Save Rain</button>
+              </form>
+            </article>
+          </div>
+        </div>
+
+        <p id="action-message" class="action-message">No pending admin actions.</p>
+      </section>
+
+      <datalist id="feed-item-options"></datalist>
+
+      <section class="panel-grid">
+        <article id="panel-horse-history" class="panel panel-span-full">
+          <h2>Horse History</h2>
+          <div class="history-toolbar">
+            <label for="horse-select">Horse</label>
+            <select id="horse-select"></select>
+          </div>
+          <p class="history-focus-line">
+            Showing history for <strong id="horse-history-selected-name">-</strong>
+          </p>
+          <p id="horse-history-current-grazing" class="history-focus-line subtle">
+            Not currently assigned to a paddock.
+          </p>
+
+          <div class="horse-history-grid">
+            <article class="mini-history-card">
+              <h3>Feed History</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Feed</th>
+                      <th>Amount</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="horse-feed-history-body"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="mini-history-card">
+              <h3>Deworming History</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>First Dose</th>
+                      <th>Product</th>
+                      <th>Second Dose</th>
+                      <th>Next Due</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="horse-deworming-history-body"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="mini-history-card">
+              <h3>Farrier History</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Service</th>
+                      <th>Next Due</th>
+                    </tr>
+                  </thead>
+                  <tbody id="horse-farrier-history-body"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="mini-history-card">
+              <h3>Health History</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Type</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody id="horse-health-history-body"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="mini-history-card">
+              <h3>Grazing History</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Paddock</th>
+                      <th>Entered</th>
+                      <th>Exited</th>
+                      <th>Days</th>
+                    </tr>
+                  </thead>
+                  <tbody id="horse-grazing-history-body"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+
+          <h3 class="timeline-title">Full Timeline</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Category</th>
+                  <th>Detail</th>
+                </tr>
+              </thead>
+              <tbody id="horse-history-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article id="panel-horse-groups-status" class="panel panel-span-full">
+          <h2>Horse Groups</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Group</th>
+                  <th>Status</th>
+                  <th>Members</th>
+                  <th>Current Paddocks</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody id="horse-group-status-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article id="panel-paddock-status" class="panel panel-span-full">
+          <h2>Paddock Status</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Paddock</th>
+                  <th>Zone</th>
+                  <th>Status</th>
+                  <th>Occupant</th>
+                  <th>Since</th>
+                  <th>Days On</th>
+                  <th>Rest Days</th>
+                </tr>
+              </thead>
+              <tbody id="paddock-status-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article class="panel panel-span-full">
+          <h2>Grazing History</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Paddock</th>
+                  <th>Horse</th>
+                  <th>Entered</th>
+                  <th>Exited</th>
+                  <th>Days</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody id="grazing-history-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article id="panel-in-training" class="panel">
+          <h2>Horses In Training</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Activity</th>
+                  <th>Age</th>
+                </tr>
+              </thead>
+              <tbody id="horses-in-training-body"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article id="panel-breaking-in" class="panel">
+          <h2>Horses Breaking In</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Activity</th>
+                  <th>Age</th>
+                </tr>
+              </thead>
+              <tbody id="horses-breaking-in-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article id="panel-deworming-alerts" class="panel">
+          <h2>Deworming Alerts</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Horse</th>
+                  <th>Product</th>
+                  <th>Next Due</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="deworming-body"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article id="panel-farrier-alerts" class="panel">
+          <h2>Farrier Alerts</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Horse</th>
+                  <th>Service</th>
+                  <th>Next Due</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="farrier-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <h2>Deworming History Registry</h2>
+        <div class="history-toolbar">
+          <label for="deworm-history-horse-filter">Horse</label>
+          <select id="deworm-history-horse-filter">
+            <option value="">All horses</option>
+          </select>
+          <button id="deworm-history-reset-btn" type="button">Show All</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Horse</th>
+                <th>Product</th>
+                <th>First Dose</th>
+                <th>Second Dose</th>
+                <th>Next Due</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="deworm-history-registry-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Farrier History Registry</h2>
+        <div class="history-toolbar">
+          <label for="farrier-history-horse-filter">Horse</label>
+          <select id="farrier-history-horse-filter">
+            <option value="">All horses</option>
+          </select>
+          <button id="farrier-history-reset-btn" type="button">Show All</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Horse</th>
+                <th>Service</th>
+                <th>Date</th>
+                <th>Next Due</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="farrier-history-registry-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel-grid">
+        <article id="panel-low-stock" class="panel">
+          <h2>Low Stock</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Feed Item</th>
+                  <th>Current Stock</th>
+                </tr>
+              </thead>
+              <tbody id="low-stock-body"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article id="panel-current-inventory" class="panel">
+          <h2>Current Inventory</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Feed Item</th>
+                  <th>Stock</th>
+                </tr>
+              </thead>
+              <tbody id="all-stock-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="panel-rain-registry" class="panel">
+        <h2>Rain Registry</h2>
+        <div class="rain-insights">
+          <div id="rain-window-controls" class="rain-window-controls">
+            <button type="button" class="rain-window-btn" data-rain-window="1d">1d</button>
+            <button type="button" class="rain-window-btn is-active" data-rain-window="7d">7d</button>
+            <button type="button" class="rain-window-btn" data-rain-window="4w">4w</button>
+            <button type="button" class="rain-window-btn" data-rain-window="1y">1y</button>
+          </div>
+          <div class="rain-range-row">
+            <button type="button" class="rain-range-nav" aria-hidden="true" tabindex="-1">◀</button>
+            <p id="rain-range-label">-</p>
+          </div>
+          <p class="rain-section-title">Rainfall</p>
+          <div id="rain-chart-wrap" class="rain-chart-wrap">
+            <svg id="rain-chart" viewBox="0 0 960 250" preserveAspectRatio="none"></svg>
+          </div>
+          <div id="rain-chart-legend" class="rain-chart-legend">
+            <span><i class="legend-dot legend-blue"></i>Rain</span>
+            <span><i class="legend-dot legend-green"></i>Rain Target Met</span>
+          </div>
+          <div class="rain-chart-metrics">
+            <p id="rain-chart-total">0 mm total</p>
+            <p id="rain-chart-label">Avg 0 mm/day</p>
+          </div>
+        </div>
+        <h3 class="timeline-title">Year Comparison</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Year</th>
+                <th>Total (mm)</th>
+                <th>Rainy Days</th>
+                <th>Avg/Event (mm)</th>
+                <th>Peak Day (mm)</th>
+                <th>Vs Previous Year</th>
+              </tr>
+            </thead>
+            <tbody id="rain-yearly-body"></tbody>
+          </table>
+        </div>
+        <div id="rain-registry-accordion" class="subpanel">
+          <button
+            id="rain-registry-toggle"
+            class="subpanel-toggle"
+            type="button"
+            aria-expanded="true"
+            aria-controls="rain-registry-content"
+          >
+            Rain Entries
+          </button>
+          <div id="rain-registry-content" class="subpanel-content">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Rain (mm)</th>
+                    <th>Source</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="rain-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Recent Activity</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Category</th>
+                <th>Horse</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody id="activity-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/admin/app.js"></script>
+  </body>
+</html>
