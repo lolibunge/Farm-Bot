@@ -276,6 +276,9 @@ h1 {
   border-radius: var(--radius);
   padding: 14px;
   box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .summary-card-button {
@@ -317,6 +320,47 @@ h1 {
   font-size: 14px;
   font-family: inherit;
   margin-top: 6px;
+}
+
+.back-to-top-btn {
+  position: fixed;
+  right: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 16px 30px rgba(45, 42, 31, 0.2);
+  cursor: pointer;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    filter 160ms ease;
+}
+
+.back-to-top-btn.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.back-to-top-btn:hover {
+  filter: brightness(1.05);
+}
+
+.back-to-top-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
 }
 
 .panel-grid {
@@ -1122,5 +1166,44 @@ tbody tr {
 
   #rain-chart-total {
     font-size: 1.15rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .summary-grid {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 0 2px 8px;
+    margin-bottom: 16px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .summary-grid > * {
+    flex: 0 0 clamp(148px, 42vw, 180px);
+    width: clamp(148px, 42vw, 180px);
+    aspect-ratio: 1 / 1;
+    scroll-snap-align: start;
+  }
+
+  .summary-card {
+    padding: 14px 12px;
+  }
+
+  .summary-card p {
+    font-size: clamp(2rem, 10vw, 2.6rem);
+  }
+
+  .summary-card p.muted {
+    font-size: 13px;
+  }
+
+  .back-to-top-btn {
+    right: 14px;
+    width: 48px;
+    height: 48px;
+    font-size: 22px;
   }
 }

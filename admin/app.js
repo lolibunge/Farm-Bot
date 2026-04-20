@@ -65,6 +65,7 @@ const logoutButton = document.getElementById('logout-btn');
 const refreshButton = document.getElementById('refresh-btn');
 const statusMessage = document.getElementById('status-message');
 const lastUpdated = document.getElementById('last-updated');
+const backToTopButton = document.getElementById('back-to-top-btn');
 
 const summaryCards = document.getElementById('summary-cards');
 const summaryEditToggleButton = document.getElementById('summary-edit-toggle-btn');
@@ -749,6 +750,27 @@ function focusSummaryTarget(targetId) {
   window.setTimeout(() => {
     target.classList.remove('panel-flash');
   }, 1400);
+}
+
+function syncBackToTopVisibility() {
+  if (!backToTopButton) {
+    return;
+  }
+
+  backToTopButton.classList.toggle('is-visible', window.scrollY > 360);
+}
+
+function initBackToTopButton() {
+  if (!backToTopButton) {
+    return;
+  }
+
+  backToTopButton.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  window.addEventListener('scroll', syncBackToTopVisibility, { passive: true });
+  syncBackToTopVisibility();
 }
 
 function renderSummaryEditor() {
@@ -2960,6 +2982,7 @@ async function initializeAdminApp() {
 }
 
 initializeAdminApp();
+initBackToTopButton();
 setInterval(() => {
   if (sessionAuthenticated) {
     loadDashboard();
