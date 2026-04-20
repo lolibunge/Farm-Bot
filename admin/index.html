@@ -196,6 +196,10 @@
                   <h4>Group Details</h4>
 
                   <form id="horse-group-save-form" class="action-form action-form-stacked">
+                    <input id="horse-group-id-input" name="groupId" type="hidden" />
+
+                    <p id="horse-group-edit-status" class="action-form-hint hidden" aria-live="polite"></p>
+
                     <label for="horse-group-name-input">Group Name</label>
                     <input id="horse-group-name-input" name="groupName" placeholder="Manada" required />
 
@@ -212,8 +216,21 @@
                       placeholder="broodmares, polo string, sick bay..."
                     />
 
-                    <button class="full-width" type="submit">Save Group</button>
+                    <div class="full-span action-form-button-row">
+                      <button id="horse-group-save-btn" type="submit">Save Group</button>
+                      <button
+                        id="horse-group-cancel-edit-btn"
+                        class="secondary hidden"
+                        type="button"
+                      >
+                        Cancel Edit
+                      </button>
+                    </div>
                   </form>
+                  <p class="action-form-hint">
+                    Create a new group here, or click <strong>Edit</strong> in the Horse Groups
+                    table below to rename an existing one safely.
+                  </p>
                 </section>
 
                 <section class="action-section-card">
@@ -668,6 +685,7 @@
                   <th>Members</th>
                   <th>Current Paddocks</th>
                   <th>Notes</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="horse-group-status-body"></tbody>

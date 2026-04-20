@@ -648,6 +648,21 @@ h1 {
   cursor: pointer;
 }
 
+.action-form-button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.action-form-button-row button {
+  flex: 1 1 0;
+}
+
+.action-form button.secondary {
+  border: 1px solid #bcab83;
+  background: #f0e4c8;
+  color: #3f341f;
+}
+
 .action-form button.full-width {
   grid-column: 1 / -1;
 }

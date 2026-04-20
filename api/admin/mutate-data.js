@@ -411,9 +411,16 @@ module.exports = async (req, res) => {
     }
 
     if (action === 'horse_group_save') {
+      const groupId = parsePositiveInt(body.groupId);
       const groupName = String(body.groupName || '').trim();
       const notes = String(body.notes || '').trim();
       const active = parseBooleanValue(body.active, true);
+      const rawGroupId = body.groupId == null ? '' : String(body.groupId).trim();
+
+      if (rawGroupId && !groupId) {
+        res.status(400).json({ ok: false, error: 'groupId must be a positive integer' });
+        return;
+      }
 
       if (!groupName) {
         res.status(400).json({ ok: false, error: 'groupName is required' });
@@ -421,6 +428,7 @@ module.exports = async (req, res) => {
       }
 
       const data = await saveHorseGroup({
+        groupId,
         name: groupName,
         notes: notes || null,
         active,

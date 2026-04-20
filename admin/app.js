@@ -133,9 +133,13 @@ const grazingMoveOutHorseSelect = document.getElementById('grazing-move-out-hors
 const grazingMoveOutDateInput = document.getElementById('grazing-move-out-date-input');
 const grazingMoveOutNotesInput = document.getElementById('grazing-move-out-notes-input');
 const horseGroupSaveForm = document.getElementById('horse-group-save-form');
+const horseGroupIdInput = document.getElementById('horse-group-id-input');
 const horseGroupNameInput = document.getElementById('horse-group-name-input');
 const horseGroupActiveSelect = document.getElementById('horse-group-active-select');
 const horseGroupNotesInput = document.getElementById('horse-group-notes-input');
+const horseGroupEditStatus = document.getElementById('horse-group-edit-status');
+const horseGroupSaveButton = document.getElementById('horse-group-save-btn');
+const horseGroupCancelEditButton = document.getElementById('horse-group-cancel-edit-btn');
 const horseGroupMembersForm = document.getElementById('horse-group-members-form');
 const horseGroupMembersSelect = document.getElementById('horse-group-members-select');
 const horseGroupMembersSearchInput = document.getElementById('horse-group-members-search-input');
@@ -663,6 +667,74 @@ function normalizeDateForDateInput(value) {
 
 function findHorseById(horseId) {
   return currentHorseRows.find((row) => String(row.id) === String(horseId)) || null;
+}
+
+function findHorseGroupById(groupId) {
+  return currentHorseGroupRows.find((row) => String(row.id) === String(groupId)) || null;
+}
+
+function clearHorseGroupEditState(options = {}) {
+  const { clearFields = true, focus = false } = options;
+
+  if (horseGroupIdInput) {
+    horseGroupIdInput.value = '';
+  }
+
+  if (horseGroupEditStatus) {
+    horseGroupEditStatus.textContent = '';
+    horseGroupEditStatus.classList.add('hidden');
+  }
+
+  if (horseGroupSaveButton) {
+    horseGroupSaveButton.textContent = 'Save Group';
+  }
+
+  if (horseGroupCancelEditButton) {
+    horseGroupCancelEditButton.classList.add('hidden');
+  }
+
+  if (clearFields) {
+    horseGroupNameInput.value = '';
+    horseGroupActiveSelect.value = 'true';
+    horseGroupNotesInput.value = '';
+  }
+
+  if (focus) {
+    horseGroupNameInput.focus();
+  }
+}
+
+function setHorseGroupEditState(group, options = {}) {
+  if (!group || !horseGroupIdInput) {
+    return;
+  }
+
+  const { scroll = true } = options;
+
+  horseGroupIdInput.value = String(group.id);
+  horseGroupNameInput.value = group.name || '';
+  horseGroupActiveSelect.value = group.active ? 'true' : 'false';
+  horseGroupNotesInput.value = group.notes || '';
+
+  if (horseGroupEditStatus) {
+    horseGroupEditStatus.textContent = `Editing group: ${group.name}`;
+    horseGroupEditStatus.classList.remove('hidden');
+  }
+
+  if (horseGroupSaveButton) {
+    horseGroupSaveButton.textContent = 'Update Group';
+  }
+
+  if (horseGroupCancelEditButton) {
+    horseGroupCancelEditButton.classList.remove('hidden');
+  }
+
+  if (scroll) {
+    horseGroupSaveForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  horseGroupNameInput.focus();
+  horseGroupNameInput.select();
 }
 
 function setActiveHorseSelection(horseId) {
@@ -1640,7 +1712,7 @@ function renderHorseGroupRows(rows) {
   }
 
   if (!rows.length) {
-    horseGroupStatusBody.innerHTML = emptyStateRow(5, 'No groups saved yet.');
+    horseGroupStatusBody.innerHTML = emptyStateRow(6, 'No groups saved yet.');
     return;
   }
 
@@ -1656,6 +1728,16 @@ function renderHorseGroupRows(rows) {
           <td>${escapeHtml(members)}</td>
           <td>${escapeHtml(row.current_paddock_names || '-')}</td>
           <td>${escapeHtml(row.notes || '-')}</td>
+          <td class="row-actions">
+            <button
+              type="button"
+              class="inline-action-btn"
+              data-group-action="edit"
+              data-group-id="${escapeHtml(row.id)}"
+            >
+              Edit
+            </button>
+          </td>
         </tr>
       `;
     })
@@ -2035,6 +2117,7 @@ function clearDashboardView() {
   currentDewormingHistoryRows = [];
   currentFarrierHistoryRows = [];
   currentHorseGroupMemberSelection = new Set();
+  clearHorseGroupEditState();
   lastUpdated.textContent = '-';
   summaryCards.innerHTML = '';
   dewormingBody.innerHTML = emptyStateRow(4, 'Log in to view data.');
@@ -2051,7 +2134,7 @@ function clearDashboardView() {
   }
   activityBody.innerHTML = emptyStateRow(4, 'Log in to view data.');
   if (horseGroupStatusBody) {
-    horseGroupStatusBody.innerHTML = emptyStateRow(5, 'Log in to view data.');
+    horseGroupStatusBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
   }
   paddockStatusBody.innerHTML = emptyStateRow(7, 'Log in to view data.');
   grazingHistoryBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
@@ -2371,6 +2454,32 @@ if (horseGroupMembersHorsesList) {
   });
 }
 
+if (horseGroupStatusBody) {
+  horseGroupStatusBody.addEventListener('click', (event) => {
+    const editButton = event.target.closest('button[data-group-action="edit"]');
+    if (!editButton) {
+      return;
+    }
+
+    const groupId = editButton.getAttribute('data-group-id');
+    const group = findHorseGroupById(groupId);
+    if (!group) {
+      setActionMessage('That group is no longer available to edit.', true);
+      return;
+    }
+
+    setHorseGroupEditState(group);
+    setActionMessage(`Editing group: ${group.name}`);
+  });
+}
+
+if (horseGroupCancelEditButton) {
+  horseGroupCancelEditButton.addEventListener('click', () => {
+    clearHorseGroupEditState({ focus: true });
+    setActionMessage('Group edit canceled.');
+  });
+}
+
 horseFeedHistoryBody.addEventListener('click', async (event) => {
   const button = event.target.closest('button[data-feed-action]');
   if (!button) {
@@ -2537,17 +2646,25 @@ horseGroupSaveForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   try {
+    const editingGroupId = horseGroupIdInput?.value || '';
+    const previousGroup = editingGroupId ? findHorseGroupById(editingGroupId) : null;
+
     const data = await postJson(DATA_MUTATE_API_URL, {
       action: 'horse_group_save',
+      groupId: editingGroupId || undefined,
       groupName: horseGroupNameInput.value.trim(),
       notes: horseGroupNotesInput.value.trim() || undefined,
       active: horseGroupActiveSelect.value,
     });
 
-    horseGroupNameInput.value = '';
-    horseGroupNotesInput.value = '';
-    horseGroupActiveSelect.value = 'true';
-    setActionMessage(`Group ${data.mode === 'created' ? 'saved' : 'updated'}: ${data.group.name}`);
+    clearHorseGroupEditState();
+
+    if (previousGroup && previousGroup.name !== data.group.name) {
+      setActionMessage(`Group renamed: ${previousGroup.name} -> ${data.group.name}`);
+    } else {
+      setActionMessage(`Group ${data.mode === 'created' ? 'saved' : 'updated'}: ${data.group.name}`);
+    }
+
     await loadDashboard();
   } catch (error) {
     if (handleAuthError(error, 'Session expired. Please log in to save groups.')) {
@@ -2969,6 +3086,7 @@ if (grazingGroupMoveInDateInput) {
 if (grazingGroupMoveOutDateInput) {
   grazingGroupMoveOutDateInput.value = todayDate;
 }
+clearHorseGroupEditState();
 
 async function initializeAdminApp() {
   const session = await syncSessionState();
