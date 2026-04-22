@@ -5,6 +5,14 @@ function getSingleQueryValue(value) {
   return value;
 }
 
+function isTruthyQueryValue(value) {
+  const normalized = String(getSingleQueryValue(value) || '')
+    .trim()
+    .toLowerCase();
+
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
 function getBaseUrl(req) {
   const protoHeader = req.headers['x-forwarded-proto'];
   const proto = Array.isArray(protoHeader) ? protoHeader[0] : protoHeader;
@@ -44,14 +52,21 @@ module.exports = async (req, res) => {
   }
 
   const webhookUrl = `${baseUrl}/api/telegram/${process.env.TELEGRAM_WEBHOOK_SECRET}`;
+  const dropPendingUpdates = isTruthyQueryValue(req.query?.drop_pending);
 
   try {
     const result = await bot.telegram.setWebhook(webhookUrl, {
-      drop_pending_updates: true,
+      drop_pending_updates: dropPendingUpdates,
     });
 
     const webhookInfo = await bot.telegram.getWebhookInfo();
-    res.status(200).json({ ok: true, webhookUrl, telegramResult: result, webhookInfo });
+    res.status(200).json({
+      ok: true,
+      webhookUrl,
+      dropPendingUpdates,
+      telegramResult: result,
+      webhookInfo,
+    });
   } catch (error) {
     console.error('TELEGRAM SETUP WEBHOOK ERROR:', error);
     res.status(500).json({ ok: false, error: 'Failed to set webhook' });
