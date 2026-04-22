@@ -1,4 +1,12 @@
 {
+  "functions": {
+    "api/telegram/*.js": {
+      "maxDuration": 30
+    },
+    "api/reminders.js": {
+      "maxDuration": 30
+    }
+  },
   "crons": [
     {
       "path": "/api/reminders",

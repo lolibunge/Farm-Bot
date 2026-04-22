@@ -41,6 +41,11 @@ module.exports = async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET') {
+    res.status(200).json({ ok: true, status: 'alive' });
+    return;
+  }
+
   if (req.method !== 'POST') {
     res.status(405).send('Method Not Allowed');
     return;
