@@ -516,13 +516,13 @@ async function findFeedItemByName(itemName) {
   return result.rows[0] || null;
 }
 
-bot.start(async (ctx) => {
-  await ctx.reply(`Hello!
+const START_MESSAGE = `Hello!
 
 Commands:
 - horse add perla
 - horse list
 - history imperial
+- history full imperial
 - horse grazing imperial
 
 - group add manada
@@ -538,27 +538,44 @@ Commands:
 - move in imperial potrero 1 2026-04-16
 - move out imperial potrero 1 2026-04-20
 
+- stock
+- stock oats
+- stock history oats
+- stock add oats 50 kg
+- stock set alfalfa 11 bale
+- stock use alfalfa 1 bale
+
 - feed imperial oats 2 kg
 - feed fair halo oats 2 kg
 - feed imperial oats 2 kg 2026-03-01
 
+- rain 12.5
+- rain 12.5 2026-04-12 heavy
+- rain today
+- rain history
+- rain history 30
+
 - deworm imperial ivermectin
 - deworm imperial ivermectin 2026-03-12
+- deworm done imperial ivermectin 2026-03-16
 - deworm due
+- deworm history
+- deworm history imperial
 
 - farrier imperial trim
 - farrier imperial trim 2026-03-12
 - farrier due
 
-- stock
-- stock oats
-- stock add oats 50 kg
-- stock set alfalfa 11 bale
-- stock use alfalfa 1 bale
+- health add imperial injury leg-cut 2026-04-12
+- treatment add imperial repen 20cc 2x 5d 2026-04-12
+- dose add imperial repen 2026-04-13 18:00
 
 - Group members are assigned from the admin panel.
 
-You can also send multiple commands in one message using one line per command.`);
+You can also send multiple commands in one message using one line per command.`;
+
+bot.start(async (ctx) => {
+  await ctx.reply(START_MESSAGE);
 });
 
 bot.on('text', async (ctx) => {
@@ -1624,27 +1641,39 @@ ${horses.map((h) => `- ${h}`).join('\n')}`
         }
 
         const feedItem = await findFeedItemByName(itemName);
+        let feedNameForReply = itemName;
+        let updatedStockResult;
+        let stockSetMode = 'updated';
 
         if (!feedItem) {
-          await ctx.reply(`Feed item not found: ${itemName}`);
-          continue;
+          updatedStockResult = await pool.query(
+            `
+            INSERT INTO feed_items (name, unit, current_stock)
+            VALUES ($1, $2, $3)
+            RETURNING name, current_stock, unit
+            `,
+            [itemName, unit, quantity]
+          );
+          feedNameForReply = updatedStockResult.rows[0].name;
+          stockSetMode = 'created';
+        } else {
+          feedNameForReply = feedItem.name;
+          updatedStockResult = await pool.query(
+            `
+            UPDATE feed_items
+            SET current_stock = $1,
+                unit = $2
+            WHERE id = $3
+            RETURNING name, current_stock, unit
+            `,
+            [quantity, unit, feedItem.id]
+          );
         }
 
-        const updatedStockResult = await pool.query(
-          `
-          UPDATE feed_items
-          SET current_stock = $1,
-              unit = $2
-          WHERE id = $3
-          RETURNING current_stock, unit
-          `,
-          [quantity, unit, feedItem.id]
-        );
-
         await ctx.reply(
-          `Stock updated ✅
+          `Stock ${stockSetMode === 'created' ? 'created' : 'updated'} ✅
 
-Feed: ${feedItem.name}
+Feed: ${feedNameForReply}
 Current stock: ${updatedStockResult.rows[0].current_stock} ${updatedStockResult.rows[0].unit}
 Raw message ID: ${rawMessageId}`
         );
