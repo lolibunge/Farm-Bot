@@ -50,7 +50,8 @@ module.exports = async (req, res) => {
       drop_pending_updates: true,
     });
 
-    res.status(200).json({ ok: true, webhookUrl, telegramResult: result });
+    const webhookInfo = await bot.telegram.getWebhookInfo();
+    res.status(200).json({ ok: true, webhookUrl, telegramResult: result, webhookInfo });
   } catch (error) {
     console.error('TELEGRAM SETUP WEBHOOK ERROR:', error);
     res.status(500).json({ ok: false, error: 'Failed to set webhook' });
