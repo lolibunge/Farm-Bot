@@ -650,6 +650,7 @@ module.exports = async (req, res) => {
         member_count: row.member_count,
         members: row.members,
         member_names: row.member_names,
+        current_started_at: row.current_started_at,
         current_paddock_names: paddocksModuleEnabled ? row.current_paddock_names : null,
         grazing_member_count: row.grazing_member_count,
       })),

@@ -13,7 +13,7 @@
     <link rel="icon" type="image/svg+xml" href="/admin/favicon.svg?v=3" />
     <link rel="shortcut icon" href="/admin/favicon.svg?v=3" />
     <link rel="apple-touch-icon" href="/admin/farm-bot-logo.png?v=3" />
-    <link rel="stylesheet" href="/admin/styles.css?v=20260506i" />
+    <link rel="stylesheet" href="/admin/styles.css?v=20260508a" />
   </head>
   <body>
     <div class="background-shape shape-a"></div>
@@ -302,6 +302,7 @@
               Use this to log tractor work, seeding, or fertilizer and optionally set how many days
               the paddock must wait before horses can graze it again. Choose the whole-block option
               when the work should also block all child paddocks under the selected parent paddock.
+              Saved ready days also drive the Pasture ryegrass readiness card on the dashboard.
             </p>
 
             <details class="action-card-details">
@@ -774,6 +775,11 @@
               <div id="horse-feed-calendar-grid" class="feed-calendar-grid"></div>
             </article>
 
+            <article id="horse-history-feed-summary-card" class="mini-history-card">
+              <h3>Feed Summary</h3>
+              <div id="horse-feed-summary" class="feed-summary-panel"></div>
+            </article>
+
             <article id="horse-history-feed-card" class="mini-history-card subpanel">
               <button
                 id="horse-feed-history-toggle"
@@ -785,19 +791,31 @@
                 Feed History
               </button>
               <div id="horse-feed-history-content" class="subpanel-content">
-                <div class="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>When</th>
-                        <th>Feed</th>
-                        <th>Amount</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody id="horse-feed-history-body"></tbody>
-                  </table>
+                <div class="history-toolbar feed-history-filters">
+                  <label for="horse-feed-history-period">Period</label>
+                  <select id="horse-feed-history-period">
+                    <option value="7d">Last 7 days</option>
+                    <option value="today">Today</option>
+                    <option value="30d">Last 30 days</option>
+                    <option value="all">All</option>
+                  </select>
+
+                  <label for="horse-feed-history-slot">Slot</label>
+                  <select id="horse-feed-history-slot">
+                    <option value="all">All</option>
+                    <option value="morning">Morning</option>
+                    <option value="afternoon">Afternoon</option>
+                    <option value="night">Night</option>
+                  </select>
+
+                  <label for="horse-feed-history-source">Source</label>
+                  <select id="horse-feed-history-source">
+                    <option value="all">All</option>
+                    <option value="feed_plan">Feed Plan</option>
+                    <option value="manual">Manual</option>
+                  </select>
                 </div>
+                <div id="horse-feed-history-groups" class="feed-history-groups"></div>
               </div>
             </article>
 
@@ -887,68 +905,29 @@
             </article>
           </div>
 
-          <h3 class="timeline-title">Full Timeline</h3>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Category</th>
-                  <th>Detail</th>
-                </tr>
-              </thead>
-              <tbody id="horse-history-body"></tbody>
-            </table>
-          </div>
+          <h3 class="timeline-title">Activity Timeline</h3>
+          <div id="horse-activity-timeline" class="activity-timeline"></div>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article id="panel-pasture" class="panel panel-span-full">
+          <h2>Pasture</h2>
+          <div id="pasture-overview-body" class="pasture-overview-grid"></div>
         </article>
       </section>
 
       <section class="panel-grid">
         <article id="panel-horse-groups-status" class="panel panel-span-full">
-          <h2>Horse Groups</h2>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Group</th>
-                  <th>Status</th>
-                  <th>Total Horses</th>
-                  <th>Current Paddocks</th>
-                  <th>Notes</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="horse-group-status-body"></tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <section class="panel-grid">
-        <article id="panel-horse-group-history" class="panel panel-span-full">
-          <h2>Horse Group History</h2>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Horse</th>
-                  <th>Group</th>
-                  <th>Started</th>
-                  <th>Ended</th>
-                  <th>Days</th>
-                  <th>Previous Group</th>
-                </tr>
-              </thead>
-              <tbody id="horse-group-history-registry-body"></tbody>
-            </table>
-          </div>
+          <h2>Group Management</h2>
+          <div id="horse-group-status-body" class="group-management-cards"></div>
         </article>
       </section>
 
       <section class="panel-grid">
         <article id="panel-paddock-status" class="panel panel-span-full">
           <h2>Paddock Status</h2>
-          <div class="table-wrap">
+          <div class="table-wrap paddock-status-table-wrap">
             <table>
               <thead>
                 <tr>
@@ -1260,6 +1239,6 @@
       ↑
     </button>
 
-    <script src="/admin/app.js?v=20260506i"></script>
+    <script src="/admin/app.js?v=20260508a"></script>
   </body>
 </html>

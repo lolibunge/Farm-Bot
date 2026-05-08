@@ -154,114 +154,6 @@ module.exports = async (req, res) => {
         SELECT *
         FROM (
           SELECT
-            COALESCE(f.event_date::timestamp, f.created_at) AS sort_at,
-            'feed' AS category,
-            CONCAT(
-              i.name,
-              ' ',
-              f.quantity,
-              ' ',
-              f.unit,
-              COALESCE(CONCAT(' | ', INITCAP(f.feed_slot)), '')
-            ) AS detail
-          FROM feed_events f
-          JOIN feed_items i ON i.id = f.feed_item_id
-          WHERE f.horse_id = $1
-
-          UNION ALL
-
-          SELECT
-            COALESCE(d.event_date::timestamp, d.created_at) AS sort_at,
-            'deworming' AS category,
-            CONCAT(
-              d.product_name,
-              ' | second dose: ',
-              COALESCE(d.second_dose_date::text, 'N/A'),
-              ' | next due: ',
-              COALESCE(d.next_due_date::text, 'N/A')
-            ) AS detail
-          FROM (
-            SELECT
-              de.*,
-              ROW_NUMBER() OVER (
-                PARTITION BY LOWER(de.product_name), COALESCE(de.event_date, de.created_at::date)
-                ORDER BY
-                  CASE WHEN de.second_dose_date IS NULL THEN 1 ELSE 0 END ASC,
-                  de.id DESC
-              ) AS rn
-            FROM deworming_events de
-            WHERE de.horse_id = $1
-          ) d
-          WHERE d.rn = 1
-
-          UNION ALL
-
-          SELECT
-            COALESCE(fr.event_date::timestamp, fr.created_at) AS sort_at,
-            'farrier' AS category,
-            CONCAT(fr.service_type, ' | next due: ', COALESCE(fr.next_due_date::text, 'N/A')) AS detail
-          FROM farrier_events fr
-          WHERE fr.horse_id = $1
-
-          UNION ALL
-
-          SELECT
-            COALESCE(hh.event_date::timestamp, hh.created_at) AS sort_at,
-            'health' AS category,
-            CONCAT(hh.event_type, ' | ', hh.description) AS detail
-          FROM horse_health_events hh
-          WHERE hh.horse_id = $1
-
-          UNION ALL
-
-          SELECT
-            COALESCE(ge.exited_at::timestamp, ge.entered_at::timestamp) AS sort_at,
-            'grazing' AS category,
-            CONCAT(
-              p.name,
-              ' | in: ',
-              ge.entered_at::text,
-              ' | out: ',
-              COALESCE(ge.exited_at::text, 'Current'),
-              ' | days: ',
-              CASE
-                WHEN ge.exited_at IS NULL
-                  THEN GREATEST(1, CURRENT_DATE - ge.entered_at)
-                ELSE GREATEST(1, ge.exited_at - ge.entered_at)
-              END,
-              COALESCE(CONCAT(' | group: ', sg.name), ''),
-              COALESCE(CONCAT(' | note: ', ge.entry_notes), ''),
-              COALESCE(CONCAT(' | exit note: ', ge.exit_notes), '')
-            ) AS detail
-          FROM grazing_events ge
-          JOIN paddocks p ON p.id = ge.paddock_id
-          LEFT JOIN horse_groups sg ON sg.id = ge.source_group_id
-          WHERE ge.horse_id = $1
-
-          UNION ALL
-
-          SELECT
-            COALESCE(hgh.ended_at::timestamp, hgh.started_at::timestamp) AS sort_at,
-            'group' AS category,
-            CONCAT(
-              CASE
-                WHEN hgh.ended_at IS NULL THEN COALESCE(hg.name, hgh.group_name)
-                ELSE COALESCE(hgh.group_name, hg.name)
-              END,
-              ' | in: ',
-              hgh.started_at::text,
-              ' | out: ',
-              COALESCE(hgh.ended_at::text, 'Current'),
-              ' | days: ',
-              GREATEST(1, (COALESCE(hgh.ended_at, CURRENT_DATE) - hgh.started_at) + 1)
-            ) AS detail
-          FROM horse_group_membership_history hgh
-          LEFT JOIN horse_groups hg ON hg.id = hgh.group_id
-          WHERE hgh.horse_id = $1
-
-          UNION ALL
-
-          SELECT
             COALESCE(tp.start_date::timestamp, tp.created_at) AS sort_at,
             'treatment_plan' AS category,
             CONCAT(
@@ -308,8 +200,7 @@ module.exports = async (req, res) => {
         FROM feed_events f
         JOIN feed_items i ON i.id = f.feed_item_id
         WHERE f.horse_id = $1
-        ORDER BY COALESCE(f.event_date, f.created_at::date) DESC, f.id DESC
-        LIMIT 40
+        ORDER BY COALESCE(f.event_date, f.created_at::date) DESC, f.feed_slot ASC NULLS LAST, f.id DESC
         `,
         [horseId]
       ),
