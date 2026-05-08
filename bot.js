@@ -781,28 +781,7 @@ function buildTelegramCommandGuide() {
   ].join('\n');
 }
 
-async function buildStartMessage() {
-  const paddocks = await listPaddockNames();
-  const groups = await listHorseGroups();
-
-  const paddockReference =
-    paddocks.length > 0
-      ? `Quick paddock reference\n${paddocks.map((name) => `- ${name}`).join('\n')}`
-      : 'Quick paddock reference\n- No paddocks registered yet.';
-
-  const groupReference =
-    groups.length > 0
-      ? `Quick group reference\n${groups.map((group) => `- ${group.name}`).join('\n')}`
-      : 'Quick group reference\n- No groups registered yet.';
-
-  return [
-    buildTelegramCommandGuide(),
-    '',
-    paddockReference,
-    '',
-    groupReference,
-  ].join('\n');
-}
+const START_MESSAGE = buildTelegramCommandGuide();
 
 async function syncTelegramMenuCommands() {
   try {
@@ -830,12 +809,12 @@ async function ensureAlertChatRegistration(incomingChatId) {
 
 bot.start(async (ctx) => {
   await ensureAlertChatRegistration(String(ctx.chat.id));
-  await ctx.reply(await buildStartMessage());
+  await ctx.reply(START_MESSAGE);
 });
 
 bot.help(async (ctx) => {
   await ensureAlertChatRegistration(String(ctx.chat.id));
-  await ctx.reply(await buildStartMessage());
+  await ctx.reply(START_MESSAGE);
 });
 
 bot.on('text', async (ctx) => {
@@ -865,7 +844,7 @@ bot.on('text', async (ctx) => {
         lowerMessage === 'commands' ||
         lowerMessage === '/commands'
       ) {
-        await ctx.reply(await buildStartMessage());
+        await ctx.reply(START_MESSAGE);
         continue;
       }
 
