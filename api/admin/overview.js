@@ -4,8 +4,16 @@ const {
   ensurePaddockTables,
   listPaddockStatus,
   listGrazingHistory,
+  listPaddockWorkHistory,
   listHorseGroups,
+  listHorseGroupHistory,
 } = require('../../lib/paddocks');
+const {
+  listAdminModuleSettings,
+  buildAdminModuleEnabledMap,
+  isAdminModuleEnabled,
+} = require('../../lib/admin-modules');
+const { ensureFarmSettingsTable, getFarmSettings } = require('../../lib/farm-settings');
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
 const { toIsoDateString } = require('../../lib/date-helpers');
 const { requireAdminApiAuth } = require('../../lib/admin-auth');
@@ -90,6 +98,25 @@ function classifyDueRows(rows, daysAhead) {
   return { overdue, dueSoon };
 }
 
+function filterRecentActivityRows(rows, enabledModules) {
+  const categoryToModuleKey = {
+    deworming: 'deworm',
+    farrier: 'farrier',
+    health: 'health',
+    treatment_plan: 'health',
+    dose: 'health',
+    stock: 'feed',
+    grazing: 'paddocks',
+    paddock: 'paddocks',
+    rain: 'rain',
+  };
+
+  return rows.filter((row) => {
+    const moduleKey = categoryToModuleKey[String(row.category || '').trim().toLowerCase()];
+    return isAdminModuleEnabled(moduleKey, enabledModules);
+  });
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'GET') {
     res.status(405).json({ ok: false, error: 'Method Not Allowed' });
@@ -103,14 +130,20 @@ module.exports = async (req, res) => {
   try {
     await ensureHorseProfileColumns();
     await ensurePaddockTables();
+    await ensureFarmSettingsTable();
     await ensureRainRegistryTable();
+    const moduleSettings = await listAdminModuleSettings();
+    const farmSettings = await getFarmSettings();
+    const enabledModules = buildAdminModuleEnabledMap(moduleSettings);
 
     const [
       horseCountResult,
       horsesResult,
       paddockStatusRows,
       horseGroupRows,
+      horseGroupHistoryRows,
       grazingHistoryRows,
+      paddockWorkHistoryRows,
       feedItemCountResult,
       lowStockCountResult,
       lowStockResult,
@@ -146,7 +179,9 @@ module.exports = async (req, res) => {
       ),
       listPaddockStatus(),
       listHorseGroups(),
+      listHorseGroupHistory({ limit: 80 }),
       listGrazingHistory({ limit: 120 }),
+      listPaddockWorkHistory({ limit: 120 }),
       pool.query('SELECT COUNT(*)::int AS count FROM feed_items'),
       pool.query('SELECT COUNT(*)::int AS count FROM feed_items WHERE current_stock <= $1', [
         LOW_STOCK_THRESHOLD,
@@ -362,6 +397,22 @@ module.exports = async (req, res) => {
           UNION ALL
 
           SELECT
+            pwe.event_date::timestamp AS sort_at,
+            'paddock' AS category,
+            '-' AS horse_name,
+            CONCAT(
+              p.name,
+              ' | ',
+              REPLACE(INITCAP(REPLACE(pwe.event_type, '_', ' ')), 'Prep', 'Prep'),
+              COALESCE(CONCAT(' | ready: ', pwe.ready_to_graze_on::text), ''),
+              COALESCE(CONCAT(' | ', pwe.notes), '')
+            ) AS detail
+          FROM paddock_work_events pwe
+          JOIN paddocks p ON p.id = pwe.paddock_id
+
+          UNION ALL
+
+          SELECT
             tl.administered_at AS sort_at,
             'dose' AS category,
             h.name AS horse_name,
@@ -378,6 +429,12 @@ module.exports = async (req, res) => {
             '-' AS horse_name,
             CONCAT(r.rain_mm, ' mm', COALESCE(CONCAT(' | ', r.notes), '')) AS detail
           FROM rain_registry r
+          WHERE
+            COALESCE(r.source, 'manual') <> 'weather_sync'
+            AND (
+              r.rain_mm > 0
+              OR COALESCE(NULLIF(TRIM(r.notes), ''), '') <> ''
+            )
         ) activity_rows
         ORDER BY sort_at DESC
         LIMIT 60
@@ -388,8 +445,9 @@ module.exports = async (req, res) => {
         SELECT
           COALESCE(SUM(CASE WHEN event_date = CURRENT_DATE THEN rain_mm END), 0) AS rain_today_mm,
           COALESCE(SUM(CASE WHEN event_date >= CURRENT_DATE - 6 THEN rain_mm END), 0) AS rain_7d_mm,
-          COUNT(*) FILTER (WHERE event_date >= CURRENT_DATE - 6)::int AS rain_days_7
+          COUNT(*) FILTER (WHERE event_date >= CURRENT_DATE - 6 AND rain_mm > 0)::int AS rain_days_7
         FROM rain_registry
+        WHERE COALESCE(source, 'manual') <> 'weather_sync'
         `
       ),
       pool.query(
@@ -398,9 +456,13 @@ module.exports = async (req, res) => {
           id,
           event_date,
           rain_mm,
+          min_temp_c,
+          max_temp_c,
           source,
-          notes
+          notes,
+          weather_source
         FROM rain_registry
+        WHERE COALESCE(source, 'manual') <> 'weather_sync'
         ORDER BY event_date DESC, id DESC
         LIMIT 60
         `
@@ -409,14 +471,19 @@ module.exports = async (req, res) => {
         `
         SELECT
           series_day::date AS event_date,
-          COALESCE(r.rain_mm, 0)::numeric AS rain_mm
+          COALESCE(rain_row.rain_mm, 0)::numeric AS rain_mm,
+          weather_row.min_temp_c,
+          weather_row.max_temp_c
         FROM generate_series(
           CURRENT_DATE - INTERVAL '364 days',
           CURRENT_DATE,
           INTERVAL '1 day'
         ) AS series_day
-        LEFT JOIN rain_registry r
-          ON r.event_date = series_day::date
+        LEFT JOIN rain_registry rain_row
+          ON rain_row.event_date = series_day::date
+         AND COALESCE(rain_row.source, 'manual') <> 'weather_sync'
+        LEFT JOIN rain_registry weather_row
+          ON weather_row.event_date = series_day::date
         ORDER BY series_day ASC
         `
       ),
@@ -425,10 +492,11 @@ module.exports = async (req, res) => {
         SELECT
           EXTRACT(YEAR FROM event_date)::int AS year,
           COALESCE(SUM(rain_mm), 0)::numeric AS total_mm,
-          COUNT(*)::int AS rainy_days,
-          COALESCE(AVG(rain_mm), 0)::numeric AS avg_mm_per_event,
+          COUNT(*) FILTER (WHERE rain_mm > 0)::int AS rainy_days,
+          COALESCE(AVG(NULLIF(rain_mm, 0)), 0)::numeric AS avg_mm_per_event,
           COALESCE(MAX(rain_mm), 0)::numeric AS peak_mm
         FROM rain_registry
+        WHERE COALESCE(source, 'manual') <> 'weather_sync'
         GROUP BY EXTRACT(YEAR FROM event_date)
         ORDER BY year DESC
         `
@@ -456,6 +524,14 @@ module.exports = async (req, res) => {
       FARRIER_ALERT_DAYS_AHEAD
     );
 
+    const trainingModuleEnabled = isAdminModuleEnabled('training', enabledModules);
+    const groupsModuleEnabled = isAdminModuleEnabled('groups', enabledModules);
+    const paddocksModuleEnabled = isAdminModuleEnabled('paddocks', enabledModules);
+    const feedModuleEnabled = isAdminModuleEnabled('feed', enabledModules);
+    const dewormModuleEnabled = isAdminModuleEnabled('deworm', enabledModules);
+    const farrierModuleEnabled = isAdminModuleEnabled('farrier', enabledModules);
+    const rainModuleEnabled = isAdminModuleEnabled('rain', enabledModules);
+
     const horses = horsesResult.rows.map((row) => ({
       id: row.id,
       name: row.name,
@@ -464,14 +540,41 @@ module.exports = async (req, res) => {
       color: row.color || null,
       activity: row.activity || null,
       sex: row.sex || null,
-      training_status: normalizeTrainingStatus(row.training_status),
+      training_status: trainingModuleEnabled ? normalizeTrainingStatus(row.training_status) : null,
     }));
 
-    const horsesInTraining = horses.filter((horse) => horse.training_status === 'in training');
-    const horsesBreakingIn = horses.filter((horse) => horse.training_status === 'breaking in');
-    const occupiedPaddocks = paddockStatusRows.filter((row) => row.occupancy_state === 'occupied');
-    const restingPaddocks = paddockStatusRows.filter((row) => row.occupancy_state === 'resting');
-    const rainSummary = rainSummaryResult.rows[0] || {};
+    const horsesInTraining = trainingModuleEnabled
+      ? horses.filter((horse) => horse.training_status === 'in training')
+      : [];
+    const horsesBreakingIn = trainingModuleEnabled
+      ? horses.filter((horse) => horse.training_status === 'breaking in')
+      : [];
+    const filteredPaddockRows = paddocksModuleEnabled ? paddockStatusRows : [];
+    const filteredHorseGroupRows = groupsModuleEnabled ? horseGroupRows : [];
+    const filteredHorseGroupHistoryRows = groupsModuleEnabled ? horseGroupHistoryRows : [];
+    const filteredGrazingHistoryRows = paddocksModuleEnabled ? grazingHistoryRows : [];
+    const filteredPaddockWorkHistoryRows = paddocksModuleEnabled ? paddockWorkHistoryRows : [];
+    const filteredLowStockRows = feedModuleEnabled ? lowStockResult.rows : [];
+    const filteredStockRows = feedModuleEnabled ? stockResult.rows : [];
+    const filteredDewormingHistoryRows = dewormModuleEnabled ? dewormingHistoryResult.rows : [];
+    const filteredFarrierHistoryRows = farrierModuleEnabled ? farrierHistoryResult.rows : [];
+    const filteredDewormingDue = dewormModuleEnabled ? dewormingDue : { overdue: [], dueSoon: [] };
+    const filteredFarrierDue = farrierModuleEnabled ? farrierDue : { overdue: [], dueSoon: [] };
+    const filteredRecentActivityRows = filterRecentActivityRows(
+      recentActivityResult.rows.map((row) => ({
+        at: row.sort_at instanceof Date ? row.sort_at.toISOString() : String(row.sort_at),
+        category: row.category,
+        horse_name: row.horse_name,
+        detail: row.detail,
+      })),
+      enabledModules
+    );
+    const occupiedPaddocks = filteredPaddockRows.filter((row) => row.occupancy_state === 'occupied');
+    const restingPaddocks = filteredPaddockRows.filter((row) => row.occupancy_state === 'resting');
+    const rainSummary = rainModuleEnabled ? rainSummaryResult.rows[0] || {} : {};
+    const rainRecentRows = rainModuleEnabled ? rainRecentResult.rows : [];
+    const rainDailyRows = rainModuleEnabled ? rainDailyResult.rows : [];
+    const rainYearlyRows = rainModuleEnabled ? rainYearlyResult.rows : [];
 
     res.status(200).json({
       ok: true,
@@ -483,18 +586,20 @@ module.exports = async (req, res) => {
           farrier_days_ahead: FARRIER_ALERT_DAYS_AHEAD,
         },
       },
+      farm_settings: farmSettings,
+      module_settings: moduleSettings,
       summary: {
         horses_count: normalizePgCount(horseCountResult.rows[0]?.count),
-        horse_groups_count: horseGroupRows.length,
-        paddocks_count: paddockStatusRows.length,
+        horse_groups_count: filteredHorseGroupRows.length,
+        paddocks_count: filteredPaddockRows.length,
         paddocks_occupied_count: occupiedPaddocks.length,
         paddocks_resting_count: restingPaddocks.length,
-        feed_items_count: normalizePgCount(feedItemCountResult.rows[0]?.count),
-        low_stock_count: normalizePgCount(lowStockCountResult.rows[0]?.count),
-        deworm_overdue_count: dewormingDue.overdue.length,
-        deworm_due_soon_count: dewormingDue.dueSoon.length,
-        farrier_overdue_count: farrierDue.overdue.length,
-        farrier_due_soon_count: farrierDue.dueSoon.length,
+        feed_items_count: feedModuleEnabled ? normalizePgCount(feedItemCountResult.rows[0]?.count) : 0,
+        low_stock_count: feedModuleEnabled ? normalizePgCount(lowStockCountResult.rows[0]?.count) : 0,
+        deworm_overdue_count: filteredDewormingDue.overdue.length,
+        deworm_due_soon_count: filteredDewormingDue.dueSoon.length,
+        farrier_overdue_count: filteredFarrierDue.overdue.length,
+        farrier_due_soon_count: filteredFarrierDue.dueSoon.length,
         in_training_count: horsesInTraining.length,
         breaking_in_count: horsesBreakingIn.length,
         rain_today_mm: Number(rainSummary.rain_today_mm || 0),
@@ -506,9 +611,11 @@ module.exports = async (req, res) => {
         in_training: horsesInTraining,
         breaking_in: horsesBreakingIn,
       },
-      paddocks: paddockStatusRows.map((row) => ({
+      paddocks: filteredPaddockRows.map((row) => ({
         id: row.id,
         name: row.name,
+        parent_paddock_id: row.parent_paddock_id,
+        parent_paddock_name: row.parent_paddock_name,
         zone: row.zone,
         size_ha: row.size_ha,
         notes: row.notes,
@@ -519,9 +626,23 @@ module.exports = async (req, res) => {
         grazing_days: row.grazing_days,
         last_exited_at: row.last_exited_at,
         rest_days: row.rest_days,
+        effective_rest_paddock_id: row.effective_rest_paddock_id,
+        effective_rest_paddock_name: row.effective_rest_paddock_name,
+        inherited_rest: row.inherited_rest,
+        latest_work_type: row.latest_work_type,
+        latest_work_type_label: row.latest_work_type_label,
+        latest_work_date: row.latest_work_date,
+        latest_work_notes: row.latest_work_notes,
+        latest_work_applies_to_descendants: row.latest_work_applies_to_descendants,
+        effective_work_paddock_id: row.effective_work_paddock_id,
+        effective_work_paddock_name: row.effective_work_paddock_name,
+        inherited_wait: row.inherited_wait,
+        ready_to_graze_on: row.ready_to_graze_on,
+        ready_after_days: row.ready_after_days,
+        days_until_ready: row.days_until_ready,
         occupancy_state: row.occupancy_state,
       })),
-      horse_groups: horseGroupRows.map((row) => ({
+      horse_groups: filteredHorseGroupRows.map((row) => ({
         id: row.id,
         name: row.name,
         notes: row.notes,
@@ -529,10 +650,24 @@ module.exports = async (req, res) => {
         member_count: row.member_count,
         members: row.members,
         member_names: row.member_names,
-        current_paddock_names: row.current_paddock_names,
+        current_paddock_names: paddocksModuleEnabled ? row.current_paddock_names : null,
         grazing_member_count: row.grazing_member_count,
       })),
-      grazing_history: grazingHistoryRows.map((row) => ({
+      horse_group_history: filteredHorseGroupHistoryRows.map((row) => ({
+        id: row.id,
+        horse_id: row.horse_id,
+        horse_name: row.horse_name,
+        group_id: row.group_id,
+        group_name: row.group_name,
+        started_at: row.started_at,
+        ended_at: row.ended_at,
+        group_days: row.group_days,
+        previous_group_id: row.previous_group_id,
+        previous_group_name: row.previous_group_name,
+        previous_group_days: row.previous_group_days,
+        active: row.active,
+      })),
+      grazing_history: filteredGrazingHistoryRows.map((row) => ({
         id: row.id,
         paddock_id: row.paddock_id,
         paddock_name: row.paddock_name,
@@ -547,11 +682,24 @@ module.exports = async (req, res) => {
         source_group_name: row.source_group_name,
         active: row.active,
       })),
+      paddock_work_history: filteredPaddockWorkHistoryRows.map((row) => ({
+        id: row.id,
+        paddock_id: row.paddock_id,
+        paddock_name: row.paddock_name,
+        applies_to_descendants: row.applies_to_descendants,
+        event_type: row.event_type,
+        event_type_label: row.event_type_label,
+        event_date: row.event_date,
+        ready_after_days: row.ready_after_days,
+        ready_to_graze_on: row.ready_to_graze_on,
+        days_until_ready: row.days_until_ready,
+        notes: row.notes,
+      })),
       reminders: {
-        deworming: dewormingDue,
-        farrier: farrierDue,
+        deworming: filteredDewormingDue,
+        farrier: filteredFarrierDue,
       },
-      deworming_history: dewormingHistoryResult.rows.map((row) => ({
+      deworming_history: filteredDewormingHistoryRows.map((row) => ({
         id: row.id,
         horse_id: row.horse_id,
         horse_name: row.horse_name,
@@ -561,7 +709,7 @@ module.exports = async (req, res) => {
         next_due_date: toIsoDateString(row.next_due_date),
         created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       })),
-      farrier_history_registry: farrierHistoryResult.rows.map((row) => ({
+      farrier_history_registry: filteredFarrierHistoryRows.map((row) => ({
         id: row.id,
         horse_id: row.horse_id,
         horse_name: row.horse_name,
@@ -571,38 +719,38 @@ module.exports = async (req, res) => {
         created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       })),
       stock: {
-        low: lowStockResult.rows.map((row) => ({
+        low: filteredLowStockRows.map((row) => ({
           id: row.id,
           name: row.name,
           unit: row.unit,
           current_stock: Number(row.current_stock),
         })),
-        all: stockResult.rows.map((row) => ({
+        all: filteredStockRows.map((row) => ({
           id: row.id,
           name: row.name,
           unit: row.unit,
           current_stock: Number(row.current_stock),
         })),
       },
-      recent_activity: recentActivityResult.rows.map((row) => ({
-        at: row.sort_at instanceof Date ? row.sort_at.toISOString() : String(row.sort_at),
-        category: row.category,
-        horse_name: row.horse_name,
-        detail: row.detail,
-      })),
+      recent_activity: filteredRecentActivityRows,
       rain: {
-        recent: rainRecentResult.rows.map((row) => ({
+        recent: rainRecentRows.map((row) => ({
           id: row.id,
           event_date: toIsoDateString(row.event_date),
           rain_mm: Number(row.rain_mm),
+          min_temp_c: row.min_temp_c == null ? null : Number(row.min_temp_c),
+          max_temp_c: row.max_temp_c == null ? null : Number(row.max_temp_c),
           source: row.source || null,
           notes: row.notes || null,
+          weather_source: row.weather_source || null,
         })),
-        daily: rainDailyResult.rows.map((row) => ({
+        daily: rainDailyRows.map((row) => ({
           event_date: toIsoDateString(row.event_date),
           rain_mm: Number(row.rain_mm || 0),
+          min_temp_c: row.min_temp_c == null ? null : Number(row.min_temp_c),
+          max_temp_c: row.max_temp_c == null ? null : Number(row.max_temp_c),
         })),
-        yearly: rainYearlyResult.rows.map((row) => ({
+        yearly: rainYearlyRows.map((row) => ({
           year: Number(row.year || 0),
           total_mm: Number(row.total_mm || 0),
           rainy_days: Number(row.rainy_days || 0),

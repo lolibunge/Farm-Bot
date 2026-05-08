@@ -3,6 +3,7 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const { pool } = require('./lib/db');
 const { ensureHorseProfileColumns } = require('./lib/horse-profile');
+const { getFarmSettings, saveFarmAlertChatId } = require('./lib/farm-settings');
 const {
   ensurePaddockTables,
   findPaddockByName,
@@ -302,6 +303,13 @@ async function markAlertAsSentForToday(alertKey) {
 async function sendRemindersToAlertChat() {
   await ensureReminderAlertsTable();
 
+  const farmSettings = await getFarmSettings();
+  alertChatId =
+    farmSettings.telegram_alert_chat_id ||
+    alertChatId ||
+    process.env.TELEGRAM_ALERT_CHAT_ID ||
+    null;
+
   if (!alertChatId) {
     return;
   }
@@ -475,6 +483,12 @@ function formatPaddockStatusLine(row) {
     )} | ${row.grazing_days} day(s)`;
   }
 
+  if (row.occupancy_state === 'growing') {
+    return `- ${prefix} | waiting ${row.days_until_ready} day(s) | ready: ${formatDateForReply(
+      row.ready_to_graze_on
+    )}${row.latest_work_type_label ? ` | ${row.latest_work_type_label}` : ''}`;
+  }
+
   if (row.occupancy_state === 'resting') {
     return `- ${prefix} | resting ${row.rest_days} day(s) | last exit: ${formatDateForReply(
       row.last_exited_at
@@ -585,7 +599,13 @@ bot.on('text', async (ctx) => {
   const incomingChatId = String(ctx.chat.id);
 
   if (!alertChatId) {
+    const farmSettings = await getFarmSettings();
+    alertChatId = farmSettings.telegram_alert_chat_id || null;
+  }
+
+  if (!alertChatId) {
     alertChatId = incomingChatId;
+    await saveFarmAlertChatId(incomingChatId);
     console.log(`Alert chat auto-set from incoming message: ${alertChatId}`);
     sendRemindersToAlertChat().catch((error) => {
       console.error('REMINDER ERROR:', error);

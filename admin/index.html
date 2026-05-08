@@ -13,7 +13,7 @@
     <link rel="icon" type="image/svg+xml" href="/admin/favicon.svg?v=3" />
     <link rel="shortcut icon" href="/admin/favicon.svg?v=3" />
     <link rel="apple-touch-icon" href="/admin/farm-bot-logo.png?v=3" />
-    <link rel="stylesheet" href="/admin/styles.css" />
+    <link rel="stylesheet" href="/admin/styles.css?v=20260506i" />
   </head>
   <body>
     <div class="background-shape shape-a"></div>
@@ -75,9 +75,94 @@
         <p class="action-hub-subtext">
           All write actions live here. The modules below are your read-only operational views.
         </p>
+        <p id="action-message" class="action-message is-empty" aria-live="polite"></p>
 
         <div class="action-hub-grid">
-          <article class="action-card">
+          <article id="action-card-farm-setup" class="action-card action-card-span-full">
+            <h3>Farm Setup</h3>
+            <p class="action-card-note">
+              Set the farm location and shared connection details here first. Weather sync uses the
+              coordinates below, and Telegram reminders use the alert chat ID. The bot token and
+              webhook still stay in the server env.
+            </p>
+
+            <form id="farm-settings-form" class="action-form action-form-stacked">
+              <div class="action-section-grid">
+                <label for="farm-name-input">Farm Name</label>
+                <input id="farm-name-input" name="farmName" placeholder="My Farm" />
+
+                <label for="farm-weather-latitude-input">Weather Latitude</label>
+                <input
+                  id="farm-weather-latitude-input"
+                  name="weatherLatitude"
+                  type="number"
+                  step="0.00001"
+                  min="-90"
+                  max="90"
+                  placeholder="-34.45676"
+                />
+
+                <label for="farm-weather-longitude-input">Weather Longitude</label>
+                <input
+                  id="farm-weather-longitude-input"
+                  name="weatherLongitude"
+                  type="number"
+                  step="0.00001"
+                  min="-180"
+                  max="180"
+                  placeholder="-55.50878"
+                />
+
+                <label for="farm-weather-timezone-input">Weather Timezone</label>
+                <input
+                  id="farm-weather-timezone-input"
+                  name="weatherTimezone"
+                  placeholder="America/Montevideo"
+                />
+
+                <label for="farm-weather-sync-days-input">Weather Sync Days</label>
+                <input
+                  id="farm-weather-sync-days-input"
+                  name="weatherSyncDays"
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="365"
+                  placeholder="90"
+                />
+
+                <label for="farm-telegram-alert-chat-id-input">Telegram Alert Chat ID</label>
+                <input
+                  id="farm-telegram-alert-chat-id-input"
+                  name="telegramAlertChatId"
+                  placeholder="123456789"
+                />
+
+                <button class="full-width" type="submit">Save Farm Setup</button>
+              </div>
+            </form>
+            <p id="farm-settings-message" class="action-message">
+              Start here for farm location, weather sync, and reminder destination.
+            </p>
+          </article>
+
+          <article id="action-card-admin-modules" class="action-card action-card-span-full">
+            <h3>Admin Modules</h3>
+            <p class="action-card-note">
+              Turn optional features on or off for this farm. Core horse records stay on. Hidden
+              modules are removed from the admin dashboard and blocked from admin write actions.
+            </p>
+
+            <form id="admin-modules-form" class="action-form action-form-stacked">
+              <div id="admin-modules-list" class="checkbox-list"></div>
+              <button class="full-width" type="submit">Save Modules</button>
+            </form>
+            <p id="admin-modules-message" class="action-message">
+              Choose which optional modules this farm should use.
+            </p>
+          </article>
+
+          <article id="action-card-horses-training" class="action-card">
             <h3>Horses & Training</h3>
 
             <form id="horse-add-form" class="action-form compact">
@@ -105,7 +190,7 @@
             </form>
           </article>
 
-          <article class="action-card">
+          <article id="action-card-paddocks" class="action-card">
             <h3>Paddocks</h3>
             <p class="action-card-note">
               Keep paddock setup here. Group moves are the normal workflow now, so individual horse
@@ -113,33 +198,111 @@
             </p>
 
             <form id="paddock-save-form" class="action-form">
-              <label for="paddock-name-input">Paddock Name</label>
-              <input id="paddock-name-input" name="paddockName" placeholder="Potrero 1" required />
+              <p id="paddock-edit-status" class="action-form-hint hidden" aria-live="polite"></p>
 
-              <label for="paddock-zone-input">Zone</label>
-              <input id="paddock-zone-input" name="zone" placeholder="North / River / Upper" />
+              <div class="action-section-grid">
+                <label for="paddock-name-input">Paddock Name</label>
+                <input id="paddock-name-input" name="paddockName" placeholder="Potrero 1" required />
 
-              <label for="paddock-size-input">Size (ha)</label>
-              <input
-                id="paddock-size-input"
-                name="sizeHa"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="12.5"
-              />
+                <label for="paddock-zone-input">Zone</label>
+                <input id="paddock-zone-input" name="zone" placeholder="North / River / Upper" />
 
-              <label for="paddock-active-select">Status</label>
-              <select id="paddock-active-select" name="active">
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
+                <label for="paddock-size-input">Size (ha)</label>
+                <input
+                  id="paddock-size-input"
+                  name="sizeHa"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="12.5"
+                />
+
+                <label for="paddock-active-select">Status</label>
+                <select id="paddock-active-select" name="active">
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+
+                <label for="paddock-parent-select">Parent Paddock</label>
+                <select id="paddock-parent-select" name="parentPaddockId">
+                  <option value="">No parent / top-level paddock</option>
+                </select>
+
+                <label for="paddock-notes-input">Notes</label>
+                <input id="paddock-notes-input" name="notes" placeholder="water, shade, narrow gate..." />
+
+                <div class="full-span action-form-button-row">
+                  <button id="paddock-save-btn" type="submit">Save Paddock</button>
+                  <button
+                    id="paddock-cancel-edit-btn"
+                    type="button"
+                    class="secondary hidden"
+                  >
+                    Cancel Edit
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            <form id="paddock-work-form" class="action-form action-form-stacked">
+              <input id="paddock-work-event-id-input" name="eventId" type="hidden" />
+
+              <p id="paddock-work-edit-status" class="action-form-hint hidden" aria-live="polite"></p>
+
+              <label for="paddock-work-paddock-select">Field Work Paddock</label>
+              <select id="paddock-work-paddock-select" name="paddockId"></select>
+
+              <label for="paddock-work-scope-select">Affected Area</label>
+              <select id="paddock-work-scope-select" name="applyScope">
+                <option value="single">This paddock only</option>
+                <option value="whole_block">This paddock and all child paddocks</option>
               </select>
 
-              <label for="paddock-notes-input">Notes</label>
-              <input id="paddock-notes-input" name="notes" placeholder="water, shade, narrow gate..." />
+              <label for="paddock-work-type-select">Work Type</label>
+              <select id="paddock-work-type-select" name="eventType">
+                <option value="soil_prep">Soil Prep / Tractor</option>
+                <option value="seeding">Seeding</option>
+                <option value="fertilizer">Fertilizer</option>
+                <option value="spraying">Spraying</option>
+                <option value="other">Other</option>
+              </select>
 
-              <button class="full-width" type="submit">Save Paddock</button>
+              <label for="paddock-work-date-input">Work Date</label>
+              <input id="paddock-work-date-input" name="eventDate" type="date" />
+
+              <label for="paddock-work-ready-days-input">Days Until Ready To Graze</label>
+              <input
+                id="paddock-work-ready-days-input"
+                name="readyAfterDays"
+                type="number"
+                step="1"
+                min="0"
+                placeholder="Leave blank if this step does not start the wait"
+              />
+
+              <label for="paddock-work-notes-input">Notes</label>
+              <input
+                id="paddock-work-notes-input"
+                name="notes"
+                placeholder="tractor done, seed mix added, fertilizer spread..."
+              />
+
+              <div class="full-span action-form-button-row">
+                <button id="paddock-work-save-btn" type="submit">Save Field Work</button>
+                <button
+                  id="paddock-work-cancel-edit-btn"
+                  type="button"
+                  class="secondary hidden"
+                >
+                  Cancel Edit
+                </button>
+              </div>
             </form>
+            <p class="action-form-hint">
+              Use this to log tractor work, seeding, or fertilizer and optionally set how many days
+              the paddock must wait before horses can graze it again. Choose the whole-block option
+              when the work should also block all child paddocks under the selected parent paddock.
+            </p>
 
             <details class="action-card-details">
               <summary>Manual Single-Horse Move</summary>
@@ -187,7 +350,7 @@
             </details>
           </article>
 
-          <article class="action-card action-card-span-full">
+          <article id="action-card-horse-groups" class="action-card action-card-span-full">
             <h3>Horse Groups</h3>
 
             <div class="action-section-grid">
@@ -265,58 +428,53 @@
               </div>
 
               <div class="action-section-stack">
-                <section class="action-section-card">
-                  <h4>Move Group In</h4>
+                <section id="horse-group-move-in-section" class="action-section-card">
+                  <h4>Move Group</h4>
+                  <p id="horse-group-move-context" class="action-form-hint hidden" aria-live="polite"></p>
 
                   <form id="grazing-group-move-in-form" class="action-form action-form-stacked">
-                    <label for="grazing-group-move-in-group-select">Move In Group</label>
+                    <label for="grazing-group-move-in-group-select">Group</label>
                     <select id="grazing-group-move-in-group-select" name="groupId"></select>
 
-                    <label for="grazing-group-move-in-paddock-select">Paddock</label>
+                    <label for="grazing-group-move-in-paddock-select">Destination Paddock</label>
                     <select id="grazing-group-move-in-paddock-select" name="paddockId"></select>
 
-                    <label for="grazing-group-move-in-date-input">Entry Date</label>
+                    <label for="grazing-group-move-in-date-input">Move Date</label>
                     <input id="grazing-group-move-in-date-input" name="eventDate" type="date" />
 
                     <label for="grazing-group-move-in-notes-input">Notes</label>
                     <input
                       id="grazing-group-move-in-notes-input"
                       name="notes"
-                      placeholder="whole group moved after rain..."
+                      placeholder="whole group moved to new rotation..."
                     />
 
-                    <button class="full-width" type="submit">Move Group In</button>
+                    <div class="full-span action-form-button-row">
+                      <button type="submit" data-move-mode="move">Move Group</button>
+                      <button
+                        class="secondary"
+                        type="submit"
+                        data-move-mode="correct_current"
+                      >
+                        Correct Current Paddock + Date
+                      </button>
+                    </div>
                   </form>
-                </section>
-
-                <section class="action-section-card">
-                  <h4>Move Group Out</h4>
-
-                  <form id="grazing-group-move-out-form" class="action-form action-form-stacked">
-                    <label for="grazing-group-move-out-group-select">Move Out Group</label>
-                    <select id="grazing-group-move-out-group-select" name="groupId"></select>
-
-                    <label for="grazing-group-move-out-paddock-select">Paddock</label>
-                    <select id="grazing-group-move-out-paddock-select" name="paddockId"></select>
-
-                    <label for="grazing-group-move-out-date-input">Exit Date</label>
-                    <input id="grazing-group-move-out-date-input" name="eventDate" type="date" />
-
-                    <label for="grazing-group-move-out-notes-input">Notes</label>
-                    <input
-                      id="grazing-group-move-out-notes-input"
-                      name="notes"
-                      placeholder="rotation complete, moving to rest..."
-                    />
-
-                    <button class="full-width" type="submit">Move Group Out</button>
-                  </form>
+                  <p class="action-form-hint">
+                    This automatically transfers the whole group. Horses already grazing somewhere
+                    else are moved for you in the same step.
+                  </p>
+                  <p class="action-form-hint">
+                    Use <strong>Correct Current Paddock + Date</strong> only when the group is
+                    currently shown in the wrong paddock or with the wrong start date. It rewrites
+                    the current open paddock assignment instead of creating a new move.
+                  </p>
                 </section>
               </div>
             </div>
           </article>
 
-          <article class="action-card">
+          <article id="action-card-feed" class="action-card">
             <h3>Feed & Inventory</h3>
 
             <form id="stock-action-form" class="action-form">
@@ -399,49 +557,53 @@
             </form>
           </article>
 
-          <article class="action-card">
+          <article id="action-card-deworm-farrier" class="action-card">
             <h3>Deworm & Farrier</h3>
 
-            <form id="deworm-event-add-form" class="action-form">
-              <label for="deworm-horse-select">Horse</label>
-              <select id="deworm-horse-select" name="horseId"></select>
+            <section id="action-section-deworm">
+              <form id="deworm-event-add-form" class="action-form">
+                <label for="deworm-horse-select">Horse</label>
+                <select id="deworm-horse-select" name="horseId"></select>
 
-              <label for="deworm-product-input">Product</label>
-              <input
-                id="deworm-product-input"
-                name="productName"
-                placeholder="Product name"
-                required
-              />
+                <label for="deworm-product-input">Product</label>
+                <input
+                  id="deworm-product-input"
+                  name="productName"
+                  placeholder="Product name"
+                  required
+                />
 
-              <label for="deworm-date-input">First Dose Date</label>
-              <input id="deworm-date-input" name="eventDate" type="date" required />
+                <label for="deworm-date-input">First Dose Date</label>
+                <input id="deworm-date-input" name="eventDate" type="date" required />
 
-              <label for="deworm-second-dose-input">Second Dose Date</label>
-              <input id="deworm-second-dose-input" name="secondDoseDate" type="date" required />
-              <button class="full-width" type="submit">Save Deworm Cycle</button>
-              <input id="deworm-next-due-input" name="nextDueDate" type="hidden" />
-            </form>
-            <p class="action-form-hint">
-              Enter first and second dose dates together. Next cycle due date is auto-set to 3 months after second dose.
-            </p>
+                <label for="deworm-second-dose-input">Second Dose Date</label>
+                <input id="deworm-second-dose-input" name="secondDoseDate" type="date" required />
+                <button class="full-width" type="submit">Save Deworm Cycle</button>
+                <input id="deworm-next-due-input" name="nextDueDate" type="hidden" />
+              </form>
+              <p class="action-form-hint">
+                Enter first and second dose dates together. Next cycle due date is auto-set to 3 months after second dose.
+              </p>
+            </section>
 
-            <form id="farrier-event-add-form" class="action-form compact">
-              <label for="farrier-horse-select">Add Farrier Event</label>
-              <select id="farrier-horse-select" name="horseId"></select>
-              <input
-                id="farrier-service-input"
-                name="serviceType"
-                placeholder="Service type"
-                required
-              />
-              <input id="farrier-date-input" name="eventDate" type="date" />
-              <input id="farrier-next-due-input" name="nextDueDate" type="date" />
-              <button type="submit">Save Farrier Event</button>
-            </form>
+            <section id="action-section-farrier">
+              <form id="farrier-event-add-form" class="action-form compact">
+                <label for="farrier-horse-select">Add Farrier Event</label>
+                <select id="farrier-horse-select" name="horseId"></select>
+                <input
+                  id="farrier-service-input"
+                  name="serviceType"
+                  placeholder="Service type"
+                  required
+                />
+                <input id="farrier-date-input" name="eventDate" type="date" />
+                <input id="farrier-next-due-input" name="nextDueDate" type="date" />
+                <button type="submit">Save Farrier Event</button>
+              </form>
+            </section>
           </article>
 
-          <article class="action-card">
+          <article id="action-card-horse-profile" class="action-card">
             <h3>Horse Profile</h3>
             <div class="history-toolbar action-toolbar">
               <label for="horse-profile-select">Selected Horse</label>
@@ -496,7 +658,7 @@
                 <option value="unknown">Unknown</option>
               </select>
 
-              <label for="horse-profile-training-status">Training Status</label>
+              <label id="horse-profile-training-label" for="horse-profile-training-status">Training Status</label>
               <select id="horse-profile-training-status" name="trainingStatus">
                 <option value="">-</option>
                 <option value="in training">In Training</option>
@@ -511,7 +673,7 @@
           </article>
 
           <div class="action-card-stack">
-            <article class="action-card">
+            <article id="action-card-health" class="action-card">
               <h3>Horse Health</h3>
 
               <form id="health-event-add-form" class="action-form compact">
@@ -530,7 +692,7 @@
               </form>
             </article>
 
-            <article class="action-card">
+            <article id="action-card-rain" class="action-card">
               <h3>Rain Registry</h3>
 
               <form id="rain-save-form" class="action-form compact">
@@ -547,12 +709,20 @@
                 />
                 <input id="rain-notes-input" name="notes" placeholder="Notes (optional)" />
                 <button type="submit">Save Rain</button>
+                <button
+                  id="rain-sync-weather-btn"
+                  class="secondary full-width"
+                  type="button"
+                >
+                  Sync Weather + Temps
+                </button>
+                <p class="action-form-hint full-span">
+                  Backfills recent daily rain plus min/max temperature using the farm weather coordinates.
+                </p>
               </form>
             </article>
           </div>
         </div>
-
-        <p id="action-message" class="action-message">No pending admin actions.</p>
       </section>
 
       <datalist id="feed-item-options"></datalist>
@@ -570,26 +740,68 @@
           <p id="horse-history-current-grazing" class="history-focus-line subtle">
             Not currently assigned to a paddock.
           </p>
+          <p id="horse-history-current-group" class="history-focus-line subtle">
+            Not currently assigned to a horse group.
+          </p>
 
           <div class="horse-history-grid">
-            <article class="mini-history-card">
-              <h3>Feed History</h3>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>When</th>
-                      <th>Feed</th>
-                      <th>Amount</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody id="horse-feed-history-body"></tbody>
-                </table>
+            <article id="horse-history-feed-plan-card" class="mini-history-card">
+              <h3>Feed Plan &amp; Calendar</h3>
+              <p class="action-form-hint">
+                Build each slot as a prepared mix. When you tick Morning, Afternoon, or Night in the
+                calendar, every ingredient saved under that slot is logged together. Keep alfalfa and
+                ryegrass out of the daily plan, then reduce bales from Stock Action when a bale is
+                finished.
+              </p>
+
+              <form id="horse-feed-plan-form" class="action-form action-form-stacked">
+                <div id="horse-feed-plan-body" class="feed-plan-slots"></div>
+                <div class="feed-plan-toolbar">
+                  <button type="submit">Save Feed Plan</button>
+                </div>
+              </form>
+
+              <p id="horse-feed-plan-message" class="action-message">
+                Build each slot as a mix for the selected horse, then tick the calendar slots as you feed.
+              </p>
+
+              <div class="history-toolbar">
+                <label for="horse-feed-calendar-month">Month</label>
+                <input id="horse-feed-calendar-month" type="month" />
+                <button id="horse-feed-calendar-today-btn" type="button">Current Month</button>
+              </div>
+
+              <div id="horse-feed-calendar-grid" class="feed-calendar-grid"></div>
+            </article>
+
+            <article id="horse-history-feed-card" class="mini-history-card subpanel">
+              <button
+                id="horse-feed-history-toggle"
+                class="subpanel-toggle"
+                type="button"
+                aria-expanded="true"
+                aria-controls="horse-feed-history-content"
+              >
+                Feed History
+              </button>
+              <div id="horse-feed-history-content" class="subpanel-content">
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>When</th>
+                        <th>Feed</th>
+                        <th>Amount</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="horse-feed-history-body"></tbody>
+                  </table>
+                </div>
               </div>
             </article>
 
-            <article class="mini-history-card">
+            <article id="horse-history-deworm-card" class="mini-history-card">
               <h3>Deworming History</h3>
               <div class="table-wrap">
                 <table>
@@ -607,7 +819,7 @@
               </div>
             </article>
 
-            <article class="mini-history-card">
+            <article id="horse-history-farrier-card" class="mini-history-card">
               <h3>Farrier History</h3>
               <div class="table-wrap">
                 <table>
@@ -623,7 +835,7 @@
               </div>
             </article>
 
-            <article class="mini-history-card">
+            <article id="horse-history-health-card" class="mini-history-card">
               <h3>Health History</h3>
               <div class="table-wrap">
                 <table>
@@ -639,7 +851,7 @@
               </div>
             </article>
 
-            <article class="mini-history-card">
+            <article id="horse-history-grazing-card" class="mini-history-card">
               <h3>Grazing History</h3>
               <div class="table-wrap">
                 <table>
@@ -652,6 +864,24 @@
                     </tr>
                   </thead>
                   <tbody id="horse-grazing-history-body"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article id="horse-history-group-card" class="mini-history-card">
+              <h3>Group History</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Group</th>
+                      <th>Started</th>
+                      <th>Ended</th>
+                      <th>Days</th>
+                      <th>Previous</th>
+                    </tr>
+                  </thead>
+                  <tbody id="horse-group-history-body"></tbody>
                 </table>
               </div>
             </article>
@@ -682,13 +912,34 @@
                 <tr>
                   <th>Group</th>
                   <th>Status</th>
-                  <th>Members</th>
+                  <th>Total Horses</th>
                   <th>Current Paddocks</th>
                   <th>Notes</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="horse-group-status-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article id="panel-horse-group-history" class="panel panel-span-full">
+          <h2>Horse Group History</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Horse</th>
+                  <th>Group</th>
+                  <th>Started</th>
+                  <th>Ended</th>
+                  <th>Days</th>
+                  <th>Previous Group</th>
+                </tr>
+              </thead>
+              <tbody id="horse-group-history-registry-body"></tbody>
             </table>
           </div>
         </article>
@@ -702,12 +953,15 @@
               <thead>
                 <tr>
                   <th>Paddock</th>
+                  <th>Parent</th>
                   <th>Zone</th>
                   <th>Status</th>
                   <th>Occupant</th>
                   <th>Since</th>
                   <th>Days On</th>
                   <th>Rest Days</th>
+                  <th>Ready To Graze</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="paddock-status-body"></tbody>
@@ -717,7 +971,29 @@
       </section>
 
       <section class="panel-grid">
-        <article class="panel panel-span-full">
+        <article id="panel-paddock-work-history" class="panel panel-span-full">
+          <h2>Paddock Work History</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Paddock</th>
+                  <th>Work</th>
+                  <th>Date</th>
+                  <th>Ready On</th>
+                  <th>Wait Days</th>
+                  <th>Notes</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="paddock-work-history-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article id="panel-grazing-history" class="panel panel-span-full">
           <h2>Grazing History</h2>
           <div class="table-wrap">
             <table>
@@ -807,7 +1083,7 @@
         </article>
       </section>
 
-      <section class="panel">
+      <section id="panel-deworm-history-registry" class="panel">
         <h2>Deworming History Registry</h2>
         <div class="history-toolbar">
           <label for="deworm-history-horse-filter">Horse</label>
@@ -833,7 +1109,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section id="panel-farrier-history-registry" class="panel">
         <h2>Farrier History Registry</h2>
         <div class="history-toolbar">
           <label for="farrier-history-horse-filter">Horse</label>
@@ -949,6 +1225,8 @@
                   <tr>
                     <th>Date</th>
                     <th>Rain (mm)</th>
+                    <th>Min Temp (C)</th>
+                    <th>Max Temp (C)</th>
                     <th>Source</th>
                     <th>Notes</th>
                   </tr>
@@ -960,7 +1238,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section id="panel-recent-activity" class="panel">
         <h2>Recent Activity</h2>
         <div class="table-wrap">
           <table>
@@ -982,6 +1260,6 @@
       ↑
     </button>
 
-    <script src="/admin/app.js"></script>
+    <script src="/admin/app.js?v=20260506i"></script>
   </body>
 </html>
