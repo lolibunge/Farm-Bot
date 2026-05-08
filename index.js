@@ -1,10 +1,11 @@
 require('dotenv').config();
 
-const { bot, startReminderScheduler } = require('./bot');
+const { bot, startReminderScheduler, syncTelegramMenuCommands } = require('./bot');
 
 bot
   .launch()
   .then(async () => {
+    await syncTelegramMenuCommands();
     await startReminderScheduler();
     console.log(
       'BOT RUNNING WITH FEED + STOCK + HORSE + DEWORM + FARRIER + DATES + REMINDERS + MULTILINE + ALERTS'

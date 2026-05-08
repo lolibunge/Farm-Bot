@@ -1729,6 +1729,15 @@ h1 {
   scrollbar-width: thin;
 }
 
+.rain-entries-table-wrap,
+.recent-activity-table-wrap {
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 .paddock-occupancy-card {
   border: 1px solid #e7d9b7;
   border-radius: 12px;

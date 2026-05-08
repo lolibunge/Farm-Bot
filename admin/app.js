@@ -17,6 +17,7 @@ const SUMMARY_METRICS = [
   { key: 'paddocks_count', defaultLabel: 'Paddocks' },
   { key: 'paddocks_occupied_count', defaultLabel: 'Paddocks Occupied' },
   { key: 'paddocks_resting_count', defaultLabel: 'Paddocks Resting' },
+  { key: 'pasture_status', defaultLabel: 'Pasture' },
   { key: 'feed_items_count', defaultLabel: 'Feed Items' },
   { key: 'low_stock_count', defaultLabel: 'Low Stock' },
   { key: 'deworm_overdue_count', defaultLabel: 'Deworm Overdue' },
@@ -36,6 +37,7 @@ const SUMMARY_CARD_TARGETS = {
   paddocks_count: 'panel-paddock-status',
   paddocks_occupied_count: 'panel-paddock-status',
   paddocks_resting_count: 'panel-paddock-status',
+  pasture_status: 'panel-pasture',
   feed_items_count: 'panel-current-inventory',
   low_stock_count: 'panel-low-stock',
   deworm_overdue_count: 'panel-deworming-alerts',
@@ -351,6 +353,7 @@ const SUMMARY_METRIC_MODULE_KEYS = {
   paddocks_count: 'paddocks',
   paddocks_occupied_count: 'paddocks',
   paddocks_resting_count: 'paddocks',
+  pasture_status: 'paddocks',
   feed_items_count: 'feed',
   low_stock_count: 'feed',
   deworm_overdue_count: 'deworm',
@@ -2334,6 +2337,28 @@ function setHorseHistorySelectedName(horse) {
   horseHistorySelectedName.textContent = horse?.name || '-';
 }
 
+function getSummaryMetricValue(data, metricKey) {
+  if (metricKey === 'pasture_status') {
+    const pastureCard = buildPastureRyegrassCardData(data?.paddocks || []);
+
+    if (pastureCard.state === 'ready') {
+      return 'Ready';
+    }
+    if (pastureCard.state === 'growing') {
+      return 'Growing';
+    }
+    if (pastureCard.state === 'occupied') {
+      return 'Active';
+    }
+    if (pastureCard.state === 'resting') {
+      return 'Resting';
+    }
+    return 'Setup';
+  }
+
+  return data?.summary?.[metricKey];
+}
+
 function renderSummary(data) {
   const visibleCards = summaryCardConfig.filter((item) => item.visible && isSummaryMetricAvailable(item.key));
 
@@ -2345,7 +2370,7 @@ function renderSummary(data) {
 
   summaryCards.innerHTML = visibleCards
     .map((item) => {
-      const value = data.summary?.[item.key];
+      const value = getSummaryMetricValue(data, item.key);
       const safeValue = value == null ? 0 : value;
       const targetId = SUMMARY_CARD_TARGETS[item.key];
 

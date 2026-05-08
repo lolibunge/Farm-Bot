@@ -9,14 +9,19 @@ const {
   findPaddockByName,
   listPaddockNames,
   savePaddock,
+  savePaddockWorkEvent,
+  updatePaddockWorkEvent,
   findHorseGroupByName,
   listHorseGroups,
   saveHorseGroup,
+  setHorseGroupMembers,
   moveHorseIntoPaddock,
   moveHorseOutOfPaddock,
   moveHorseGroupIntoPaddock,
+  correctHorseGroupCurrentPaddock,
   moveHorseGroupOutOfPaddock,
   listPaddockStatus,
+  listPaddockWorkHistory,
   listGrazingHistory,
   getHorseCurrentGrazing,
 } = require('./lib/paddocks');
@@ -470,6 +475,125 @@ function parseNamedSegmentWithOptionalDateAndNotes(value) {
   };
 }
 
+function parsePipeSegments(value) {
+  return String(value || '')
+    .split('|')
+    .map((segment) => segment.trim());
+}
+
+function normalizeTrainingStatusInput(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ');
+
+  if (!normalized || ['clear', 'none', 'remove', 'blank', 'no status'].includes(normalized)) {
+    return '';
+  }
+
+  if (normalized === 'in training' || normalized === 'training' || normalized === 'intraining') {
+    return 'in training';
+  }
+
+  if (
+    normalized === 'breaking in' ||
+    normalized === 'breaking' ||
+    normalized === 'break in' ||
+    normalized === 'breakingin' ||
+    normalized === 'for breaking in' ||
+    normalized === 'horse for breaking in'
+  ) {
+    return 'breaking in';
+  }
+
+  return null;
+}
+
+function shouldApplyPaddockWorkToDescendants(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return ['whole_block', 'children', 'descendants', 'yes', 'true', '1'].includes(normalized);
+}
+
+function isRecognizedPaddockWorkScope(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return [
+    '',
+    'paddock',
+    'single',
+    'current',
+    'no',
+    'false',
+    '0',
+    'whole_block',
+    'children',
+    'descendants',
+    'yes',
+    'true',
+    '1',
+  ].includes(normalized);
+}
+
+function parsePaddockWorkCommand(value, { requireEventId = false } = {}) {
+  const segments = parsePipeSegments(value);
+  const minimumSegments = requireEventId ? 3 : 2;
+
+  if (segments.length < minimumSegments) {
+    return null;
+  }
+
+  let offset = 0;
+  let eventId = null;
+
+  if (requireEventId) {
+    eventId = parsePositiveInt(segments[0], null);
+    if (!eventId) {
+      throw new Error('Paddock work event id must be a positive number.');
+    }
+    offset = 1;
+  }
+
+  const paddockName = String(segments[offset] || '').trim();
+  const eventType = String(segments[offset + 1] || '').trim();
+  const eventDateRaw = String(segments[offset + 2] || '').trim();
+  const eventDate = eventDateRaw || todayDateString();
+
+  if (eventDateRaw && !isValidDateString(eventDateRaw)) {
+    throw new Error(`Invalid calendar date: ${eventDateRaw}`);
+  }
+
+  const readyToken = String(segments[offset + 3] || '').trim();
+  let readyAfterDays = null;
+
+  if (
+    readyToken &&
+    !['-', 'none', 'null', 'blank', 'na', 'n/a'].includes(readyToken.toLowerCase())
+  ) {
+    const parsedReadyDays = Number.parseInt(readyToken, 10);
+    if (!Number.isFinite(parsedReadyDays) || parsedReadyDays < 0) {
+      throw new Error('Ready-after days must be a whole number >= 0, or use - to leave it blank.');
+    }
+    readyAfterDays = parsedReadyDays;
+  }
+
+  const scopeSegment = String(segments[offset + 4] || '').trim();
+  const hasExplicitScope = isRecognizedPaddockWorkScope(scopeSegment);
+  const noteStartIndex = hasExplicitScope ? offset + 5 : offset + 4;
+
+  return {
+    eventId,
+    paddockName,
+    eventType,
+    eventDate,
+    readyAfterDays,
+    applyToDescendants: hasExplicitScope && shouldApplyPaddockWorkToDescendants(scopeSegment),
+    notes: segments.slice(noteStartIndex).join(' | ').trim(),
+  };
+}
+
 function formatPaddockStatusLine(row) {
   const prefix = row.zone ? `${row.name} (${row.zone})` : row.name;
 
@@ -496,6 +620,19 @@ function formatPaddockStatusLine(row) {
   }
 
   return `- ${prefix} | available${row.notes ? ` | ${row.notes}` : ''}`;
+}
+
+function formatPaddockWorkHistoryLine(row) {
+  const readyPart = row.ready_to_graze_on
+    ? ` | ready: ${formatDateForReply(row.ready_to_graze_on)}`
+    : '';
+  const waitPart =
+    row.ready_after_days == null ? '' : ` | wait: ${row.ready_after_days} day(s)`;
+  const scopePart = row.applies_to_descendants ? ' | scope: descendants' : '';
+  const notesPart = row.notes ? ` | ${row.notes}` : '';
+  return `- #${row.id} | ${row.paddock_name} | ${row.event_type_label} | ${formatDateForReply(
+    row.event_date
+  )}${waitPart}${readyPart}${scopePart}${notesPart}`;
 }
 
 function formatHorseGroupLine(row) {
@@ -530,74 +667,131 @@ async function findFeedItemByName(itemName) {
   return result.rows[0] || null;
 }
 
-const START_MESSAGE = `Hello!
+const TELEGRAM_MENU_COMMANDS = [
+  { command: 'start', description: 'Open the Farm Bot command guide' },
+  { command: 'help', description: 'Show command formats and examples' },
+];
 
-Commands:
-- horse add perla
-- horse list
-- history imperial
-- history full imperial
-- horse grazing imperial
+const TELEGRAM_LOOKUP_COMMANDS = [
+  'horse list',
+  'history <horse name>',
+  'history full <horse name>',
+  'horse grazing <horse name>',
+  'group list',
+  'group members <group name>',
+  'paddock list',
+  'paddock status',
+  'paddock history <paddock name>',
+  'paddock work history',
+  'paddock work history <paddock name>',
+  'stock',
+  'stock <feed item>',
+  'stock history <feed item>',
+  'rain today',
+  'rain history',
+  'rain history 30',
+  'deworm due',
+  'deworm history',
+  'deworm history <horse name>',
+  'farrier due',
+];
 
-- group add manada
-- group list
-- group members manada
-- move group in manada potrero 1 2026-04-16
-- move group out manada potrero 1 2026-04-20
+const TELEGRAM_ENTRY_COMMANDS = [
+  'horse add <horse name>',
+  'horse rename <current name> | <new name>',
+  'group add <group name>',
+  'group set members <group name> | <horse 1>, <horse 2>',
+  'paddock add <paddock name>',
+  'paddock work <paddock name> | <work type> | [YYYY-MM-DD] | [ready days|-] | [scope] | [notes]',
+  'paddock work update <event id> | <paddock name> | <work type> | [YYYY-MM-DD] | [ready days|-] | [scope] | [notes]',
+  'move in <horse name> <paddock name> [YYYY-MM-DD] [notes]',
+  'move out <horse name> <paddock name> [YYYY-MM-DD] [notes]',
+  'move group in <group name> <paddock name> [YYYY-MM-DD] [notes]',
+  'move group correct <group name> <paddock name> [YYYY-MM-DD] [notes]',
+  'move group out <group name> <paddock name> [YYYY-MM-DD] [notes]',
+  'horse training <horse name> <in training|breaking in|clear>',
+  'stock add <feed item> <quantity> <unit> [YYYY-MM-DD] [notes]',
+  'stock set <feed item> <quantity> <unit>',
+  'stock use <feed item> <quantity> <unit> [YYYY-MM-DD] [notes]',
+  'feed <horse name> <feed item> <quantity> <unit> [YYYY-MM-DD]',
+  'rain <mm> [YYYY-MM-DD] [notes]',
+  'deworm <horse name> <product> [YYYY-MM-DD]',
+  'deworm done <horse name> <product> <YYYY-MM-DD>',
+  'farrier <horse name> <service> [YYYY-MM-DD]',
+  'health add <horse name> <type> <description> [YYYY-MM-DD]',
+  'treatment add <horse name> <medication> <dosage> <frequency> <duration>d <YYYY-MM-DD>',
+  'dose add <horse name> <medication> <YYYY-MM-DD> <HH:MM>',
+];
 
-- paddock add potrero 1
-- paddock list
-- paddock status
-- paddock history potrero 1
-- move in imperial potrero 1 2026-04-16
-- move out imperial potrero 1 2026-04-20
+const TELEGRAM_EXAMPLE_COMMANDS = [
+  'horse rename Caballo Uru 4 | Caballo Uru IV',
+  'group set members Manada | Bengala, Black Jack, Tekua',
+  'paddock work Potrero 2.1 | seeding | 2026-05-08 | 45 | descendants | ryegrass reseeded',
+  'paddock work update 12 | Potrero 2.1 | fertilizer | 2026-05-09 | - | paddock | post rain pass',
+  'move in Imperial Potrero 2.1 2026-05-08 calm entry',
+  'move group correct Manada Potrero 2.1 2026-05-08 imported history fix',
+  'move group in Manada Potrero 2.1 2026-05-08 morning rotation',
+  'horse training Imperial breaking in',
+  'stock add oats 50 kg 2026-05-08 bought from Juan',
+  'stock use alfalfa 1 bale 2026-05-08 opened new bale',
+  'feed Fair Halo oats 2 kg',
+  'rain 12.5 2026-05-08 heavy shower',
+  'deworm Imperial ivermectin 2026-05-08',
+  'health add Imperial injury left hind leg cut 2026-05-08',
+  'dose add Imperial repen 2026-05-08 18:00',
+];
 
-- stock
-- stock oats
-- stock history oats
-- stock add oats 50 kg
-- stock set alfalfa 11 bale
-- stock use alfalfa 1 bale
+const TELEGRAM_ADMIN_ONLY_ACTIONS = [
+  'Horse profile details: date of birth, color, activity, and sex',
+  'Feed plan and feed calendar management',
+  'Editing or deleting feed history entries',
+  'Farm settings and admin module toggles',
+  'Weather sync from the rain panel',
+  'Detailed paddock metadata edits like zone, size, parent, and notes',
+];
 
-- feed imperial oats 2 kg
-- feed fair halo oats 2 kg
-- feed imperial oats 2 kg 2026-03-01
+function buildTelegramCommandGuide() {
+  return [
+    'Farm Bot command guide',
+    '',
+    'Use /help anytime to open this again.',
+    '',
+    'How to send data',
+    '- Most actions are plain text commands, not slash commands.',
+    '- Send one command per line. You can send multiple lines in one message.',
+    '- Use YYYY-MM-DD for dates and HH:MM for dose time.',
+    '- If an optional date is omitted, today is used.',
+    '- Commands with [notes] save everything after the date as notes.',
+    '- Commands with | use pipe-separated fields so names can keep spaces.',
+    '- Horse, group, paddock, and feed names can include spaces.',
+    '- Group members can be assigned with group set members or from the admin panel.',
+    '- Paddock work types: soil prep, seeding, fertilizer, spraying, ready check, other.',
+    '',
+    'Check data',
+    ...TELEGRAM_LOOKUP_COMMANDS.map((commandText) => `- ${commandText}`),
+    '',
+    'Register or update data',
+    ...TELEGRAM_ENTRY_COMMANDS.map((commandText) => `- ${commandText}`),
+    '',
+    'Examples',
+    ...TELEGRAM_EXAMPLE_COMMANDS.map((commandText) => `- ${commandText}`),
+    '',
+    'Still admin-only',
+    ...TELEGRAM_ADMIN_ONLY_ACTIONS.map((commandText) => `- ${commandText}`),
+  ].join('\n');
+}
 
-- rain 12.5
-- rain 12.5 2026-04-12 heavy
-- rain today
-- rain history
-- rain history 30
+const START_MESSAGE = buildTelegramCommandGuide();
 
-- deworm imperial ivermectin
-- deworm imperial ivermectin 2026-03-12
-- deworm done imperial ivermectin 2026-03-16
-- deworm due
-- deworm history
-- deworm history imperial
+async function syncTelegramMenuCommands() {
+  try {
+    await bot.telegram.setMyCommands(TELEGRAM_MENU_COMMANDS);
+  } catch (error) {
+    console.error('TELEGRAM COMMAND MENU ERROR:', error);
+  }
+}
 
-- farrier imperial trim
-- farrier imperial trim 2026-03-12
-- farrier due
-
-- health add imperial injury leg-cut 2026-04-12
-- treatment add imperial repen 20cc 2x 5d 2026-04-12
-- dose add imperial repen 2026-04-13 18:00
-
-- Group members are assigned from the admin panel.
-
-You can also send multiple commands in one message using one line per command.`;
-
-bot.start(async (ctx) => {
-  await ctx.reply(START_MESSAGE);
-});
-
-bot.on('text', async (ctx) => {
-  const telegramUserId = String(ctx.from.id);
-  const username = ctx.from.username || null;
-  const firstName = ctx.from.first_name || null;
-  const incomingChatId = String(ctx.chat.id);
-
+async function ensureAlertChatRegistration(incomingChatId) {
   if (!alertChatId) {
     const farmSettings = await getFarmSettings();
     alertChatId = farmSettings.telegram_alert_chat_id || null;
@@ -611,6 +805,25 @@ bot.on('text', async (ctx) => {
       console.error('REMINDER ERROR:', error);
     });
   }
+}
+
+bot.start(async (ctx) => {
+  await ensureAlertChatRegistration(String(ctx.chat.id));
+  await ctx.reply(START_MESSAGE);
+});
+
+bot.help(async (ctx) => {
+  await ensureAlertChatRegistration(String(ctx.chat.id));
+  await ctx.reply(START_MESSAGE);
+});
+
+bot.on('text', async (ctx) => {
+  const telegramUserId = String(ctx.from.id);
+  const username = ctx.from.username || null;
+  const firstName = ctx.from.first_name || null;
+  const incomingChatId = String(ctx.chat.id);
+
+  await ensureAlertChatRegistration(incomingChatId);
 
   const messages = ctx.message.text
     .split('\n')
@@ -624,6 +837,16 @@ bot.on('text', async (ctx) => {
       const command = parts[0]?.toLowerCase();
 
       console.log('Incoming message:', messageText);
+
+      if (
+        lowerMessage === 'help' ||
+        lowerMessage === '/help' ||
+        lowerMessage === 'commands' ||
+        lowerMessage === '/commands'
+      ) {
+        await ctx.reply(START_MESSAGE);
+        continue;
+      }
 
       const rawResult = await pool.query(
         `
@@ -691,6 +914,127 @@ bot.on('text', async (ctx) => {
 
 Name: ${horse.name}
 Horse ID: ${horse.id}
+Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
+      // HORSE RENAME
+      // horse rename <current name> | <new name>
+      // -----------------------------
+      if (lowerMessage.startsWith('horse rename ')) {
+        const remainder = messageText.slice('horse rename '.length).trim();
+        const segments = parsePipeSegments(remainder);
+        const currentName = String(segments[0] || '').trim();
+        const newName = segments.slice(1).join(' | ').trim();
+
+        if (!currentName || !newName) {
+          await ctx.reply('Use: horse rename <current name> | <new name>');
+          continue;
+        }
+
+        const horse = await findHorseByName(currentName);
+
+        if (!horse) {
+          const horses = await listHorseNames();
+          await ctx.reply(
+            `Horse not found: ${currentName}
+
+Available horses:
+${horses.map((h) => `- ${h}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const duplicateCheck = await pool.query(
+          `
+          SELECT id, name
+          FROM horses
+          WHERE LOWER(name) = LOWER($1)
+            AND id <> $2
+          LIMIT 1
+          `,
+          [newName, horse.id]
+        );
+
+        if (duplicateCheck.rows.length > 0) {
+          await ctx.reply(`Another horse already uses that name: ${duplicateCheck.rows[0].name}`);
+          continue;
+        }
+
+        const updateResult = await pool.query(
+          `
+          UPDATE horses
+          SET name = $1
+          WHERE id = $2
+          RETURNING id, name
+          `,
+          [newName, horse.id]
+        );
+
+        await ctx.reply(
+          `Horse renamed ✅
+
+Previous name: ${horse.name}
+New name: ${updateResult.rows[0].name}
+Horse ID: ${updateResult.rows[0].id}
+Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
+      // HORSE TRAINING
+      // horse training <horse name> <in training|breaking in|clear>
+      // -----------------------------
+      if (lowerMessage.startsWith('horse training ')) {
+        const remainder = messageText.slice('horse training '.length).trim();
+        const allHorses = await listHorseNames();
+        const matchedHorseName = findLongestPrefixMatch(remainder, allHorses);
+
+        if (!matchedHorseName) {
+          await ctx.reply(
+            `Horse not found.
+
+Available horses:
+${allHorses.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const horse = await findHorseByName(matchedHorseName);
+        const statusRaw = remainder.slice(matchedHorseName.length).trim();
+
+        if (!statusRaw) {
+          await ctx.reply('Use: horse training <horse name> <in training|breaking in|clear>');
+          continue;
+        }
+
+        const trainingStatus = normalizeTrainingStatusInput(statusRaw);
+
+        if (trainingStatus == null) {
+          await ctx.reply(
+            'Training status must be: in training, breaking in, or clear'
+          );
+          continue;
+        }
+
+        const updateResult = await pool.query(
+          `
+          UPDATE horses
+          SET training_status = $1
+          WHERE id = $2
+          RETURNING id, name, training_status
+          `,
+          [trainingStatus || null, horse.id]
+        );
+
+        await ctx.reply(
+          `Training status saved ✅
+
+Horse: ${updateResult.rows[0].name}
+Status: ${normalizeTrainingStatusForReply(updateResult.rows[0].training_status) || 'No status'}
 Raw message ID: ${rawMessageId}`
         );
         continue;
@@ -788,6 +1132,105 @@ ${group.members.map((member) => `- ${member.name}`).join('\n')}`;
       }
 
       // -----------------------------
+      // GROUP SET MEMBERS
+      // group set members <group name> | <horse 1>, <horse 2>
+      // Use blank / none after the pipe to clear the group.
+      // -----------------------------
+      if (lowerMessage.startsWith('group set members ')) {
+        const remainder = messageText.slice('group set members '.length).trim();
+        const segments = parsePipeSegments(remainder);
+        const groupName = String(segments[0] || '').trim();
+        const memberListRaw = segments.slice(1).join(' | ').trim();
+
+        if (!groupName) {
+          await ctx.reply('Use: group set members <group name> | <horse 1>, <horse 2>');
+          continue;
+        }
+
+        const group = await findHorseGroupByName(groupName);
+
+        if (!group) {
+          const groups = await listHorseGroups();
+          await ctx.reply(
+            `Group not found: ${groupName}
+
+Available groups:
+${groups.map((row) => `- ${row.name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        let horseIds = [];
+        let requestedHorseNames = [];
+
+        if (
+          memberListRaw &&
+          !['none', 'clear', 'empty', '-'].includes(memberListRaw.toLowerCase())
+        ) {
+          requestedHorseNames = [...new Set(
+            memberListRaw
+              .split(',')
+              .map((name) => name.trim())
+              .filter(Boolean)
+          )];
+
+          if (!requestedHorseNames.length) {
+            await ctx.reply('Use: group set members <group name> | <horse 1>, <horse 2>');
+            continue;
+          }
+
+          const missingHorseNames = [];
+
+          for (const horseName of requestedHorseNames) {
+            const horse = await findHorseByName(horseName);
+            if (!horse) {
+              missingHorseNames.push(horseName);
+              continue;
+            }
+            horseIds.push(horse.id);
+          }
+
+          if (missingHorseNames.length > 0) {
+            const horses = await listHorseNames();
+            await ctx.reply(
+              `Horse not found: ${missingHorseNames.join(', ')}
+
+Available horses:
+${horses.map((name) => `- ${name}`).join('\n')}`
+            );
+            continue;
+          }
+        }
+
+        const data = await setHorseGroupMembers({
+          groupId: group.id,
+          horseIds,
+        });
+
+        const currentMembers = Array.isArray(data.members) ? data.members : [];
+        const reassignedMembers = Array.isArray(data.reassigned_members) ? data.reassigned_members : [];
+        const removedMembers = Array.isArray(data.removed_members) ? data.removed_members : [];
+
+        let reply = `Group members saved ✅
+
+Group: ${data.group.name}
+Current members: ${currentMembers.length}
+Reassigned: ${reassignedMembers.length}
+Removed: ${removedMembers.length}`;
+
+        if (currentMembers.length > 0) {
+          reply += `\n\nMembers
+${currentMembers.map((member) => `- ${member.name}`).join('\n')}`;
+        } else {
+          reply += '\n\nMembers\n- No horses assigned';
+        }
+
+        reply += `\n\nRaw message ID: ${rawMessageId}`;
+        await ctx.reply(reply);
+        continue;
+      }
+
+      // -----------------------------
       // PADDOCK LIST
       // -----------------------------
       if (lowerMessage === 'paddock list') {
@@ -799,6 +1242,59 @@ ${group.members.map((member) => `- ${member.name}`).join('\n')}`;
         }
 
         await ctx.reply(`Registered paddocks\n\n${paddocks.map(formatPaddockStatusLine).join('\n')}`);
+        continue;
+      }
+
+      // -----------------------------
+      // PADDOCK WORK HISTORY
+      // paddock work history
+      // paddock work history <paddock name>
+      // -----------------------------
+      if (
+        lowerMessage === 'paddock work history' ||
+        lowerMessage.startsWith('paddock work history ')
+      ) {
+        const paddockName = messageText.slice('paddock work history'.length).trim();
+        let paddockId = null;
+        let replyLabel = 'latest 20';
+
+        if (paddockName) {
+          const paddock = await findPaddockByName(paddockName);
+
+          if (!paddock) {
+            const paddocks = await listPaddockNames();
+            await ctx.reply(
+              `Paddock not found: ${paddockName}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+            );
+            continue;
+          }
+
+          paddockId = paddock.id;
+          replyLabel = paddock.name;
+        }
+
+        const workRows = await listPaddockWorkHistory({
+          paddockId,
+          limit: paddockId ? 30 : 20,
+        });
+
+        if (workRows.length === 0) {
+          await ctx.reply(
+            paddockId
+              ? `No paddock work history found for ${replyLabel}.`
+              : 'No paddock work history records found.'
+          );
+          continue;
+        }
+
+        await ctx.reply(
+          `Paddock work history: ${replyLabel}\n\n${workRows
+            .map(formatPaddockWorkHistoryLine)
+            .join('\n')}`
+        );
         continue;
       }
 
@@ -824,6 +1320,148 @@ ${group.members.map((member) => `- ${member.name}`).join('\n')}`;
 Name: ${data.paddock.name}
 Status: ${data.paddock.active ? 'Active' : 'Inactive'}
 Paddock ID: ${data.paddock.id}
+Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
+      // PADDOCK WORK UPDATE
+      // paddock work update <event id> | <paddock name> | <work type> | [YYYY-MM-DD] | [ready days|-] | [scope] | [notes]
+      // -----------------------------
+      if (lowerMessage.startsWith('paddock work update ')) {
+        let workData;
+
+        try {
+          workData = parsePaddockWorkCommand(
+            messageText.slice('paddock work update '.length).trim(),
+            { requireEventId: true }
+          );
+        } catch (error) {
+          await ctx.reply(error.message);
+          continue;
+        }
+
+        if (!workData || !workData.paddockName || !workData.eventType) {
+          await ctx.reply(
+            'Use: paddock work update <event id> | <paddock name> | <work type> | [YYYY-MM-DD] | [ready days|-] | [scope] | [notes]'
+          );
+          continue;
+        }
+
+        const paddock = await findPaddockByName(workData.paddockName);
+
+        if (!paddock) {
+          const paddocks = await listPaddockNames();
+          await ctx.reply(
+            `Paddock not found: ${workData.paddockName}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const data = await updatePaddockWorkEvent({
+          eventId: workData.eventId,
+          paddockId: paddock.id,
+          eventType: workData.eventType,
+          eventDate: workData.eventDate,
+          readyAfterDays: workData.readyAfterDays,
+          applyToDescendants: workData.applyToDescendants,
+          notes: workData.notes || null,
+          telegramUserId,
+        });
+
+        const activeWaitEvent = data.active_wait_event;
+        await ctx.reply(
+          `Paddock work updated ✅
+
+Event ID: ${data.paddock_work_event.id}
+Paddock: ${data.paddock.name}
+Work: ${data.paddock_work_event.event_type_label}
+Date: ${formatDateForReply(data.paddock_work_event.event_date)}
+Ready after: ${
+            data.paddock_work_event.ready_after_days == null
+              ? 'Not set'
+              : `${data.paddock_work_event.ready_after_days} day(s)`
+          }
+Ready to graze: ${formatDateForReply(data.paddock_work_event.ready_to_graze_on)}
+Scope: ${data.paddock_work_event.applies_to_descendants ? 'Descendants' : 'Paddock only'}
+${workData.notes ? `Notes: ${workData.notes}\n` : ''}${
+            activeWaitEvent?.ready_to_graze_on
+              ? `Active ready date: ${formatDateForReply(activeWaitEvent.ready_to_graze_on)}`
+              : 'Active ready date: not set'
+          }
+Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
+      // PADDOCK WORK SAVE
+      // paddock work <paddock name> | <work type> | [YYYY-MM-DD] | [ready days|-] | [scope] | [notes]
+      // -----------------------------
+      if (lowerMessage.startsWith('paddock work ')) {
+        let workData;
+
+        try {
+          workData = parsePaddockWorkCommand(messageText.slice('paddock work '.length).trim());
+        } catch (error) {
+          await ctx.reply(error.message);
+          continue;
+        }
+
+        if (!workData || !workData.paddockName || !workData.eventType) {
+          await ctx.reply(
+            'Use: paddock work <paddock name> | <work type> | [YYYY-MM-DD] | [ready days|-] | [scope] | [notes]'
+          );
+          continue;
+        }
+
+        const paddock = await findPaddockByName(workData.paddockName);
+
+        if (!paddock) {
+          const paddocks = await listPaddockNames();
+          await ctx.reply(
+            `Paddock not found: ${workData.paddockName}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const data = await savePaddockWorkEvent({
+          paddockId: paddock.id,
+          eventType: workData.eventType,
+          eventDate: workData.eventDate,
+          readyAfterDays: workData.readyAfterDays,
+          applyToDescendants: workData.applyToDescendants,
+          notes: workData.notes || null,
+          telegramUserId,
+        });
+
+        const activeWaitEvent = data.active_wait_event;
+        await ctx.reply(
+          `Paddock work recorded ✅
+
+Event ID: ${data.paddock_work_event.id}
+Paddock: ${data.paddock.name}
+Work: ${data.paddock_work_event.event_type_label}
+Date: ${formatDateForReply(data.paddock_work_event.event_date)}
+Ready after: ${
+            data.paddock_work_event.ready_after_days == null
+              ? 'Not set'
+              : `${data.paddock_work_event.ready_after_days} day(s)`
+          }
+Ready to graze: ${formatDateForReply(data.paddock_work_event.ready_to_graze_on)}
+Scope: ${data.paddock_work_event.applies_to_descendants ? 'Descendants' : 'Paddock only'}
+${workData.notes ? `Notes: ${workData.notes}\n` : ''}${
+            activeWaitEvent?.ready_to_graze_on
+              ? `Active ready date: ${formatDateForReply(activeWaitEvent.ready_to_graze_on)}`
+              : 'Active ready date: not set'
+          }
 Raw message ID: ${rawMessageId}`
         );
         continue;
@@ -936,6 +1574,86 @@ ${grazingRows.map(formatGrazingHistoryLine).join('\n')}`;
         }
 
         await ctx.reply(reply);
+        continue;
+      }
+
+      // -----------------------------
+      // GROUP CORRECT CURRENT PADDOCK
+      // move group correct <group name> <paddock name> [YYYY-MM-DD] [notes...]
+      // -----------------------------
+      if (lowerMessage.startsWith('move group correct ')) {
+        const remainder = messageText.slice('move group correct '.length).trim();
+        const allGroups = await listHorseGroups();
+        const matchedGroupName = findLongestPrefixMatch(
+          remainder,
+          allGroups.map((group) => group.name)
+        );
+
+        if (!matchedGroupName) {
+          await ctx.reply(
+            `Group not found.
+
+Available groups:
+${allGroups.map((group) => `- ${group.name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const group =
+          allGroups.find((row) => row.name === matchedGroupName) ||
+          (await findHorseGroupByName(matchedGroupName));
+        const afterGroup = remainder.slice(matchedGroupName.length).trim();
+        let moveData;
+
+        try {
+          moveData = parseNamedSegmentWithOptionalDateAndNotes(afterGroup);
+        } catch (error) {
+          await ctx.reply(error.message);
+          continue;
+        }
+
+        if (!moveData.name) {
+          await ctx.reply(
+            'Use: move group correct <group name> <paddock name> [YYYY-MM-DD] [notes]'
+          );
+          continue;
+        }
+
+        const paddock = await findPaddockByName(moveData.name);
+
+        if (!paddock) {
+          const paddocks = await listPaddockNames();
+          await ctx.reply(
+            `Paddock not found: ${moveData.name}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const data = await correctHorseGroupCurrentPaddock({
+          groupId: group.id,
+          paddockId: paddock.id,
+          enteredAt: moveData.eventDate,
+          entryNotes: moveData.notes || null,
+          source: 'telegram_group_correction',
+        });
+
+        await ctx.reply(
+          `Group current paddock corrected ✅
+
+Group: ${data.group.name}
+Paddock: ${data.paddock.name}
+Entered: ${formatDateForReply(moveData.eventDate)}
+Corrected: ${data.corrected_count}
+Updated existing: ${data.updated_count}
+Inserted missing: ${data.inserted_count}
+Already matched: ${data.unchanged_count}
+${moveData.notes ? `Notes: ${moveData.notes}\n` : ''}Horses:
+${data.horses.map((horse) => `- ${horse.name}`).join('\n')}
+Raw message ID: ${rawMessageId}`
+        );
         continue;
       }
 
@@ -3126,4 +3844,5 @@ module.exports = {
   sendRemindersToAlertChat,
   startReminderScheduler,
   ensureReminderAlertsTable,
+  syncTelegramMenuCommands,
 };
