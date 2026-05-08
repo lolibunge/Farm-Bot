@@ -144,7 +144,8 @@ const horseGroupStatusBody = document.getElementById('horse-group-status-body');
 const horseGroupHistoryRegistryBody = document.getElementById('horse-group-history-registry-body');
 const paddockStatusBody = document.getElementById('paddock-status-body');
 const paddockWorkHistoryBody = document.getElementById('paddock-work-history-body');
-const grazingHistoryBody = document.getElementById('grazing-history-body');
+const paddockOccupancyBody = document.getElementById('paddock-occupancy-body');
+const paddockOccupancyCards = document.getElementById('paddock-occupancy-cards');
 const paddockSaveForm = document.getElementById('paddock-save-form');
 const paddockNameInput = document.getElementById('paddock-name-input');
 const paddockZoneInput = document.getElementById('paddock-zone-input');
@@ -260,7 +261,7 @@ let currentFeedHistoryRows = [];
 let currentHorseFeedPlanRows = [];
 let currentHorseFeedPlanDraftRows = [];
 let currentHorseFeedCalendar = null;
-let currentGrazingHistoryRows = [];
+let currentPaddockOccupancyRows = [];
 let currentDewormingHistoryRows = [];
 let currentFarrierHistoryRows = [];
 let currentHorseGroupMemberSelection = new Set();
@@ -292,7 +293,7 @@ const ADMIN_MODULES = [
   {
     key: 'paddocks',
     label: 'Paddocks',
-    description: 'Paddock setup, grazing moves, field work, and grazing history.',
+    description: 'Paddock setup, grazing moves, field work, and paddock occupancy.',
   },
   {
     key: 'feed',
@@ -358,7 +359,7 @@ const MODULE_BOUND_SELECTORS = {
     '#horse-group-move-out-section',
     '#panel-paddock-status',
     '#panel-paddock-work-history',
-    '#panel-grazing-history',
+    '#panel-paddock-occupancy',
     '#horse-history-current-grazing',
     '#horse-history-grazing-card',
   ],
@@ -3253,7 +3254,7 @@ function setHorseCurrentGroup(currentGroupMembership) {
 
 function renderHorseGrazingHistoryRows(rows) {
   if (!rows.length) {
-    horseGrazingHistoryBody.innerHTML = emptyStateRow(4, 'No grazing history.');
+    horseGrazingHistoryBody.innerHTML = emptyStateRow(4, 'No grazing history for this horse yet.');
     return;
   }
 
@@ -3264,9 +3265,7 @@ function renderHorseGrazingHistoryRows(rows) {
           <td>${escapeHtml(row.paddock_name)}</td>
           <td>${escapeHtml(formatDate(row.entered_at))}</td>
           <td>${escapeHtml(row.exited_at ? formatDate(row.exited_at) : 'Current')}</td>
-          <td>${escapeHtml(
-            `${row.grazing_days || '-'}${row.source_group_name ? ` (${row.source_group_name})` : ''}`
-          )}</td>
+          <td>${escapeHtml(String(row.days ?? row.grazing_days ?? '-'))}</td>
         </tr>
       `
     )
@@ -3429,31 +3428,121 @@ function renderPaddockWorkHistoryRows(rows) {
     .join('');
 }
 
-function renderGrazingHistoryRows(rows) {
-  currentGrazingHistoryRows = rows;
+function formatHorseCountLabel(count) {
+  const safeCount = Math.max(0, Number(count || 0));
+  return `${safeCount} horse${safeCount === 1 ? '' : 's'}`;
+}
+
+function formatDayCountLabel(count) {
+  if (count == null) {
+    return '-';
+  }
+
+  const safeCount = Math.max(0, Number(count || 0));
+  return `${safeCount} day${safeCount === 1 ? '' : 's'}`;
+}
+
+function getPaddockOccupancyStatusBadgeClass(status) {
+  const normalized = String(status || '')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === 'active') {
+    return 'ok';
+  }
+
+  if (normalized === 'resting') {
+    return 'soon';
+  }
+
+  if (normalized === 'inactive') {
+    return 'overdue';
+  }
+
+  return 'neutral';
+}
+
+function renderPaddockOccupancyHorseDetails(horses) {
+  if (!Array.isArray(horses) || !horses.length) {
+    return '';
+  }
+
+  return `
+    <details class="occupancy-horses-details">
+      <summary>Show horses</summary>
+      <ul class="occupancy-horse-list">
+        ${horses
+          .map((horse) => `<li>${escapeHtml(horse.name || `Horse ${horse.id}`)}</li>`)
+          .join('')}
+      </ul>
+    </details>
+  `;
+}
+
+function renderPaddockOccupancyRows(rows) {
+  currentPaddockOccupancyRows = rows;
+
+  const emptyMessage = 'No active paddock occupancy yet.';
 
   if (!rows.length) {
-    grazingHistoryBody.innerHTML = emptyStateRow(6, 'No grazing history yet.');
+    paddockOccupancyBody.innerHTML = emptyStateRow(5, emptyMessage);
+    if (paddockOccupancyCards) {
+      paddockOccupancyCards.innerHTML = `<p class="paddock-occupancy-empty">${escapeHtml(emptyMessage)}</p>`;
+    }
     return;
   }
 
-  grazingHistoryBody.innerHTML = rows
+  paddockOccupancyBody.innerHTML = rows
     .map((row) => {
-      const notes = [row.source_group_name ? `Group: ${row.source_group_name}` : '', row.entry_notes, row.exit_notes]
-        .filter(Boolean)
-        .join(' | ');
+      const horseCountLabel = formatHorseCountLabel(row.active_horse_count);
+      const statusLabel = row.status || 'Active';
+      const statusClass = getPaddockOccupancyStatusBadgeClass(statusLabel);
+
       return `
         <tr>
           <td>${escapeHtml(row.paddock_name)}</td>
-          <td>${escapeHtml(row.horse_name)}</td>
+          <td>
+            <div class="occupancy-count">${escapeHtml(horseCountLabel)}</div>
+            ${renderPaddockOccupancyHorseDetails(row.active_horses)}
+          </td>
           <td>${escapeHtml(formatDate(row.entered_at))}</td>
-          <td>${escapeHtml(row.exited_at ? formatDate(row.exited_at) : 'Current')}</td>
-          <td>${escapeHtml(String(row.grazing_days || '-'))}</td>
-          <td>${escapeHtml(notes || '-')}</td>
+          <td>${escapeHtml(formatDayCountLabel(row.days_grazed))}</td>
+          <td><span class="badge ${statusClass}">${escapeHtml(statusLabel)}</span></td>
         </tr>
       `;
     })
     .join('');
+
+  if (paddockOccupancyCards) {
+    paddockOccupancyCards.innerHTML = rows
+      .map((row) => {
+        const horseCountLabel = formatHorseCountLabel(row.active_horse_count);
+        const statusLabel = row.status || 'Active';
+        const statusClass = getPaddockOccupancyStatusBadgeClass(statusLabel);
+
+        return `
+          <article class="paddock-occupancy-card">
+            <div class="paddock-occupancy-card-head">
+              <h3>${escapeHtml(row.paddock_name)}</h3>
+              <span class="badge ${statusClass}">${escapeHtml(statusLabel)}</span>
+            </div>
+            <p class="paddock-occupancy-card-count">${escapeHtml(horseCountLabel)} currently grazing</p>
+            <dl class="paddock-occupancy-card-meta">
+              <div>
+                <dt>Entered</dt>
+                <dd>${escapeHtml(formatDate(row.entered_at))}</dd>
+              </div>
+              <div>
+                <dt>Days grazed</dt>
+                <dd>${escapeHtml(formatDayCountLabel(row.days_grazed))}</dd>
+              </div>
+            </dl>
+            ${renderPaddockOccupancyHorseDetails(row.active_horses)}
+          </article>
+        `;
+      })
+      .join('');
+  }
 }
 
 function formatHorseGroupCurrentPaddockSummary(row) {
@@ -3919,7 +4008,7 @@ function clearDashboardView() {
   currentFarmSettings = null;
   currentAdminModuleSettings = getDefaultAdminModuleSettings();
   currentFeedHistoryRows = [];
-  currentGrazingHistoryRows = [];
+  currentPaddockOccupancyRows = [];
   currentDewormingHistoryRows = [];
   currentFarrierHistoryRows = [];
   currentHorseGroupMemberSelection = new Set();
@@ -3951,7 +4040,12 @@ function clearDashboardView() {
   if (paddockWorkHistoryBody) {
     paddockWorkHistoryBody.innerHTML = emptyStateRow(7, 'Log in to view data.');
   }
-  grazingHistoryBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
+  if (paddockOccupancyBody) {
+    paddockOccupancyBody.innerHTML = emptyStateRow(5, 'Log in to view data.');
+  }
+  if (paddockOccupancyCards) {
+    paddockOccupancyCards.innerHTML = '<p class="paddock-occupancy-empty">Log in to view data.</p>';
+  }
   horsesInTrainingBody.innerHTML = emptyStateRow(3, 'Log in to view data.');
   horsesBreakingInBody.innerHTML = emptyStateRow(3, 'Log in to view data.');
   renderHorseHistoryRows([]);
@@ -4101,7 +4195,7 @@ async function loadDashboard(options = {}) {
     renderHorseGroupHistoryRegistryRows(payload.horse_group_history || []);
     renderPaddockStatusRows(currentPaddockRows);
     renderPaddockWorkHistoryRows(currentPaddockWorkRows);
-    renderGrazingHistoryRows(payload.grazing_history || []);
+    renderPaddockOccupancyRows(payload.paddock_occupancy || []);
     currentDewormingHistoryRows = payload.deworming_history || [];
     currentFarrierHistoryRows = payload.farrier_history_registry || [];
     populateDewormHistoryHorseFilter(currentHorseRows);

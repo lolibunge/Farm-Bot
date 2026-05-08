@@ -226,8 +226,8 @@ module.exports = async (req, res) => {
               ' | days: ',
               CASE
                 WHEN ge.exited_at IS NULL
-                  THEN GREATEST(1, (CURRENT_DATE - ge.entered_at) + 1)
-                ELSE GREATEST(1, (ge.exited_at - ge.entered_at) + 1)
+                  THEN GREATEST(1, CURRENT_DATE - ge.entered_at)
+                ELSE GREATEST(1, ge.exited_at - ge.entered_at)
               END,
               COALESCE(CONCAT(' | group: ', sg.name), ''),
               COALESCE(CONCAT(' | note: ', ge.entry_notes), ''),
@@ -459,10 +459,13 @@ module.exports = async (req, res) => {
       })),
       grazing_history: (paddocksModuleEnabled ? grazingHistoryRows : []).map((row) => ({
         id: row.id,
+        horse_id: row.horse_id,
+        horse_name: row.horse_name,
         paddock_id: row.paddock_id,
         paddock_name: row.paddock_name,
         entered_at: row.entered_at,
         exited_at: row.exited_at,
+        days: row.grazing_days,
         grazing_days: row.grazing_days,
         entry_notes: row.entry_notes,
         exit_notes: row.exit_notes,

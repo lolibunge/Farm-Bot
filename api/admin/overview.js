@@ -3,7 +3,7 @@ const { ensureHorseProfileColumns } = require('../../lib/horse-profile');
 const {
   ensurePaddockTables,
   listPaddockStatus,
-  listGrazingHistory,
+  listPaddockOccupancy,
   listPaddockWorkHistory,
   listHorseGroups,
   listHorseGroupHistory,
@@ -142,7 +142,7 @@ module.exports = async (req, res) => {
       paddockStatusRows,
       horseGroupRows,
       horseGroupHistoryRows,
-      grazingHistoryRows,
+      paddockOccupancyRows,
       paddockWorkHistoryRows,
       feedItemCountResult,
       lowStockCountResult,
@@ -180,7 +180,7 @@ module.exports = async (req, res) => {
       listPaddockStatus(),
       listHorseGroups(),
       listHorseGroupHistory({ limit: 80 }),
-      listGrazingHistory({ limit: 120 }),
+      listPaddockOccupancy({ limit: 120 }),
       listPaddockWorkHistory({ limit: 120 }),
       pool.query('SELECT COUNT(*)::int AS count FROM feed_items'),
       pool.query('SELECT COUNT(*)::int AS count FROM feed_items WHERE current_stock <= $1', [
@@ -552,7 +552,7 @@ module.exports = async (req, res) => {
     const filteredPaddockRows = paddocksModuleEnabled ? paddockStatusRows : [];
     const filteredHorseGroupRows = groupsModuleEnabled ? horseGroupRows : [];
     const filteredHorseGroupHistoryRows = groupsModuleEnabled ? horseGroupHistoryRows : [];
-    const filteredGrazingHistoryRows = paddocksModuleEnabled ? grazingHistoryRows : [];
+    const filteredPaddockOccupancyRows = paddocksModuleEnabled ? paddockOccupancyRows : [];
     const filteredPaddockWorkHistoryRows = paddocksModuleEnabled ? paddockWorkHistoryRows : [];
     const filteredLowStockRows = feedModuleEnabled ? lowStockResult.rows : [];
     const filteredStockRows = feedModuleEnabled ? stockResult.rows : [];
@@ -667,20 +667,15 @@ module.exports = async (req, res) => {
         previous_group_days: row.previous_group_days,
         active: row.active,
       })),
-      grazing_history: filteredGrazingHistoryRows.map((row) => ({
-        id: row.id,
+      paddock_occupancy: filteredPaddockOccupancyRows.map((row) => ({
         paddock_id: row.paddock_id,
         paddock_name: row.paddock_name,
-        horse_id: row.horse_id,
-        horse_name: row.horse_name,
+        active_horse_count: row.active_horse_count,
+        active_horses: row.active_horses,
         entered_at: row.entered_at,
         exited_at: row.exited_at,
-        grazing_days: row.grazing_days,
-        entry_notes: row.entry_notes,
-        exit_notes: row.exit_notes,
-        source_group_id: row.source_group_id,
-        source_group_name: row.source_group_name,
-        active: row.active,
+        days_grazed: row.days_grazed,
+        status: row.status,
       })),
       paddock_work_history: filteredPaddockWorkHistoryRows.map((row) => ({
         id: row.id,
