@@ -65,6 +65,9 @@ const loginPasswordInput = document.getElementById('login-password');
 const loginButton = document.getElementById('login-btn');
 const logoutButton = document.getElementById('logout-btn');
 const refreshButton = document.getElementById('refresh-btn');
+const loadingOverlay = document.getElementById('loading-overlay');
+const loadingOverlayTitle = document.getElementById('loading-overlay-title');
+const loadingOverlayDetail = document.getElementById('loading-overlay-detail');
 const statusMessage = document.getElementById('status-message');
 const lastUpdated = document.getElementById('last-updated');
 const backToTopButton = document.getElementById('back-to-top-btn');
@@ -281,6 +284,7 @@ let selectedHorseFeedCalendarMonth = new Date().toISOString().slice(0, 7);
 let nextHorseFeedPlanDraftRowKey = 1;
 let dashboardAutoRefreshPauseUntil = 0;
 let lastActionCardId = null;
+let loadingOverlayCount = 0;
 
 const RAIN_RING_VIEWBOX_SIZE = 360;
 const RAIN_BARS_VIEWBOX_WIDTH = 960;
@@ -1109,6 +1113,42 @@ function setSessionAuthState(authenticated, username = null) {
   loginPasswordInput.disabled = false;
   loginButton.disabled = false;
   logoutButton.disabled = true;
+}
+
+function setLoadingOverlayContent(message, detail = 'This only takes a moment.') {
+  if (loadingOverlayTitle) {
+    loadingOverlayTitle.textContent = message || 'Loading dashboard...';
+  }
+
+  if (loadingOverlayDetail) {
+    loadingOverlayDetail.textContent = detail || 'This only takes a moment.';
+  }
+}
+
+function beginLoadingOverlay(message = 'Loading dashboard...', detail = 'Pulling the latest farm data.') {
+  loadingOverlayCount += 1;
+  setLoadingOverlayContent(message, detail);
+
+  if (loadingOverlay) {
+    loadingOverlay.classList.remove('hidden');
+    loadingOverlay.setAttribute('aria-hidden', 'false');
+  }
+
+  document.body.classList.add('loading-active');
+}
+
+function endLoadingOverlay() {
+  loadingOverlayCount = Math.max(0, loadingOverlayCount - 1);
+  if (loadingOverlayCount > 0) {
+    return;
+  }
+
+  if (loadingOverlay) {
+    loadingOverlay.classList.add('hidden');
+    loadingOverlay.setAttribute('aria-hidden', 'true');
+  }
+
+  document.body.classList.remove('loading-active');
 }
 
 function setStatus(message, isError = false) {
@@ -5215,8 +5255,9 @@ function clearDashboardView() {
   renderRainChartEmpty('Log in to view rain data.');
 }
 
-async function loadSelectedHorseHistory() {
+async function loadSelectedHorseHistory(options = {}) {
   const horseId = horseSelect?.value || horseProfileSelect?.value || '';
+  const showOverlay = Boolean(options?.showOverlay);
   if (!horseId) {
     setActiveHorseSelection('');
     resetHorseFeedHistoryFilters();
@@ -5236,6 +5277,10 @@ async function loadSelectedHorseHistory() {
   }
 
   try {
+    if (showOverlay) {
+      beginLoadingOverlay('Loading horse history...', 'Updating the horse timeline, feed, and care records.');
+    }
+
     const query = new URLSearchParams({
       horseId: String(horseId),
       month: selectedHorseFeedCalendarMonth,
@@ -5266,6 +5311,10 @@ async function loadSelectedHorseHistory() {
       return { ok: false, error };
     }
     return { ok: false, error };
+  } finally {
+    if (showOverlay) {
+      endLoadingOverlay();
+    }
   }
 }
 
@@ -5291,6 +5340,7 @@ function renderActivityRows(rows) {
 
 async function loadDashboard(options = {}) {
   const silent = Boolean(options?.silent);
+  const showOverlay = !silent;
 
   if (!sessionAuthenticated) {
     setStatus('Please log in to access the admin dashboard.', true);
@@ -5303,6 +5353,10 @@ async function loadDashboard(options = {}) {
   }
 
   try {
+    if (showOverlay) {
+      beginLoadingOverlay('Loading dashboard...', 'Refreshing horses, paddocks, feed, and reminders.');
+    }
+
     const response = await fetch(API_URL, {
       headers: getAuthHeaders(),
       cache: 'no-store',
@@ -5366,7 +5420,7 @@ async function loadDashboard(options = {}) {
     populateHorseGroupActionSelects(currentHorseGroupRows);
     populatePaddockActionSelects(currentPaddockRows);
     populateFeedItemOptions(payload.stock?.all || []);
-    const horseHistoryResult = await loadSelectedHorseHistory();
+    const horseHistoryResult = await loadSelectedHorseHistory({ showOverlay: false });
 
     const updatedAt = payload.meta?.refreshed_at || new Date().toISOString();
     lastUpdated.textContent = `Last updated: ${formatDateTime(updatedAt)}`;
@@ -5384,6 +5438,10 @@ async function loadDashboard(options = {}) {
       return;
     }
     setStatus(`Dashboard error: ${error.message}`, true);
+  } finally {
+    if (showOverlay) {
+      endLoadingOverlay();
+    }
   }
 }
 
@@ -5404,6 +5462,7 @@ authForm.addEventListener('submit', async (event) => {
   }
 
   try {
+    beginLoadingOverlay('Signing in...', 'Verifying your account and opening the dashboard.');
     const data = await postJson(LOGIN_API_URL, { username, password });
     setSessionAuthState(true, data.username || username);
     setStatus(`Logged in as ${data.username || username}.`);
@@ -5411,14 +5470,19 @@ authForm.addEventListener('submit', async (event) => {
   } catch (error) {
     setSessionAuthState(false);
     setStatus(`Login failed: ${error.message}`, true);
+  } finally {
+    endLoadingOverlay();
   }
 });
 
 logoutButton.addEventListener('click', async () => {
   try {
+    beginLoadingOverlay('Signing out...', 'Closing the current admin session.');
     await postJson(LOGOUT_API_URL, {});
   } catch (_error) {
     // Clear local UI even if logout API fails.
+  } finally {
+    endLoadingOverlay();
   }
 
   setSessionAuthState(false);
@@ -5544,7 +5608,7 @@ if (horseSelect) {
   horseSelect.addEventListener('change', async () => {
     setActiveHorseSelection(horseSelect.value);
     resetHorseFeedHistoryFilters();
-    const result = await loadSelectedHorseHistory();
+    const result = await loadSelectedHorseHistory({ showOverlay: true });
     if (!result.ok) {
       setStatus(`History error: ${result.error.message}`, true);
       return;
@@ -5557,7 +5621,7 @@ if (horseProfileSelect) {
   horseProfileSelect.addEventListener('change', async () => {
     setActiveHorseSelection(horseProfileSelect.value);
     resetHorseFeedHistoryFilters();
-    const result = await loadSelectedHorseHistory();
+    const result = await loadSelectedHorseHistory({ showOverlay: true });
     if (!result.ok) {
       setStatus(`History error: ${result.error.message}`, true);
       return;
@@ -6700,14 +6764,20 @@ clearPaddockEditState();
 clearPaddockWorkEditState();
 
 async function initializeAdminApp() {
-  const session = await syncSessionState();
-  if (!session?.authenticated) {
-    clearDashboardView();
-    setStatus('Please log in to access the admin dashboard.', true);
-    return;
-  }
+  beginLoadingOverlay('Loading dashboard...', 'Checking your session and pulling the latest farm data.');
 
-  await loadDashboard();
+  try {
+    const session = await syncSessionState();
+    if (!session?.authenticated) {
+      clearDashboardView();
+      setStatus('Please log in to access the admin dashboard.', true);
+      return;
+    }
+
+    await loadDashboard();
+  } finally {
+    endLoadingOverlay();
+  }
 }
 
 initializeAdminApp();

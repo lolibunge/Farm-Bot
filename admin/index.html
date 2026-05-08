@@ -13,9 +13,18 @@
     <link rel="icon" type="image/svg+xml" href="/admin/favicon.svg?v=3" />
     <link rel="shortcut icon" href="/admin/favicon.svg?v=3" />
     <link rel="apple-touch-icon" href="/admin/farm-bot-logo.png?v=3" />
-    <link rel="stylesheet" href="/admin/styles.css?v=20260508a" />
+    <link rel="stylesheet" href="/admin/styles.css?v=20260508b" />
   </head>
   <body>
+    <div id="loading-overlay" class="loading-overlay" aria-live="polite" aria-hidden="false">
+      <div class="loading-overlay-card" role="status">
+        <div class="loading-overlay-spinner" aria-hidden="true"></div>
+        <p class="loading-overlay-eyebrow">Farm Bot Admin</p>
+        <h2 id="loading-overlay-title">Loading dashboard...</h2>
+        <p id="loading-overlay-detail">Pulling the latest farm data.</p>
+      </div>
+    </div>
+
     <div class="background-shape shape-a"></div>
     <div class="background-shape shape-b"></div>
 
@@ -1239,6 +1248,6 @@
       ↑
     </button>
 
-    <script src="/admin/app.js?v=20260508a"></script>
+    <script src="/admin/app.js?v=20260508b"></script>
   </body>
 </html>
