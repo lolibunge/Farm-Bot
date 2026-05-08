@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const { bot, startReminderScheduler } = require('./bot');
+const { bot, startReminderScheduler, syncTelegramMenuCommands } = require('./bot');
 
 const TELEGRAM_RUN_MODE = String(process.env.TELEGRAM_RUN_MODE || '')
   .trim()
@@ -19,6 +19,7 @@ if (TELEGRAM_RUN_MODE !== 'polling') {
 bot
   .launch()
   .then(async () => {
+    await syncTelegramMenuCommands();
     await startReminderScheduler();
     console.log(
       'BOT RUNNING WITH FEED + STOCK + HORSE + DEWORM + FARRIER + DATES + REMINDERS + MULTILINE + ALERTS'

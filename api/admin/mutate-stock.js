@@ -1,4 +1,9 @@
 const { pool } = require('../../lib/db');
+const {
+  listAdminModuleSettings,
+  buildAdminModuleEnabledMap,
+  assertAdminModuleEnabled,
+} = require('../../lib/admin-modules');
 const { requireAdminApiAuth } = require('../../lib/admin-auth');
 
 async function getJsonBody(req) {
@@ -62,6 +67,10 @@ module.exports = async (req, res) => {
   }
 
   try {
+    const moduleSettings = await listAdminModuleSettings();
+    const enabledModules = buildAdminModuleEnabledMap(moduleSettings);
+    assertAdminModuleEnabled('feed', enabledModules);
+
     const body = await getJsonBody(req);
 
     const action = String(body.action || '').trim().toLowerCase();
@@ -226,6 +235,10 @@ module.exports = async (req, res) => {
     });
   } catch (error) {
     console.error('ADMIN STOCK MUTATE ERROR:', error);
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ ok: false, error: error.message });
+      return;
+    }
     res.status(500).json({ ok: false, error: 'Internal Server Error' });
   }
 };

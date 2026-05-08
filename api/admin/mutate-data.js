@@ -3,14 +3,31 @@ const { ensureHorseProfileColumns } = require('../../lib/horse-profile');
 const {
   ensurePaddockTables,
   savePaddock,
+  savePaddockWorkEvent,
+  updatePaddockWorkEvent,
   saveHorseGroup,
   setHorseGroupMembers,
   moveHorseIntoPaddock,
   moveHorseOutOfPaddock,
   moveHorseGroupIntoPaddock,
+  correctHorseGroupCurrentPaddock,
   moveHorseGroupOutOfPaddock,
 } = require('../../lib/paddocks');
+const {
+  ensureFeedPlanningTables,
+  saveHorseFeedPlanItems,
+  setHorseFeedSlotChecked,
+} = require('../../lib/feed-plans');
+const {
+  listAdminModuleSettings,
+  buildAdminModuleEnabledMap,
+  assertAdminModuleEnabled,
+  isAdminModuleEnabled,
+  saveAdminModuleSettings,
+} = require('../../lib/admin-modules');
+const { ensureFarmSettingsTable, saveFarmSettings } = require('../../lib/farm-settings');
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
+const { syncWeatherIntoRainRegistry } = require('../../lib/weather-sync');
 const { toIsoDateString } = require('../../lib/date-helpers');
 const { requireAdminApiAuth } = require('../../lib/admin-auth');
 
@@ -54,6 +71,19 @@ function parseNonNegativeNumber(value) {
   }
 
   const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function parseNonNegativeInteger(value) {
+  if (value == null || String(value).trim() === '') {
+    return null;
+  }
+
+  const parsed = Number.parseInt(String(value), 10);
   if (!Number.isFinite(parsed) || parsed < 0) {
     return null;
   }
@@ -136,6 +166,61 @@ function addMonthsToDateString(dateString, monthsToAdd) {
   }
   date.setUTCMonth(date.getUTCMonth() + monthsToAdd);
   return date.toISOString().slice(0, 10);
+}
+
+function getModuleKeyForAdminAction(action) {
+  if (
+    [
+      'paddock_save',
+      'paddock_work_save',
+      'grazing_move_in',
+      'grazing_move_out',
+      'grazing_group_move_in',
+      'grazing_group_correct_current',
+      'grazing_group_move_out',
+    ].includes(action)
+  ) {
+    return 'paddocks';
+  }
+
+  if (['horse_group_save', 'horse_group_memberships_set'].includes(action)) {
+    return 'groups';
+  }
+
+  if (
+    [
+      'feed_item_save',
+      'feed_event_add',
+      'horse_feed_plan_save',
+      'horse_feed_slot_toggle',
+      'feed_event_update',
+      'feed_event_delete',
+    ].includes(action)
+  ) {
+    return 'feed';
+  }
+
+  if (['deworm_event_add', 'deworm_second_dose_set'].includes(action)) {
+    return 'deworm';
+  }
+
+  if (action === 'farrier_event_add') {
+    return 'farrier';
+  }
+
+  if (action === 'health_event_add') {
+    return 'health';
+  }
+
+  if (action === 'horse_training_set') {
+    return 'training';
+  }
+
+  if (action === 'rain_save' || action === 'rain_weather_sync') {
+    return 'rain';
+  }
+
+  return null;
 }
 
 function getFarrierDaysUntilNext(serviceType) {
@@ -225,10 +310,80 @@ module.exports = async (req, res) => {
   try {
     await ensureHorseProfileColumns();
     await ensurePaddockTables();
+    await ensureFarmSettingsTable();
+    await ensureFeedPlanningTables();
     await ensureRainRegistryTable();
 
     const body = await getJsonBody(req);
     const action = String(body.action || '').trim().toLowerCase();
+
+    if (action === 'admin_modules_save') {
+      const modules = Array.isArray(body.modules) ? body.modules : [];
+      const moduleSettings = await saveAdminModuleSettings(modules);
+
+      res.status(200).json({
+        ok: true,
+        action,
+        module_settings: moduleSettings,
+      });
+      return;
+    }
+
+    if (action === 'farm_settings_save') {
+      const farmName = body.farmName == null ? '' : String(body.farmName).trim();
+      const weatherLatitudeRaw =
+        body.weatherLatitude == null ? '' : String(body.weatherLatitude).trim();
+      const weatherLongitudeRaw =
+        body.weatherLongitude == null ? '' : String(body.weatherLongitude).trim();
+      const weatherTimezone =
+        body.weatherTimezone == null ? '' : String(body.weatherTimezone).trim();
+      const weatherSyncDaysRaw =
+        body.weatherSyncDays == null ? '' : String(body.weatherSyncDays).trim();
+      const telegramAlertChatId =
+        body.telegramAlertChatId == null ? '' : String(body.telegramAlertChatId).trim();
+
+      const weatherLatitude =
+        weatherLatitudeRaw === '' ? null : Number(weatherLatitudeRaw.replace(',', '.'));
+      const weatherLongitude =
+        weatherLongitudeRaw === '' ? null : Number(weatherLongitudeRaw.replace(',', '.'));
+      const weatherSyncDays =
+        weatherSyncDaysRaw === '' ? null : Number.parseInt(weatherSyncDaysRaw, 10);
+
+      if (weatherLatitudeRaw !== '' && (!Number.isFinite(weatherLatitude) || weatherLatitude < -90 || weatherLatitude > 90)) {
+        res.status(400).json({ ok: false, error: 'weatherLatitude must be between -90 and 90' });
+        return;
+      }
+
+      if (weatherLongitudeRaw !== '' && (!Number.isFinite(weatherLongitude) || weatherLongitude < -180 || weatherLongitude > 180)) {
+        res.status(400).json({ ok: false, error: 'weatherLongitude must be between -180 and 180' });
+        return;
+      }
+
+      if (weatherSyncDaysRaw !== '' && (!Number.isFinite(weatherSyncDays) || weatherSyncDays <= 0 || weatherSyncDays > 365)) {
+        res.status(400).json({ ok: false, error: 'weatherSyncDays must be a whole number between 1 and 365' });
+        return;
+      }
+
+      const data = await saveFarmSettings({
+        farmName,
+        weatherLatitude,
+        weatherLongitude,
+        weatherTimezone,
+        weatherSyncDays,
+        telegramAlertChatId,
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        farm_settings: data,
+      });
+      return;
+    }
+
+    const moduleSettings = await listAdminModuleSettings();
+    const enabledModules = buildAdminModuleEnabledMap(moduleSettings);
+    assertAdminModuleEnabled(getModuleKeyForAdminAction(action), enabledModules);
 
     if (action === 'horse_add') {
       const horseName = String(body.horseName || '').trim();
@@ -382,6 +537,8 @@ module.exports = async (req, res) => {
       const notes = String(body.notes || '').trim();
       const active = parseBooleanValue(body.active, true);
       const sizeHa = parseNonNegativeNumber(sizeHaValue);
+      const rawParentPaddockId = body.parentPaddockId == null ? '' : String(body.parentPaddockId).trim();
+      const parentPaddockId = rawParentPaddockId ? parsePositiveInt(rawParentPaddockId) : null;
 
       if (!paddockName) {
         res.status(400).json({ ok: false, error: 'paddockName is required' });
@@ -393,12 +550,18 @@ module.exports = async (req, res) => {
         return;
       }
 
+      if (rawParentPaddockId && !parentPaddockId) {
+        res.status(400).json({ ok: false, error: 'parentPaddockId is invalid' });
+        return;
+      }
+
       const data = await savePaddock({
         name: paddockName,
         zone: zone || null,
         sizeHa,
         notes: notes || null,
         active,
+        parentPaddockId,
       });
 
       res.status(200).json({
@@ -406,6 +569,115 @@ module.exports = async (req, res) => {
         action,
         mode: data.mode,
         paddock: data.paddock,
+      });
+      return;
+    }
+
+    if (action === 'paddock_work_save') {
+      const paddockId = parsePositiveInt(body.paddockId);
+      const eventType = String(body.eventType || '').trim();
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const readyAfterDaysRaw = body.readyAfterDays == null ? '' : String(body.readyAfterDays).trim();
+      const readyAfterDays = parseNonNegativeInteger(readyAfterDaysRaw);
+      const notes = String(body.notes || '').trim();
+      const applyScope = String(body.applyScope || '').trim().toLowerCase();
+      const applyToDescendants = ['whole_block', 'children', 'descendants', 'true', '1', 'yes'].includes(
+        applyScope
+      );
+
+      if (!paddockId) {
+        res.status(400).json({ ok: false, error: 'paddockId is required' });
+        return;
+      }
+
+      if (!eventType) {
+        res.status(400).json({ ok: false, error: 'eventType is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate is invalid' });
+        return;
+      }
+
+      if (readyAfterDaysRaw && readyAfterDays == null) {
+        res.status(400).json({ ok: false, error: 'readyAfterDays must be a whole number >= 0' });
+        return;
+      }
+
+      const data = await savePaddockWorkEvent({
+        paddockId,
+        eventType,
+        eventDate: eventDateRaw,
+        readyAfterDays,
+        applyToDescendants,
+        notes: notes || null,
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        paddock: data.paddock,
+        paddock_work_event: data.paddock_work_event,
+        active_wait_event: data.active_wait_event,
+      });
+      return;
+    }
+
+    if (action === 'paddock_work_update') {
+      const eventId = parsePositiveInt(body.eventId);
+      const paddockId = parsePositiveInt(body.paddockId);
+      const eventType = String(body.eventType || '').trim();
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const readyAfterDaysRaw = body.readyAfterDays == null ? '' : String(body.readyAfterDays).trim();
+      const readyAfterDays = parseNonNegativeInteger(readyAfterDaysRaw);
+      const notes = String(body.notes || '').trim();
+      const applyScope = String(body.applyScope || '').trim().toLowerCase();
+      const applyToDescendants = ['whole_block', 'children', 'descendants', 'true', '1', 'yes'].includes(
+        applyScope
+      );
+
+      if (!eventId) {
+        res.status(400).json({ ok: false, error: 'eventId is required' });
+        return;
+      }
+
+      if (!paddockId) {
+        res.status(400).json({ ok: false, error: 'paddockId is required' });
+        return;
+      }
+
+      if (!eventType) {
+        res.status(400).json({ ok: false, error: 'eventType is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate is invalid' });
+        return;
+      }
+
+      if (readyAfterDaysRaw && readyAfterDays == null) {
+        res.status(400).json({ ok: false, error: 'readyAfterDays must be a whole number >= 0' });
+        return;
+      }
+
+      const data = await updatePaddockWorkEvent({
+        eventId,
+        paddockId,
+        eventType,
+        eventDate: eventDateRaw,
+        readyAfterDays,
+        applyToDescendants,
+        notes: notes || null,
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        paddock: data.paddock,
+        paddock_work_event: data.paddock_work_event,
+        active_wait_event: data.active_wait_event,
       });
       return;
     }
@@ -463,6 +735,7 @@ module.exports = async (req, res) => {
         group: data.group,
         members: data.members,
         reassigned_members: data.reassigned_members,
+        removed_members: data.removed_members,
       });
       return;
     }
@@ -582,6 +855,57 @@ module.exports = async (req, res) => {
         horses: data.horses,
         grazing_events: data.grazing_events,
         moved_count: data.moved_count,
+        group_member_count: data.group_member_count,
+        already_in_paddock_count: data.already_in_paddock_count,
+        transferred_count: data.transferred_count,
+        entered_at: data.entered_at,
+        paddock_occupancy_count: data.paddock_occupancy_count,
+      });
+      return;
+    }
+
+    if (action === 'grazing_group_correct_current') {
+      const groupId = parsePositiveInt(body.groupId);
+      const paddockId = parsePositiveInt(body.paddockId);
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const notes = String(body.notes || '').trim();
+
+      if (!groupId) {
+        res.status(400).json({ ok: false, error: 'groupId is required' });
+        return;
+      }
+
+      if (!paddockId) {
+        res.status(400).json({ ok: false, error: 'paddockId is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate is invalid' });
+        return;
+      }
+
+      const data = await correctHorseGroupCurrentPaddock({
+        groupId,
+        paddockId,
+        enteredAt: eventDateRaw,
+        entryNotes: notes || null,
+        source: 'admin_group_correction',
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        group: data.group,
+        paddock: data.paddock,
+        horses: data.horses,
+        grazing_events: data.grazing_events,
+        corrected_count: data.corrected_count,
+        updated_count: data.updated_count,
+        inserted_count: data.inserted_count,
+        unchanged_count: data.unchanged_count,
+        group_member_count: data.group_member_count,
+        entered_at: data.entered_at,
         paddock_occupancy_count: data.paddock_occupancy_count,
       });
       return;
@@ -850,6 +1174,72 @@ module.exports = async (req, res) => {
       } finally {
         client.release();
       }
+    }
+
+    if (action === 'horse_feed_plan_save') {
+      const horseId = parsePositiveInt(body.horseId);
+      const items = Array.isArray(body.items) ? body.items : [];
+
+      if (!horseId) {
+        res.status(400).json({ ok: false, error: 'horseId is required' });
+        return;
+      }
+
+      const data = await saveHorseFeedPlanItems({
+        horseId,
+        items,
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        horse: data.horse,
+        feed_plan: {
+          items: data.plan_items,
+        },
+      });
+      return;
+    }
+
+    if (action === 'horse_feed_slot_toggle') {
+      const horseId = parsePositiveInt(body.horseId);
+      const feedSlot = String(body.feedSlot || '').trim().toLowerCase();
+      const eventDate = body.eventDate ? String(body.eventDate).trim() : '';
+      const checked = parseBooleanValue(body.checked, false);
+
+      if (!horseId) {
+        res.status(400).json({ ok: false, error: 'horseId is required' });
+        return;
+      }
+
+      if (!eventDate) {
+        res.status(400).json({ ok: false, error: 'eventDate is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDate)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      const data = await setHorseFeedSlotChecked({
+        horseId,
+        eventDate,
+        feedSlot,
+        checked,
+        telegramUserId: 'admin_panel',
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        horse: data.horse,
+        checked: data.checked,
+        entry: data.entry,
+        feed_events: data.feed_events,
+        stock_changes: data.stock_changes,
+      });
+      return;
     }
 
     if (action === 'deworm_event_add') {
@@ -1331,6 +1721,27 @@ module.exports = async (req, res) => {
       return;
     }
 
+    if (action === 'rain_weather_sync') {
+      const data = await syncWeatherIntoRainRegistry();
+
+      res.status(200).json({
+        ok: true,
+        action,
+        weather_sync: {
+          inserted_count: data.insertedCount,
+          updated_count: data.updatedCount,
+          row_count: data.rowCount,
+          start_date: data.startDate,
+          end_date: data.endDate,
+          latitude: data.config.latitude,
+          longitude: data.config.longitude,
+          timezone: data.config.timezone,
+          lookback_days: data.config.lookbackDays,
+        },
+      });
+      return;
+    }
+
     if (action === 'feed_event_update') {
       const feedEventId = parsePositiveInt(body.feedEventId);
       const horseId = body.horseId == null ? null : parsePositiveInt(body.horseId);
@@ -1370,6 +1781,8 @@ module.exports = async (req, res) => {
             f.quantity,
             f.unit,
             f.event_date,
+            f.calendar_slot_entry_id,
+            f.stock_deducted,
             i.name AS feed_item_name,
             i.current_stock
           FROM feed_events f
@@ -1393,11 +1806,22 @@ module.exports = async (req, res) => {
           return;
         }
 
+        if (eventRow.calendar_slot_entry_id != null) {
+          await client.query('ROLLBACK');
+          res.status(409).json({
+            ok: false,
+            error: 'This feed entry is managed by the feed calendar. Change it from the calendar instead.',
+          });
+          return;
+        }
+
         const previousQuantity = Number(eventRow.quantity);
         const currentStock = Number(eventRow.current_stock);
-        const adjustedStock = currentStock + previousQuantity - quantity;
+        const adjustedStock = eventRow.stock_deducted
+          ? currentStock + previousQuantity - quantity
+          : currentStock;
 
-        if (!Number.isFinite(adjustedStock) || adjustedStock < 0) {
+        if (eventRow.stock_deducted && (!Number.isFinite(adjustedStock) || adjustedStock < 0)) {
           await client.query('ROLLBACK');
           res.status(400).json({
             ok: false,
@@ -1409,14 +1833,16 @@ module.exports = async (req, res) => {
         const nextEventDate =
           eventDateRaw || toIsoDateString(eventRow.event_date);
 
-        await client.query(
-          `
-          UPDATE feed_items
-          SET current_stock = $1
-          WHERE id = $2
-          `,
-          [adjustedStock, eventRow.feed_item_id]
-        );
+        if (eventRow.stock_deducted) {
+          await client.query(
+            `
+            UPDATE feed_items
+            SET current_stock = $1
+            WHERE id = $2
+            `,
+            [adjustedStock, eventRow.feed_item_id]
+          );
+        }
 
         const updatedFeedEventResult = await client.query(
           `
@@ -1488,6 +1914,8 @@ module.exports = async (req, res) => {
             f.feed_item_id,
             f.quantity,
             f.unit,
+            f.calendar_slot_entry_id,
+            f.stock_deducted,
             i.name AS feed_item_name,
             i.current_stock
           FROM feed_events f
@@ -1511,16 +1939,29 @@ module.exports = async (req, res) => {
           return;
         }
 
-        const restoredStock = Number(eventRow.current_stock) + Number(eventRow.quantity);
+        if (eventRow.calendar_slot_entry_id != null) {
+          await client.query('ROLLBACK');
+          res.status(409).json({
+            ok: false,
+            error: 'This feed entry is managed by the feed calendar. Change it from the calendar instead.',
+          });
+          return;
+        }
 
-        await client.query(
-          `
-          UPDATE feed_items
-          SET current_stock = $1
-          WHERE id = $2
-          `,
-          [restoredStock, eventRow.feed_item_id]
-        );
+        const restoredStock = eventRow.stock_deducted
+          ? Number(eventRow.current_stock) + Number(eventRow.quantity)
+          : Number(eventRow.current_stock);
+
+        if (eventRow.stock_deducted) {
+          await client.query(
+            `
+            UPDATE feed_items
+            SET current_stock = $1
+            WHERE id = $2
+            `,
+            [restoredStock, eventRow.feed_item_id]
+          );
+        }
 
         await client.query('DELETE FROM feed_events WHERE id = $1', [feedEventId]);
         await client.query('COMMIT');
@@ -1619,6 +2060,7 @@ module.exports = async (req, res) => {
       const color = body.color ? String(body.color).trim() : '';
       const activity = body.activity ? String(body.activity).trim().toLowerCase() : '';
       const sex = body.sex ? String(body.sex).trim().toLowerCase() : '';
+      const trainingModuleEnabled = isAdminModuleEnabled('training', enabledModules);
       const trainingStatusRaw = body.trainingStatus == null ? '' : String(body.trainingStatus);
       const trainingStatus = normalizeTrainingStatus(trainingStatusRaw);
 
@@ -1668,7 +2110,11 @@ module.exports = async (req, res) => {
         return;
       }
 
-      if (trainingStatusRaw.trim() && !ALLOWED_TRAINING_STATUSES.has(trainingStatus)) {
+      if (
+        trainingModuleEnabled &&
+        trainingStatusRaw.trim() &&
+        !ALLOWED_TRAINING_STATUSES.has(trainingStatus)
+      ) {
         res.status(400).json({
           ok: false,
           error:
@@ -1704,8 +2150,11 @@ module.exports = async (req, res) => {
             color = $3,
             activity = $4,
             sex = $5,
-            training_status = $6
-        WHERE id = $7
+            training_status = CASE
+              WHEN $6 THEN $7
+              ELSE training_status
+            END
+        WHERE id = $8
         RETURNING
           id,
           name,
@@ -1725,7 +2174,8 @@ module.exports = async (req, res) => {
           color || null,
           activity || null,
           sex || null,
-          trainingStatus || null,
+          trainingModuleEnabled,
+          trainingModuleEnabled ? trainingStatus || null : null,
           horseId,
         ]
       );
@@ -1748,7 +2198,10 @@ module.exports = async (req, res) => {
           color: horse.color || null,
           activity: horse.activity || null,
           sex: horse.sex || null,
-          training_status: normalizeTrainingStatus(horse.training_status) || null,
+          training_status:
+            trainingModuleEnabled && normalizeTrainingStatus(horse.training_status)
+              ? normalizeTrainingStatus(horse.training_status)
+              : null,
         },
       });
       return;
@@ -1757,7 +2210,7 @@ module.exports = async (req, res) => {
       res.status(400).json({
         ok: false,
         error:
-          'Unsupported action. Use horse_add, horse_rename, paddock_save, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_move_out, feed_item_save, feed_event_add, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, feed_event_update, feed_event_delete, or horse_profile_save.',
+        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, or admin_modules_save.',
       });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);

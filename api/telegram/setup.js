@@ -1,4 +1,4 @@
-const { bot } = require('../../bot');
+const { bot, syncTelegramMenuCommands } = require('../../bot');
 
 function getSingleQueryValue(value) {
   if (Array.isArray(value)) return value[0];
@@ -58,6 +58,7 @@ module.exports = async (req, res) => {
     const result = await bot.telegram.setWebhook(webhookUrl, {
       drop_pending_updates: dropPendingUpdates,
     });
+    await syncTelegramMenuCommands();
 
     const webhookInfo = await bot.telegram.getWebhookInfo();
     res.status(200).json({

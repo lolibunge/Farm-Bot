@@ -6,8 +6,10 @@ const LOGIN_API_URL = '/api/admin/login';
 const LOGOUT_API_URL = '/api/admin/logout';
 const SESSION_API_URL = '/api/admin/session';
 const PANEL_STATE_STORAGE_KEY = 'farm_bot_admin_panel_state';
+const ACTION_CARD_STATE_STORAGE_KEY = 'farm_bot_admin_action_card_state';
 const SUMMARY_PREFS_STORAGE_KEY = 'farm_bot_admin_summary_prefs';
 const RAIN_REGISTRY_COLLAPSED_STORAGE_KEY = 'farm_bot_admin_rain_registry_collapsed';
+const HORSE_FEED_HISTORY_COLLAPSED_STORAGE_KEY = 'farm_bot_horse_feed_history_collapsed';
 
 const SUMMARY_METRICS = [
   { key: 'horses_count', defaultLabel: 'Horses' },
@@ -15,6 +17,7 @@ const SUMMARY_METRICS = [
   { key: 'paddocks_count', defaultLabel: 'Paddocks' },
   { key: 'paddocks_occupied_count', defaultLabel: 'Paddocks Occupied' },
   { key: 'paddocks_resting_count', defaultLabel: 'Paddocks Resting' },
+  { key: 'pasture_status', defaultLabel: 'Pasture' },
   { key: 'feed_items_count', defaultLabel: 'Feed Items' },
   { key: 'low_stock_count', defaultLabel: 'Low Stock' },
   { key: 'deworm_overdue_count', defaultLabel: 'Deworm Overdue' },
@@ -34,6 +37,7 @@ const SUMMARY_CARD_TARGETS = {
   paddocks_count: 'panel-paddock-status',
   paddocks_occupied_count: 'panel-paddock-status',
   paddocks_resting_count: 'panel-paddock-status',
+  pasture_status: 'panel-pasture',
   feed_items_count: 'panel-current-inventory',
   low_stock_count: 'panel-low-stock',
   deworm_overdue_count: 'panel-deworming-alerts',
@@ -63,15 +67,31 @@ const loginPasswordInput = document.getElementById('login-password');
 const loginButton = document.getElementById('login-btn');
 const logoutButton = document.getElementById('logout-btn');
 const refreshButton = document.getElementById('refresh-btn');
+const loadingOverlay = document.getElementById('loading-overlay');
+const loadingOverlayTitle = document.getElementById('loading-overlay-title');
+const loadingOverlayDetail = document.getElementById('loading-overlay-detail');
 const statusMessage = document.getElementById('status-message');
 const lastUpdated = document.getElementById('last-updated');
 const backToTopButton = document.getElementById('back-to-top-btn');
+const actionHubPanel = document.querySelector('.action-hub-panel');
 
 const summaryCards = document.getElementById('summary-cards');
 const summaryEditToggleButton = document.getElementById('summary-edit-toggle-btn');
 const summaryResetButton = document.getElementById('summary-reset-btn');
 const summaryEditor = document.getElementById('summary-editor');
 const summaryEditorList = document.getElementById('summary-editor-list');
+const farmSettingsForm = document.getElementById('farm-settings-form');
+const farmNameInput = document.getElementById('farm-name-input');
+const farmWeatherLatitudeInput = document.getElementById('farm-weather-latitude-input');
+const farmWeatherLongitudeInput = document.getElementById('farm-weather-longitude-input');
+const farmWeatherTimezoneInput = document.getElementById('farm-weather-timezone-input');
+const farmWeatherSyncDaysInput = document.getElementById('farm-weather-sync-days-input');
+const farmTelegramAlertChatIdInput = document.getElementById('farm-telegram-alert-chat-id-input');
+const farmSetupChecklist = document.getElementById('farm-setup-checklist');
+const farmSettingsMessage = document.getElementById('farm-settings-message');
+const adminModulesForm = document.getElementById('admin-modules-form');
+const adminModulesList = document.getElementById('admin-modules-list');
+const adminModulesMessage = document.getElementById('admin-modules-message');
 const dewormingBody = document.getElementById('deworming-body');
 const dewormHistoryRegistryBody = document.getElementById('deworm-history-registry-body');
 const dewormHistoryHorseFilter = document.getElementById('deworm-history-horse-filter');
@@ -97,13 +117,28 @@ const activityBody = document.getElementById('activity-body');
 const horseSelect = document.getElementById('horse-select');
 const horseProfileSelect = document.getElementById('horse-profile-select');
 const horseHistorySelectedName = document.getElementById('horse-history-selected-name');
-const horseHistoryBody = document.getElementById('horse-history-body');
-const horseFeedHistoryBody = document.getElementById('horse-feed-history-body');
+const horseActivityTimeline = document.getElementById('horse-activity-timeline');
+const horseFeedSummary = document.getElementById('horse-feed-summary');
+const horseFeedHistoryCard = document.getElementById('horse-history-feed-card');
+const horseFeedHistoryToggle = document.getElementById('horse-feed-history-toggle');
+const horseFeedHistoryPeriodFilter = document.getElementById('horse-feed-history-period');
+const horseFeedHistorySlotFilter = document.getElementById('horse-feed-history-slot');
+const horseFeedHistorySourceFilter = document.getElementById('horse-feed-history-source');
+const horseFeedHistoryGroups = document.getElementById('horse-feed-history-groups');
 const horseDewormingHistoryBody = document.getElementById('horse-deworming-history-body');
 const horseFarrierHistoryBody = document.getElementById('horse-farrier-history-body');
 const horseHealthHistoryBody = document.getElementById('horse-health-history-body');
 const horseGrazingHistoryBody = document.getElementById('horse-grazing-history-body');
+const horseGroupHistoryBody = document.getElementById('horse-group-history-body');
+const horseFeedPlanForm = document.getElementById('horse-feed-plan-form');
+const horseFeedPlanBody = document.getElementById('horse-feed-plan-body');
+const horseFeedPlanAddRowButton = document.getElementById('horse-feed-plan-add-row-btn');
+const horseFeedPlanMessage = document.getElementById('horse-feed-plan-message');
+const horseFeedCalendarMonthInput = document.getElementById('horse-feed-calendar-month');
+const horseFeedCalendarTodayButton = document.getElementById('horse-feed-calendar-today-btn');
+const horseFeedCalendarGrid = document.getElementById('horse-feed-calendar-grid');
 const horseHistoryCurrentGrazing = document.getElementById('horse-history-current-grazing');
+const horseHistoryCurrentGroup = document.getElementById('horse-history-current-group');
 const horseProfileForm = document.getElementById('horse-profile-form');
 const horseProfileIdInput = document.getElementById('horse-profile-id');
 const horseProfileNameInput = document.getElementById('horse-profile-name');
@@ -114,15 +149,34 @@ const horseProfileActivityInput = document.getElementById('horse-profile-activit
 const horseProfileSexInput = document.getElementById('horse-profile-sex');
 const horseProfileTrainingStatusInput = document.getElementById('horse-profile-training-status');
 const horseProfileMessage = document.getElementById('horse-profile-message');
+const pastureOverviewBody = document.getElementById('pasture-overview-body');
 const horseGroupStatusBody = document.getElementById('horse-group-status-body');
+const horseGroupHistoryRegistryBody = document.getElementById('horse-group-history-registry-body');
 const paddockStatusBody = document.getElementById('paddock-status-body');
-const grazingHistoryBody = document.getElementById('grazing-history-body');
+const paddockWorkHistoryBody = document.getElementById('paddock-work-history-body');
+const paddockOccupancyBody = document.getElementById('paddock-occupancy-body');
+const paddockOccupancyCards = document.getElementById('paddock-occupancy-cards');
 const paddockSaveForm = document.getElementById('paddock-save-form');
 const paddockNameInput = document.getElementById('paddock-name-input');
 const paddockZoneInput = document.getElementById('paddock-zone-input');
 const paddockSizeInput = document.getElementById('paddock-size-input');
 const paddockActiveSelect = document.getElementById('paddock-active-select');
+const paddockParentSelect = document.getElementById('paddock-parent-select');
 const paddockNotesInput = document.getElementById('paddock-notes-input');
+const paddockEditStatus = document.getElementById('paddock-edit-status');
+const paddockSaveButton = document.getElementById('paddock-save-btn');
+const paddockCancelEditButton = document.getElementById('paddock-cancel-edit-btn');
+const paddockWorkForm = document.getElementById('paddock-work-form');
+const paddockWorkEventIdInput = document.getElementById('paddock-work-event-id-input');
+const paddockWorkEditStatus = document.getElementById('paddock-work-edit-status');
+const paddockWorkPaddockSelect = document.getElementById('paddock-work-paddock-select');
+const paddockWorkScopeSelect = document.getElementById('paddock-work-scope-select');
+const paddockWorkTypeSelect = document.getElementById('paddock-work-type-select');
+const paddockWorkDateInput = document.getElementById('paddock-work-date-input');
+const paddockWorkReadyDaysInput = document.getElementById('paddock-work-ready-days-input');
+const paddockWorkNotesInput = document.getElementById('paddock-work-notes-input');
+const paddockWorkSaveButton = document.getElementById('paddock-work-save-btn');
+const paddockWorkCancelEditButton = document.getElementById('paddock-work-cancel-edit-btn');
 const grazingMoveInForm = document.getElementById('grazing-move-in-form');
 const grazingMoveInHorseSelect = document.getElementById('grazing-move-in-horse-select');
 const grazingMoveInPaddockSelect = document.getElementById('grazing-move-in-paddock-select');
@@ -145,6 +199,8 @@ const horseGroupMembersSelect = document.getElementById('horse-group-members-sel
 const horseGroupMembersSearchInput = document.getElementById('horse-group-members-search-input');
 const horseGroupMembersSummary = document.getElementById('horse-group-members-summary');
 const horseGroupMembersHorsesList = document.getElementById('horse-group-members-horses-list');
+const horseGroupMoveInSection = document.getElementById('horse-group-move-in-section');
+const horseGroupMoveContext = document.getElementById('horse-group-move-context');
 const grazingGroupMoveInForm = document.getElementById('grazing-group-move-in-form');
 const grazingGroupMoveInGroupSelect = document.getElementById('grazing-group-move-in-group-select');
 const grazingGroupMoveInPaddockSelect = document.getElementById('grazing-group-move-in-paddock-select');
@@ -203,25 +259,248 @@ const rainSaveForm = document.getElementById('rain-save-form');
 const rainDateInput = document.getElementById('rain-date-input');
 const rainMmInput = document.getElementById('rain-mm-input');
 const rainNotesInput = document.getElementById('rain-notes-input');
+const rainSyncWeatherButton = document.getElementById('rain-sync-weather-btn');
 const actionMessage = document.getElementById('action-message');
 const feedItemOptions = document.getElementById('feed-item-options');
 
 let currentHorseRows = [];
 let currentHorseGroupRows = [];
 let currentPaddockRows = [];
+let currentPaddockWorkRows = [];
 let currentFeedHistoryRows = [];
-let currentGrazingHistoryRows = [];
+let currentHorseFeedPlanRows = [];
+let currentHorseFeedPlanDraftRows = [];
+let currentHorseFeedCalendar = null;
+let currentHorseFeedHistoryFilters = { period: '7d', slot: 'all', source: 'all' };
+let currentPaddockOccupancyRows = [];
 let currentDewormingHistoryRows = [];
 let currentFarrierHistoryRows = [];
 let currentHorseGroupMemberSelection = new Set();
 let summaryCardConfig = [];
+let currentFarmSettings = null;
+let currentAdminModuleSettings = [];
 let latestDashboardPayload = null;
 let sessionAuthenticated = false;
 let selectedRainWindow = '7d';
+let selectedHorseFeedCalendarMonth = new Date().toISOString().slice(0, 7);
+let nextHorseFeedPlanDraftRowKey = 1;
+let dashboardAutoRefreshPauseUntil = 0;
+let lastActionCardId = null;
+let loadingOverlayCount = 0;
 
 const RAIN_RING_VIEWBOX_SIZE = 360;
 const RAIN_BARS_VIEWBOX_WIDTH = 960;
 const RAIN_BARS_VIEWBOX_HEIGHT = 250;
+const FEED_SLOT_META = [
+  { key: 'morning', label: 'M', title: 'Morning' },
+  { key: 'afternoon', label: 'A', title: 'Afternoon' },
+  { key: 'night', label: 'N', title: 'Night' },
+];
+const ACTIVITY_TIMELINE_META = {
+  feed: { icon: '🍽', label: 'Feed', priority: 10 },
+  deworming: { icon: '💊', label: 'Deworming', priority: 20 },
+  health: { icon: '🩺', label: 'Health', priority: 30 },
+  treatment_plan: { icon: '🩺', label: 'Treatment', priority: 32 },
+  dose: { icon: '🩺', label: 'Treatment Dose', priority: 34 },
+  farrier: { icon: '🦶', label: 'Farrier', priority: 40 },
+  grazing: { icon: '🐎', label: 'Grazing', priority: 50 },
+};
+const ADMIN_MODULES = [
+  {
+    key: 'groups',
+    label: 'Horse Groups',
+    description: 'Group setup, assignments, and group history.',
+  },
+  {
+    key: 'paddocks',
+    label: 'Paddocks',
+    description: 'Paddock setup, grazing moves, field work, paddock occupancy, and pasture readiness.',
+  },
+  {
+    key: 'feed',
+    label: 'Feed',
+    description: 'Inventory, feed history, and feed plans.',
+  },
+  {
+    key: 'deworm',
+    label: 'Deworming',
+    description: 'Deworm reminders and deworm history.',
+  },
+  {
+    key: 'farrier',
+    label: 'Farrier',
+    description: 'Farrier reminders and farrier history.',
+  },
+  {
+    key: 'health',
+    label: 'Health',
+    description: 'Horse health events and health history.',
+  },
+  {
+    key: 'training',
+    label: 'Training',
+    description: 'Training status and training summary panels.',
+  },
+  {
+    key: 'rain',
+    label: 'Rain',
+    description: 'Rain registry and rain dashboards.',
+  },
+];
+
+const SUMMARY_METRIC_MODULE_KEYS = {
+  horse_groups_count: 'groups',
+  paddocks_count: 'paddocks',
+  paddocks_occupied_count: 'paddocks',
+  paddocks_resting_count: 'paddocks',
+  pasture_status: 'paddocks',
+  feed_items_count: 'feed',
+  low_stock_count: 'feed',
+  deworm_overdue_count: 'deworm',
+  deworm_due_soon_count: 'deworm',
+  farrier_overdue_count: 'farrier',
+  farrier_due_soon_count: 'farrier',
+  in_training_count: 'training',
+  breaking_in_count: 'training',
+  rain_today_mm: 'rain',
+  rain_7d_mm: 'rain',
+  rain_days_7: 'rain',
+};
+
+const MODULE_BOUND_SELECTORS = {
+  groups: [
+    '#action-card-horse-groups',
+    '#panel-horse-groups-status',
+    '#horse-history-current-group',
+    '#horse-history-group-card',
+  ],
+  paddocks: [
+    '#action-card-paddocks',
+    '#horse-group-move-in-section',
+    '#horse-group-move-out-section',
+    '#panel-pasture',
+    '#panel-paddock-status',
+    '#panel-paddock-work-history',
+    '#panel-paddock-occupancy',
+    '#horse-history-current-grazing',
+    '#horse-history-grazing-card',
+  ],
+  feed: [
+    '#action-card-feed',
+    '#panel-low-stock',
+    '#panel-current-inventory',
+    '#horse-history-feed-plan-card',
+    '#horse-history-feed-summary-card',
+    '#horse-history-feed-card',
+  ],
+  deworm: [
+    '#action-section-deworm',
+    '#panel-deworming-alerts',
+    '#panel-deworm-history-registry',
+    '#horse-history-deworm-card',
+  ],
+  farrier: [
+    '#action-section-farrier',
+    '#panel-farrier-alerts',
+    '#panel-farrier-history-registry',
+    '#horse-history-farrier-card',
+  ],
+  health: ['#action-card-health', '#horse-history-health-card'],
+  training: [
+    '#training-status-form',
+    '#panel-in-training',
+    '#panel-breaking-in',
+    '#horse-profile-training-label',
+    '#horse-profile-training-status',
+  ],
+  rain: ['#action-card-rain', '#panel-rain-registry'],
+};
+
+const PADDOCK_WORK_TYPE_LABELS = {
+  soil_prep: 'Soil Prep',
+  seeding: 'Seeding',
+  fertilizer: 'Fertilizer',
+  spraying: 'Spraying',
+  ready_check: 'Ready Check',
+  other: 'Other',
+};
+
+function formatPaddockWorkTypeLabel(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return PADDOCK_WORK_TYPE_LABELS[normalized] || 'Other';
+}
+
+function getDefaultAdminModuleSettings() {
+  return ADMIN_MODULES.map((module) => ({
+    key: module.key,
+    label: module.label,
+    description: module.description,
+    enabled: true,
+    editable: true,
+  }));
+}
+
+function normalizeAdminModuleSettings(rawSettings) {
+  const byKey = new Map();
+
+  for (const item of Array.isArray(rawSettings) ? rawSettings : []) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const definition = ADMIN_MODULES.find((module) => module.key === item.key);
+    if (!definition) {
+      continue;
+    }
+
+    byKey.set(definition.key, {
+      key: definition.key,
+      label: String(item.label || definition.label).trim() || definition.label,
+      description: String(item.description || definition.description).trim() || definition.description,
+      enabled: Boolean(item.enabled),
+      editable: item.editable !== false,
+    });
+  }
+
+  return ADMIN_MODULES.map((definition) => {
+    const existing = byKey.get(definition.key);
+    if (!existing) {
+      return {
+        key: definition.key,
+        label: definition.label,
+        description: definition.description,
+        enabled: true,
+        editable: true,
+      };
+    }
+
+    return existing;
+  });
+}
+
+function getAdminModuleEnabledMap() {
+  const enabledMap = {};
+
+  for (const module of normalizeAdminModuleSettings(currentAdminModuleSettings)) {
+    enabledMap[module.key] = Boolean(module.enabled);
+  }
+
+  return enabledMap;
+}
+
+function isAdminModuleEnabled(moduleKey) {
+  if (!moduleKey) {
+    return true;
+  }
+
+  return getAdminModuleEnabledMap()[moduleKey] !== false;
+}
+
+function isSummaryMetricAvailable(metricKey) {
+  return isAdminModuleEnabled(SUMMARY_METRIC_MODULE_KEYS[metricKey]);
+}
 
 function escapeHtml(value) {
   return String(value)
@@ -280,6 +559,33 @@ function formatDateTime(value) {
   });
 }
 
+function formatPaddockReadySummary(row) {
+  if (!row?.ready_to_graze_on) {
+    return '-';
+  }
+
+  const baseWorkLabel = formatPaddockWorkTypeLabel(row.latest_work_type || row.event_type);
+  let workLabel = baseWorkLabel;
+
+  if (row.inherited_wait && row.effective_work_paddock_name) {
+    workLabel = `${baseWorkLabel} (${row.effective_work_paddock_name} block)`;
+  } else if (row.latest_work_applies_to_descendants) {
+    workLabel = `${baseWorkLabel} (whole block)`;
+  }
+
+  const readyDate = formatDate(row.ready_to_graze_on);
+
+  if (row.days_until_ready == null) {
+    return `${workLabel} -> ${readyDate}`;
+  }
+
+  if (row.days_until_ready <= 0) {
+    return `${workLabel} -> Ready ${readyDate}`;
+  }
+
+  return `${workLabel} -> ${row.days_until_ready} day(s) left, ready ${readyDate}`;
+}
+
 function formatRainMm(value) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
@@ -289,6 +595,376 @@ function formatRainMm(value) {
     return String(numericValue);
   }
   return numericValue.toFixed(1);
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function differenceInIsoCalendarDays(laterValue, earlierValue) {
+  const normalizedLater = normalizeDateForDateInput(laterValue);
+  const normalizedEarlier = normalizeDateForDateInput(earlierValue);
+  if (!normalizedLater || !normalizedEarlier) {
+    return null;
+  }
+
+  const laterDate = new Date(`${normalizedLater}T00:00:00Z`);
+  const earlierDate = new Date(`${normalizedEarlier}T00:00:00Z`);
+  if (Number.isNaN(laterDate.getTime()) || Number.isNaN(earlierDate.getTime())) {
+    return null;
+  }
+
+  return Math.floor((laterDate.getTime() - earlierDate.getTime()) / 86400000);
+}
+
+function compareIsoDateValues(leftValue, rightValue, direction = 'asc') {
+  const leftNormalized = normalizeDateForDateInput(leftValue);
+  const rightNormalized = normalizeDateForDateInput(rightValue);
+
+  if (leftNormalized && rightNormalized) {
+    if (leftNormalized === rightNormalized) {
+      return 0;
+    }
+
+    if (direction === 'desc') {
+      return leftNormalized < rightNormalized ? 1 : -1;
+    }
+
+    return leftNormalized < rightNormalized ? -1 : 1;
+  }
+
+  if (leftNormalized) {
+    return -1;
+  }
+
+  if (rightNormalized) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function formatDaysLabel(dayCount, suffix) {
+  const safeCount = Math.max(0, Number(dayCount || 0));
+  const noun = safeCount === 1 ? 'day' : 'days';
+  return suffix ? `${safeCount} ${noun} ${suffix}` : `${safeCount} ${noun}`;
+}
+
+function getPastureProgressSnapshot(row) {
+  const targetDaysRaw = Number(row?.ready_after_days);
+  let targetDays = Number.isFinite(targetDaysRaw) && targetDaysRaw >= 0 ? targetDaysRaw : null;
+
+  if (targetDays == null) {
+    const derivedTargetDays = differenceInIsoCalendarDays(row?.ready_to_graze_on, row?.latest_work_date);
+    if (derivedTargetDays != null && derivedTargetDays >= 0) {
+      targetDays = derivedTargetDays;
+    }
+  }
+
+  if (targetDays == null) {
+    return null;
+  }
+
+  const daysUntilReadyRaw = Number(row?.days_until_ready);
+  const daysUntilReady = Number.isFinite(daysUntilReadyRaw) ? Math.max(0, daysUntilReadyRaw) : 0;
+  const elapsedDays =
+    targetDays > 0 ? clampNumber(targetDays - daysUntilReady, 0, targetDays) : targetDays;
+  const percent = targetDays > 0 ? clampNumber((elapsedDays / targetDays) * 100, 0, 100) : 100;
+
+  return {
+    elapsed_days: elapsedDays,
+    target_days: targetDays,
+    percent,
+  };
+}
+
+function buildPastureRyegrassCardData(rows) {
+  const activeRows = (Array.isArray(rows) ? rows : []).filter((row) => row?.active);
+  const trackedRows = activeRows.filter((row) => normalizeDateForDateInput(row?.ready_to_graze_on));
+  const readyRows = trackedRows.filter(
+    (row) => Number(row?.horse_count || 0) === 0 && Number(row?.days_until_ready) === 0
+  );
+  const growingRows = trackedRows.filter((row) => Number(row?.days_until_ready) > 0);
+  const occupiedRows = trackedRows.filter((row) => Number(row?.horse_count || 0) > 0);
+  const restingRows = activeRows.filter(
+    (row) => row?.occupancy_state === 'resting' && Number(row?.horse_count || 0) === 0
+  );
+
+  const readyCount = readyRows.length;
+  const growingCount = growingRows.length;
+  const occupiedCount = occupiedRows.length;
+  const restingCount = restingRows.length;
+
+  if (!activeRows.length) {
+    return {
+      state: 'empty',
+      status_title: 'No active paddocks',
+      badge_class: 'neutral',
+      badge_text: 'Waiting for setup',
+      focus: 'Pasture tracking is not active yet.',
+      copy: 'Create paddocks first to start tracking pasture readiness.',
+      meta: [],
+      progress: null,
+    };
+  }
+
+  if (!trackedRows.length) {
+    return {
+      state: 'empty',
+      status_title: 'No pasture cycle tracked',
+      badge_class: 'neutral',
+      badge_text: 'Needs field work',
+      focus: 'Log seeding or field work with ready days.',
+      copy:
+        'Use Paddocks -> Field Work and fill in Days Until Ready To Graze to drive ryegrass readiness.',
+      meta: [
+        { label: 'Active paddocks', value: String(activeRows.length) },
+        { label: 'Tracked cycles', value: '0' },
+      ],
+      progress: null,
+    };
+  }
+
+  if (readyRows.length) {
+    const focusRow = [...readyRows].sort((left, right) =>
+      compareIsoDateValues(left.ready_to_graze_on, right.ready_to_graze_on, 'asc')
+    )[0];
+    const daysPastTarget = Math.max(
+      0,
+      Number(differenceInIsoCalendarDays(todayIsoDateString(), focusRow.ready_to_graze_on) || 0)
+    );
+    const progress = getPastureProgressSnapshot(focusRow);
+
+    return {
+      state: 'ready',
+      status_title: 'Ready to graze',
+      badge_class: daysPastTarget > 0 ? 'overdue' : 'ok',
+      badge_text: daysPastTarget > 0 ? formatDaysLabel(daysPastTarget, 'past target') : 'Ready now',
+      focus: focusRow.name,
+      copy:
+        readyCount > 1
+          ? `${readyCount} paddocks are ready now. ${focusRow.name} has been ready the longest.`
+          : `${focusRow.name} can take horses now.`,
+      meta: [
+        { label: 'Ready since', value: formatDate(focusRow.ready_to_graze_on) },
+        { label: 'Ready paddocks', value: String(readyCount) },
+        {
+          label: 'Field cycle',
+          value: formatPaddockWorkTypeLabel(focusRow.latest_work_type || 'seeding'),
+        },
+      ],
+      progress,
+    };
+  }
+
+  if (growingRows.length) {
+    const focusRow = [...growingRows].sort((left, right) =>
+      compareIsoDateValues(left.ready_to_graze_on, right.ready_to_graze_on, 'asc')
+    )[0];
+    const daysRemaining = Math.max(0, Number(focusRow.days_until_ready || 0));
+    const progress = getPastureProgressSnapshot(focusRow);
+
+    return {
+      state: 'growing',
+      status_title: 'Growing',
+      badge_class: 'soon',
+      badge_text: formatDaysLabel(daysRemaining, 'remaining'),
+      focus: focusRow.name,
+      copy: `${formatPaddockWorkTypeLabel(
+        focusRow.latest_work_type || 'seeding'
+      )} cycle in progress.`,
+      meta: [
+        { label: 'Estimated ready', value: formatDate(focusRow.ready_to_graze_on) },
+        { label: 'Growing paddocks', value: String(growingCount) },
+        { label: 'Ready next', value: focusRow.name },
+      ],
+      progress,
+    };
+  }
+
+  if (occupiedRows.length) {
+    const focusRow = [...occupiedRows].sort((left, right) => {
+      const leftDays = Number(left.grazing_days || 0);
+      const rightDays = Number(right.grazing_days || 0);
+      if (leftDays !== rightDays) {
+        return rightDays - leftDays;
+      }
+      return compareIsoDateValues(left.occupied_since, right.occupied_since, 'desc');
+    })[0];
+    const progress = getPastureProgressSnapshot(focusRow);
+
+    return {
+      state: 'occupied',
+      status_title: 'Grazing active',
+      badge_class: 'ok',
+      badge_text: formatDaysLabel(focusRow.grazing_days || 0, 'grazing'),
+      focus: focusRow.name,
+      copy: focusRow.occupied_by ? `Occupied by ${focusRow.occupied_by}.` : 'Currently occupied.',
+      meta: [
+        { label: 'Entered', value: formatDate(focusRow.occupied_since) },
+        { label: 'Occupied paddocks', value: String(occupiedCount) },
+        { label: 'Ready since', value: formatDate(focusRow.ready_to_graze_on) },
+      ],
+      progress,
+    };
+  }
+
+  if (restingRows.length) {
+    const focusRow = [...restingRows].sort(
+      (left, right) => Number(right.rest_days || 0) - Number(left.rest_days || 0)
+    )[0];
+
+    return {
+      state: 'resting',
+      status_title: 'Resting phase',
+      badge_class: 'neutral',
+      badge_text: formatDaysLabel(focusRow.rest_days || 0, 'resting'),
+      focus: focusRow.name,
+      copy: focusRow.last_exited_at
+        ? `Last grazed ${formatDate(focusRow.last_exited_at)}.`
+        : 'Recovery window in progress.',
+      meta: [
+        { label: 'Resting paddocks', value: String(restingCount) },
+        { label: 'Ready paddocks', value: String(readyCount) },
+        { label: 'Growing paddocks', value: String(growingCount) },
+      ],
+      progress: null,
+    };
+  }
+
+  return {
+    state: 'empty',
+    status_title: 'Pasture data pending',
+    badge_class: 'neutral',
+    badge_text: 'No active cycle',
+    focus: 'No ready-to-graze dates found yet.',
+    copy: 'Save field work with ready days to start pasture readiness tracking.',
+    meta: [
+      { label: 'Tracked cycles', value: String(trackedRows.length) },
+      { label: 'Active paddocks', value: String(activeRows.length) },
+    ],
+    progress: null,
+  };
+}
+
+function renderPastureOverview(payload) {
+  if (!pastureOverviewBody) {
+    return;
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    pastureOverviewBody.innerHTML = '<p class="pasture-empty">Log in to view pasture readiness.</p>';
+    return;
+  }
+
+  const paddockRows = Array.isArray(payload.paddocks) ? payload.paddocks : [];
+  const ryegrassCard = buildPastureRyegrassCardData(paddockRows);
+  const rainEnabled = isAdminModuleEnabled('rain');
+  const summary = payload.summary || {};
+  const rainCards = rainEnabled
+    ? [
+        {
+          label: 'Rain Today',
+          value: `${formatRainMm(summary.rain_today_mm || 0)} mm`,
+          detail: 'Manual rain logged today',
+        },
+        {
+          label: 'Rain 7d',
+          value: `${formatRainMm(summary.rain_7d_mm || 0)} mm`,
+          detail: 'Last 7 days total',
+        },
+        {
+          label: 'Rainy Days',
+          value: `${Number(summary.rain_days_7 || 0)}`,
+          detail: 'Days with rain in the last 7 days',
+        },
+      ]
+    : [];
+
+  const gridClassName = rainCards.length
+    ? 'pasture-overview-grid pasture-overview-grid-has-rain'
+    : 'pasture-overview-grid';
+  const progressMarkup =
+    ryegrassCard.progress && ryegrassCard.progress.target_days > 0
+      ? `
+          <div class="pasture-progress">
+            <div class="pasture-progress-label">
+              <span>Day ${escapeHtml(ryegrassCard.progress.elapsed_days)} / ${escapeHtml(
+          ryegrassCard.progress.target_days
+        )}</span>
+              <span>${escapeHtml(Math.round(ryegrassCard.progress.percent))}%</span>
+            </div>
+            <div class="pasture-progress-bar" aria-hidden="true">
+              <span style="width: ${escapeHtml(ryegrassCard.progress.percent.toFixed(1))}%;"></span>
+            </div>
+          </div>
+        `
+      : '';
+
+  pastureOverviewBody.className = gridClassName;
+  pastureOverviewBody.innerHTML = `
+    <article class="pasture-card pasture-card-feature pasture-state-${escapeHtml(ryegrassCard.state)}">
+      <div class="pasture-card-head">
+        <div>
+          <p class="pasture-card-eyebrow">🌱 Ryegrass</p>
+          <h3>${escapeHtml(ryegrassCard.status_title)}</h3>
+        </div>
+        <span class="badge ${escapeHtml(ryegrassCard.badge_class)}">${escapeHtml(
+          ryegrassCard.badge_text
+        )}</span>
+      </div>
+      <p class="pasture-card-focus">${escapeHtml(ryegrassCard.focus)}</p>
+      <p class="pasture-card-copy">${escapeHtml(ryegrassCard.copy)}</p>
+      ${progressMarkup}
+      ${
+        Array.isArray(ryegrassCard.meta) && ryegrassCard.meta.length
+          ? `<dl class="pasture-card-meta">
+              ${ryegrassCard.meta
+                .map(
+                  (item) => `
+                    <div>
+                      <dt>${escapeHtml(item.label)}</dt>
+                      <dd>${escapeHtml(item.value)}</dd>
+                    </div>
+                  `
+                )
+                .join('')}
+            </dl>`
+          : ''
+      }
+    </article>
+    ${rainCards
+      .map(
+        (card) => `
+          <article class="pasture-card pasture-card-stat">
+            <p class="pasture-card-eyebrow">${escapeHtml(card.label)}</p>
+            <p class="pasture-card-stat-value">${escapeHtml(card.value)}</p>
+            <p class="pasture-card-copy">${escapeHtml(card.detail)}</p>
+          </article>
+        `
+      )
+      .join('')}
+  `;
+}
+
+function formatTemperatureValue(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return '-';
+  }
+  if (Number.isInteger(numericValue)) {
+    return String(numericValue);
+  }
+  return numericValue.toFixed(1);
+}
+
+function formatTemperatureC(value) {
+  const formatted = formatTemperatureValue(value);
+  return formatted === '-' ? '-' : `${formatted}C`;
+}
+
+function hasTemperatureValue(value) {
+  return value != null && Number.isFinite(Number(value));
 }
 
 function formatChartAxisDate(value) {
@@ -319,6 +995,76 @@ function formatRangeDate(value, includeYear = false) {
     day: '2-digit',
     ...(includeYear ? { year: 'numeric' } : {}),
     timeZone: 'UTC',
+  });
+}
+
+function currentYearMonthString() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function normalizeYearMonth(value) {
+  const normalized = String(value || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(normalized)) {
+    return '';
+  }
+
+  const [year, month] = normalized.split('-').map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return '';
+  }
+
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
+}
+
+function getFeedSlotMeta(feedSlot) {
+  return FEED_SLOT_META.find((row) => row.key === feedSlot) || null;
+}
+
+function getFeedSlotLabel(feedSlot) {
+  return getFeedSlotMeta(feedSlot)?.title || String(feedSlot || '');
+}
+
+function getFeedSlotSortValue(feedSlot) {
+  const index = FEED_SLOT_META.findIndex((row) => row.key === feedSlot);
+  return index === -1 ? FEED_SLOT_META.length : index;
+}
+
+function getMonthDateInfo(yearMonth) {
+  const normalizedYearMonth = normalizeYearMonth(yearMonth) || currentYearMonthString();
+  const [year, month] = normalizedYearMonth.split('-').map(Number);
+  const totalDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const firstDay = new Date(Date.UTC(year, month - 1, 1));
+
+  return {
+    month: normalizedYearMonth,
+    year,
+    month_index: month - 1,
+    total_days: totalDays,
+    first_weekday: firstDay.getUTCDay(),
+  };
+}
+
+function buildIsoDateFromParts(year, monthIndex, day) {
+  return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
+}
+
+function buildHorseFeedPlanDraftRow(partial = {}) {
+  return {
+    row_key: partial.row_key || `draft-${nextHorseFeedPlanDraftRowKey++}`,
+    id: partial.id == null ? null : Number(partial.id),
+    feed_slot: partial.feed_slot || 'morning',
+    feed_item_name: partial.feed_item_name || '',
+    quantity: partial.quantity == null ? '' : String(partial.quantity),
+    unit: partial.unit || '',
+    auto_deduct_stock:
+      partial.auto_deduct_stock == null ? true : Boolean(partial.auto_deduct_stock),
+    notes: partial.notes || '',
+  };
+}
+
+function buildHorseFeedPlanDraftRowForSlot(feedSlot) {
+  return buildHorseFeedPlanDraftRow({
+    feed_slot: getFeedSlotMeta(feedSlot)?.key || 'morning',
   });
 }
 
@@ -372,19 +1118,422 @@ function setSessionAuthState(authenticated, username = null) {
   logoutButton.disabled = true;
 }
 
+function setLoadingOverlayContent(message, detail = 'This only takes a moment.') {
+  if (loadingOverlayTitle) {
+    loadingOverlayTitle.textContent = message || 'Loading dashboard...';
+  }
+
+  if (loadingOverlayDetail) {
+    loadingOverlayDetail.textContent = detail || 'This only takes a moment.';
+  }
+}
+
+function beginLoadingOverlay(message = 'Loading dashboard...', detail = 'Pulling the latest farm data.') {
+  loadingOverlayCount += 1;
+  setLoadingOverlayContent(message, detail);
+
+  if (loadingOverlay) {
+    loadingOverlay.classList.remove('hidden');
+    loadingOverlay.setAttribute('aria-hidden', 'false');
+  }
+
+  document.body.classList.add('loading-active');
+}
+
+function endLoadingOverlay() {
+  loadingOverlayCount = Math.max(0, loadingOverlayCount - 1);
+  if (loadingOverlayCount > 0) {
+    return;
+  }
+
+  if (loadingOverlay) {
+    loadingOverlay.classList.add('hidden');
+    loadingOverlay.setAttribute('aria-hidden', 'true');
+  }
+
+  document.body.classList.remove('loading-active');
+}
+
 function setStatus(message, isError = false) {
   statusMessage.textContent = message;
   statusMessage.style.color = isError ? 'var(--danger)' : 'var(--ink-soft)';
 }
 
-function setActionMessage(message, isError = false) {
-  actionMessage.textContent = message;
-  actionMessage.style.color = isError ? 'var(--danger)' : 'var(--ok)';
+function applyMessageState(target, message, isError = false) {
+  if (!target) {
+    return;
+  }
+
+  target.textContent = message;
+  target.classList.toggle('is-error', Boolean(isError));
+  target.classList.toggle('is-success', !isError && Boolean(String(message || '').trim()));
+  target.classList.toggle('is-empty', !String(message || '').trim());
+}
+
+function resolveActionCard(targetOrId = null) {
+  if (!targetOrId) {
+    return null;
+  }
+
+  if (typeof targetOrId === 'string') {
+    return document.getElementById(targetOrId);
+  }
+
+  if (targetOrId instanceof Element) {
+    return targetOrId.closest('.action-card');
+  }
+
+  return null;
+}
+
+function setLastActionCard(targetOrId) {
+  const card = resolveActionCard(targetOrId);
+  if (card?.id) {
+    lastActionCardId = card.id;
+  }
+}
+
+function placeActionCardMessageElement(card, messageElement) {
+  if (!card || !messageElement) {
+    return;
+  }
+
+  messageElement.classList.add('action-card-message');
+  if (!messageElement.hasAttribute('aria-live')) {
+    messageElement.setAttribute('aria-live', 'polite');
+  }
+
+  const heading = card.querySelector(':scope > h3');
+  const note = card.querySelector(':scope > .action-card-note');
+  const anchor = note || heading;
+
+  if (!anchor) {
+    if (card.firstElementChild !== messageElement) {
+      card.prepend(messageElement);
+    }
+    return;
+  }
+
+  if (messageElement.parentElement !== card || messageElement.previousElementSibling !== anchor) {
+    card.insertBefore(messageElement, anchor.nextSibling);
+  }
+}
+
+function getActionCardMessageElement(card) {
+  if (!card) {
+    return null;
+  }
+
+  if (card.id === 'action-card-farm-setup') {
+    placeActionCardMessageElement(card, farmSettingsMessage);
+    return farmSettingsMessage;
+  }
+
+  if (card.id === 'action-card-admin-modules') {
+    placeActionCardMessageElement(card, adminModulesMessage);
+    return adminModulesMessage;
+  }
+
+  if (card.id === 'action-card-horse-profile') {
+    placeActionCardMessageElement(card, horseProfileMessage);
+    return horseProfileMessage;
+  }
+
+  let messageElement = card.querySelector(':scope > .action-card-message');
+  if (!messageElement) {
+    messageElement = document.createElement('p');
+    messageElement.className = 'action-message action-card-message is-empty';
+  }
+
+  placeActionCardMessageElement(card, messageElement);
+
+  return messageElement;
+}
+
+function setActionCardMessage(targetOrId, message, isError = false) {
+  const card = resolveActionCard(targetOrId) || resolveActionCard(lastActionCardId);
+  if (!card) {
+    return;
+  }
+
+  setLastActionCard(card);
+  applyMessageState(getActionCardMessageElement(card), message, isError);
+}
+
+function setActionMessage(message, isError = false, options = {}) {
+  if (options.card !== false) {
+    const card = resolveActionCard(options.card) || resolveActionCard(lastActionCardId);
+    if (card) {
+      setActionCardMessage(card, message, isError);
+      applyMessageState(actionMessage, '', false);
+      return;
+    }
+  }
+
+  if (options.global !== false) {
+    applyMessageState(actionMessage, message, isError);
+  }
 }
 
 function setHorseProfileMessage(message, isError = false) {
-  horseProfileMessage.textContent = message;
-  horseProfileMessage.style.color = isError ? 'var(--danger)' : 'var(--ok)';
+  applyMessageState(horseProfileMessage, message, isError);
+}
+
+function setFarmSettingsMessage(message, isError = false) {
+  if (!farmSettingsMessage) {
+    return;
+  }
+
+  applyMessageState(farmSettingsMessage, message, isError);
+}
+
+function isFarmLocationConfigured(settings) {
+  if (!settings || typeof settings !== 'object') {
+    return false;
+  }
+
+  const latitude = Number(settings.weather_latitude);
+  const longitude = Number(settings.weather_longitude);
+  return Number.isFinite(latitude) && Number.isFinite(longitude);
+}
+
+function isTelegramAlertConfigured(settings) {
+  if (!settings || typeof settings !== 'object') {
+    return false;
+  }
+
+  return Boolean(String(settings.telegram_alert_chat_id || '').trim());
+}
+
+function renderFarmSetupChecklist(settings) {
+  if (!farmSetupChecklist) {
+    return;
+  }
+
+  const weatherConfigured = isFarmLocationConfigured(settings);
+  const timezoneConfigured = Boolean(String(settings?.weather_timezone || '').trim());
+  const telegramConfigured = isTelegramAlertConfigured(settings);
+  const syncDays =
+    settings?.weather_sync_days == null ? null : Number.parseInt(settings.weather_sync_days, 10);
+
+  const items = [
+    {
+      key: 'location',
+      label: weatherConfigured ? 'Weather location ready' : 'Weather location missing',
+      detail: weatherConfigured
+        ? `Latitude ${settings.weather_latitude}, longitude ${settings.weather_longitude}.`
+        : 'Add your farm latitude and longitude so weather sync can work.',
+      ready: weatherConfigured,
+    },
+    {
+      key: 'timezone',
+      label: timezoneConfigured ? 'Timezone ready' : 'Timezone missing',
+      detail: timezoneConfigured
+        ? `${settings.weather_timezone} is set for weather sync.`
+        : 'Add the farm timezone used for weather history.',
+      ready: timezoneConfigured,
+    },
+    {
+      key: 'sync',
+      label: syncDays ? 'Weather sync window ready' : 'Weather sync window missing',
+      detail: syncDays
+        ? `Weather sync will backfill ${syncDays} day(s).`
+        : 'Choose how many days of weather history should be synced.',
+      ready: Boolean(syncDays),
+    },
+    {
+      key: 'telegram',
+      label: telegramConfigured ? 'Telegram reminders linked' : 'Telegram reminders not linked',
+      detail: telegramConfigured
+        ? `Alert chat ${settings.telegram_alert_chat_id} is saved.`
+        : 'Send any message to the Telegram bot once, or paste a chat ID here manually.',
+      ready: telegramConfigured,
+    },
+  ];
+
+  farmSetupChecklist.innerHTML = items
+    .map(
+      (item) => `
+        <article class="farm-setup-checklist-item ${item.ready ? 'is-ready' : 'is-pending'}" data-key="${escapeHtml(item.key)}">
+          <strong>${escapeHtml(item.label)}</strong>
+          <span>${escapeHtml(item.detail)}</span>
+        </article>
+      `
+    )
+    .join('');
+}
+
+function setAdminModulesMessage(message, isError = false) {
+  if (!adminModulesMessage) {
+    return;
+  }
+
+  applyMessageState(adminModulesMessage, message, isError);
+}
+
+function renderAdminModuleSettings() {
+  if (!adminModulesList) {
+    return;
+  }
+
+  const modules = normalizeAdminModuleSettings(currentAdminModuleSettings);
+  if (!modules.length) {
+    adminModulesList.innerHTML = '<p class="checkbox-list-empty">No optional modules found.</p>';
+    return;
+  }
+
+  adminModulesList.innerHTML = modules
+    .map(
+      (module) => `
+        <label class="checkbox-list-item module-settings-item">
+          <input
+            type="checkbox"
+            name="moduleKey"
+            value="${escapeHtml(module.key)}"
+            ${module.enabled ? 'checked' : ''}
+            ${module.editable ? '' : 'disabled'}
+          />
+          <span class="module-settings-copy">
+            <strong>${escapeHtml(module.label)}</strong>
+            <small>${escapeHtml(module.description)}</small>
+          </span>
+        </label>
+      `
+    )
+    .join('');
+}
+
+function populateFarmSettings(settings) {
+  currentFarmSettings = settings && typeof settings === 'object' ? settings : null;
+
+  if (!farmNameInput) {
+    return;
+  }
+
+  farmNameInput.value = currentFarmSettings?.farm_name || '';
+  farmWeatherLatitudeInput.value =
+    currentFarmSettings?.weather_latitude == null ? '' : String(currentFarmSettings.weather_latitude);
+  farmWeatherLongitudeInput.value =
+    currentFarmSettings?.weather_longitude == null
+      ? ''
+      : String(currentFarmSettings.weather_longitude);
+  farmWeatherTimezoneInput.value = currentFarmSettings?.weather_timezone || 'America/Montevideo';
+  farmWeatherSyncDaysInput.value =
+    currentFarmSettings?.weather_sync_days == null ? '' : String(currentFarmSettings.weather_sync_days);
+  farmTelegramAlertChatIdInput.value = currentFarmSettings?.telegram_alert_chat_id || '';
+  renderFarmSetupChecklist(currentFarmSettings);
+}
+
+function applyAdminModuleVisibility() {
+  const enabledMap = getAdminModuleEnabledMap();
+
+  for (const [moduleKey, selectors] of Object.entries(MODULE_BOUND_SELECTORS)) {
+    const enabled = enabledMap[moduleKey] !== false;
+
+    for (const selector of selectors) {
+      document.querySelectorAll(selector).forEach((element) => {
+        element.classList.toggle('hidden', !enabled);
+      });
+    }
+  }
+
+  const dewormEnabled = enabledMap.deworm !== false;
+  const farrierEnabled = enabledMap.farrier !== false;
+  const dewormFarrierCard = document.getElementById('action-card-deworm-farrier');
+  if (dewormFarrierCard) {
+    dewormFarrierCard.classList.toggle('hidden', !dewormEnabled && !farrierEnabled);
+  }
+}
+
+function syncAdminModuleSettings(rawSettings) {
+  currentAdminModuleSettings = normalizeAdminModuleSettings(rawSettings);
+  renderAdminModuleSettings();
+  renderSummaryEditor();
+  applyAdminModuleVisibility();
+}
+
+function setHorseFeedPlanMessage(message, isError = false) {
+  if (!horseFeedPlanMessage) {
+    return;
+  }
+
+  applyMessageState(horseFeedPlanMessage, message, isError);
+}
+
+function pauseDashboardAutoRefresh(durationMs = 120000) {
+  const safeDuration = Number.isFinite(Number(durationMs)) ? Number(durationMs) : 120000;
+  dashboardAutoRefreshPauseUntil = Math.max(
+    dashboardAutoRefreshPauseUntil,
+    Date.now() + Math.max(0, safeDuration)
+  );
+}
+
+function isFeedPlanningInteractionActive() {
+  const activeElement = document.activeElement;
+  if (!activeElement) {
+    return false;
+  }
+
+  return Boolean(
+    (horseFeedPlanForm && horseFeedPlanForm.contains(activeElement)) ||
+      (horseFeedCalendarGrid && horseFeedCalendarGrid.contains(activeElement))
+  );
+}
+
+function applyStockChangesToCachedDashboard(stockChanges) {
+  if (!latestDashboardPayload?.stock?.all || !Array.isArray(stockChanges) || stockChanges.length === 0) {
+    return;
+  }
+
+  const allRows = latestDashboardPayload.stock.all
+    .map((row) => ({ ...row }))
+    .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
+  const rowsById = new Map(
+    allRows
+      .map((row) => [Number(row.id), row])
+      .filter(([rowId]) => Number.isFinite(rowId))
+  );
+  const rowsByName = new Map(
+    allRows.map((row) => [String(row.name || '').trim().toLowerCase(), row])
+  );
+
+  for (const change of stockChanges) {
+    const targetRow =
+      rowsById.get(Number(change.feed_item_id)) ||
+      rowsByName.get(String(change.feed_item_name || '').trim().toLowerCase());
+    if (!targetRow) {
+      continue;
+    }
+
+    targetRow.current_stock = Number(change.current_stock);
+    if (change.unit) {
+      targetRow.unit = change.unit;
+    }
+  }
+
+  const lowStockThreshold = Number(latestDashboardPayload.meta?.thresholds?.low_stock);
+  const threshold = Number.isFinite(lowStockThreshold) ? lowStockThreshold : 5;
+  const lowRows = allRows
+    .filter((row) => Number(row.current_stock) <= threshold)
+    .sort((left, right) => {
+      const stockDiff = Number(left.current_stock) - Number(right.current_stock);
+      if (stockDiff !== 0) {
+        return stockDiff;
+      }
+      return String(left.name || '').localeCompare(String(right.name || ''));
+    });
+
+  latestDashboardPayload.stock.all = allRows;
+  latestDashboardPayload.stock.low = lowRows.slice(0, 20);
+
+  if (latestDashboardPayload.summary) {
+    latestDashboardPayload.summary.low_stock_count = lowRows.length;
+  }
+
+  renderSummary(latestDashboardPayload);
+  renderStockRows(lowStockBody, latestDashboardPayload.stock.low, 'No low stock items.');
+  renderStockRows(allStockBody, latestDashboardPayload.stock.all, 'No inventory data.');
+  populateFeedItemOptions(latestDashboardPayload.stock.all);
 }
 
 function panelIdFromTitle(title, index) {
@@ -400,9 +1549,9 @@ function panelIdFromTitle(title, index) {
   return normalized;
 }
 
-function readPanelStateMap() {
+function readStateMap(storageKey) {
   try {
-    const raw = localStorage.getItem(PANEL_STATE_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) {
       return {};
     }
@@ -413,8 +1562,16 @@ function readPanelStateMap() {
   }
 }
 
+function saveStateMap(storageKey, stateMap) {
+  localStorage.setItem(storageKey, JSON.stringify(stateMap));
+}
+
+function readPanelStateMap() {
+  return readStateMap(PANEL_STATE_STORAGE_KEY);
+}
+
 function savePanelStateMap(stateMap) {
-  localStorage.setItem(PANEL_STATE_STORAGE_KEY, JSON.stringify(stateMap));
+  saveStateMap(PANEL_STATE_STORAGE_KEY, stateMap);
 }
 
 function setPanelCollapsed(panel, collapsed) {
@@ -468,23 +1625,99 @@ function initPanelAccordions() {
   });
 }
 
-function setRainRegistryCollapsed(collapsed) {
-  if (!rainRegistryAccordion || !rainRegistryToggle) {
-    return;
+function setActionCardCollapsed(card, collapsed) {
+  card.classList.toggle('action-card-collapsed', collapsed);
+  const header = card.querySelector(':scope > h3.action-card-toggle');
+  if (header) {
+    header.setAttribute('aria-expanded', String(!collapsed));
   }
-
-  rainRegistryAccordion.classList.toggle('subpanel-collapsed', collapsed);
-  rainRegistryToggle.setAttribute('aria-expanded', String(!collapsed));
 }
 
-function initRainRegistryAccordion() {
-  if (!rainRegistryAccordion || !rainRegistryToggle) {
+function initActionCardAccordions() {
+  const cards = Array.from(document.querySelectorAll('.action-card'));
+  if (!cards.length) {
     return;
   }
 
-  let collapsed = false;
+  const stateMap = readStateMap(ACTION_CARD_STATE_STORAGE_KEY);
+
+  cards.forEach((card, index) => {
+    const header = card.querySelector(':scope > h3');
+    if (!header) {
+      return;
+    }
+
+    const cardId = card.dataset.actionCardId || card.id || `action_card_${panelIdFromTitle(header.textContent, index)}`;
+    card.dataset.actionCardId = cardId;
+    header.classList.add('action-card-toggle');
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+
+    if (typeof stateMap[cardId] === 'boolean') {
+      setActionCardCollapsed(card, stateMap[cardId]);
+    } else {
+      setActionCardCollapsed(card, card.classList.contains('action-card-collapsed'));
+    }
+
+    const toggle = () => {
+      const nextCollapsed = !card.classList.contains('action-card-collapsed');
+      setActionCardCollapsed(card, nextCollapsed);
+      stateMap[cardId] = nextCollapsed;
+      saveStateMap(ACTION_CARD_STATE_STORAGE_KEY, stateMap);
+    };
+
+    header.addEventListener('click', toggle);
+    header.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggle();
+      }
+    });
+  });
+}
+
+function initActionCardMessages() {
+  const cards = Array.from(document.querySelectorAll('.action-card'));
+  if (cards.length > 0) {
+    cards.forEach((card) => {
+      getActionCardMessageElement(card);
+    });
+  }
+
+  if (!actionHubPanel) {
+    return;
+  }
+
+  actionHubPanel.addEventListener('click', (event) => {
+    setLastActionCard(event.target);
+  });
+
+  actionHubPanel.addEventListener('focusin', (event) => {
+    setLastActionCard(event.target);
+  });
+
+  actionHubPanel.addEventListener('submit', (event) => {
+    setLastActionCard(event.target);
+  });
+}
+
+function setSubpanelCollapsed(panel, toggle, collapsed) {
+  if (!panel || !toggle) {
+    return;
+  }
+
+  panel.classList.toggle('subpanel-collapsed', collapsed);
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function initStoredSubpanelAccordion(panel, toggle, storageKey, options = {}) {
+  if (!panel || !toggle || !storageKey) {
+    return;
+  }
+
+  let collapsed = Boolean(options.defaultCollapsed);
   try {
-    const raw = localStorage.getItem(RAIN_REGISTRY_COLLAPSED_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (raw != null) {
       collapsed = raw === '1';
     }
@@ -492,13 +1725,30 @@ function initRainRegistryAccordion() {
     collapsed = false;
   }
 
-  setRainRegistryCollapsed(collapsed);
+  setSubpanelCollapsed(panel, toggle, collapsed);
 
-  rainRegistryToggle.addEventListener('click', () => {
-    const nextCollapsed = !rainRegistryAccordion.classList.contains('subpanel-collapsed');
-    setRainRegistryCollapsed(nextCollapsed);
-    localStorage.setItem(RAIN_REGISTRY_COLLAPSED_STORAGE_KEY, nextCollapsed ? '1' : '0');
+  toggle.addEventListener('click', () => {
+    const nextCollapsed = !panel.classList.contains('subpanel-collapsed');
+    setSubpanelCollapsed(panel, toggle, nextCollapsed);
+    localStorage.setItem(storageKey, nextCollapsed ? '1' : '0');
   });
+}
+
+function initRainRegistryAccordion() {
+  initStoredSubpanelAccordion(
+    rainRegistryAccordion,
+    rainRegistryToggle,
+    RAIN_REGISTRY_COLLAPSED_STORAGE_KEY
+  );
+}
+
+function initHorseFeedHistoryAccordion() {
+  initStoredSubpanelAccordion(
+    horseFeedHistoryCard,
+    horseFeedHistoryToggle,
+    HORSE_FEED_HISTORY_COLLAPSED_STORAGE_KEY,
+    { defaultCollapsed: true }
+  );
 }
 
 function getDefaultSummaryConfig() {
@@ -673,6 +1923,95 @@ function findHorseGroupById(groupId) {
   return currentHorseGroupRows.find((row) => String(row.id) === String(groupId)) || null;
 }
 
+function findPaddockById(paddockId) {
+  return currentPaddockRows.find((row) => String(row.id) === String(paddockId)) || null;
+}
+
+function findPaddockWorkById(eventId) {
+  return currentPaddockWorkRows.find((row) => String(row.id) === String(eventId)) || null;
+}
+
+function findPaddockByName(paddockName) {
+  const normalizedName = String(paddockName || '')
+    .trim()
+    .toLowerCase();
+  if (!normalizedName) {
+    return null;
+  }
+
+  return (
+    currentPaddockRows.find((row) => String(row.name || '').trim().toLowerCase() === normalizedName) || null
+  );
+}
+
+function syncPaddockParentSelectOptions(rows = currentPaddockRows) {
+  if (!paddockParentSelect) {
+    return;
+  }
+
+  const previous = paddockParentSelect.value;
+  const editingPaddock = findPaddockByName(paddockNameInput?.value);
+  const options = ['<option value="">No parent / top-level paddock</option>'];
+
+  for (const row of rows) {
+    if (editingPaddock && String(row.id) === String(editingPaddock.id)) {
+      continue;
+    }
+
+    options.push(`<option value="${escapeHtml(row.id)}">${escapeHtml(row.name)}</option>`);
+  }
+
+  paddockParentSelect.innerHTML = options.join('');
+
+  const preferredValue = editingPaddock?.parent_paddock_id
+    ? String(editingPaddock.parent_paddock_id)
+    : previous;
+  const hasPreferredValue =
+    preferredValue && [...paddockParentSelect.options].some((option) => option.value === preferredValue);
+
+  paddockParentSelect.value = hasPreferredValue ? preferredValue : '';
+  paddockParentSelect.disabled = false;
+}
+
+function persistPanelCollapsedState(panel, collapsed) {
+  if (!panel?.dataset?.panelId) {
+    return;
+  }
+
+  const stateMap = readPanelStateMap();
+  stateMap[panel.dataset.panelId] = collapsed;
+  savePanelStateMap(stateMap);
+}
+
+function persistActionCardCollapsedState(card, collapsed) {
+  if (!card?.dataset?.actionCardId) {
+    return;
+  }
+
+  const stateMap = readStateMap(ACTION_CARD_STATE_STORAGE_KEY);
+  stateMap[card.dataset.actionCardId] = collapsed;
+  saveStateMap(ACTION_CARD_STATE_STORAGE_KEY, stateMap);
+}
+
+function expandPanelForElement(element) {
+  const panel = element?.closest('.panel');
+  if (!panel) {
+    return;
+  }
+
+  setPanelCollapsed(panel, false);
+  persistPanelCollapsedState(panel, false);
+}
+
+function expandActionCard(card) {
+  if (!card) {
+    return;
+  }
+
+  setActionCardCollapsed(card, false);
+  persistActionCardCollapsedState(card, false);
+}
+
 function clearHorseGroupEditState(options = {}) {
   const { clearFields = true, focus = false } = options;
 
@@ -704,12 +2043,179 @@ function clearHorseGroupEditState(options = {}) {
   }
 }
 
+function clearPaddockEditState(options = {}) {
+  const { clearFields = true, focus = false } = options;
+
+  if (paddockEditStatus) {
+    paddockEditStatus.textContent = '';
+    paddockEditStatus.classList.add('hidden');
+  }
+
+  if (paddockSaveButton) {
+    paddockSaveButton.textContent = 'Save Paddock';
+  }
+
+  if (paddockCancelEditButton) {
+    paddockCancelEditButton.classList.add('hidden');
+  }
+
+  if (clearFields) {
+    paddockNameInput.value = '';
+    paddockZoneInput.value = '';
+    paddockSizeInput.value = '';
+    paddockActiveSelect.value = 'true';
+    paddockNotesInput.value = '';
+    if (paddockParentSelect) {
+      paddockParentSelect.value = '';
+    }
+  }
+
+  syncPaddockParentSelectOptions();
+
+  if (focus) {
+    paddockNameInput.focus();
+  }
+}
+
+function setPaddockEditState(paddock, options = {}) {
+  if (!paddock) {
+    return;
+  }
+
+  const { scroll = true, focusName = true } = options;
+
+  paddockNameInput.value = paddock.name || '';
+  paddockZoneInput.value = paddock.zone || '';
+  paddockSizeInput.value = paddock.size_ha == null ? '' : String(paddock.size_ha);
+  paddockActiveSelect.value = paddock.active ? 'true' : 'false';
+  paddockNotesInput.value = paddock.notes || '';
+  syncPaddockParentSelectOptions();
+  if (paddockParentSelect) {
+    paddockParentSelect.value = paddock.parent_paddock_id == null ? '' : String(paddock.parent_paddock_id);
+  }
+
+  if (paddockEditStatus) {
+    paddockEditStatus.textContent = `Editing paddock: ${paddock.name}`;
+    paddockEditStatus.classList.remove('hidden');
+  }
+
+  if (paddockSaveButton) {
+    paddockSaveButton.textContent = 'Update Paddock';
+  }
+
+  if (paddockCancelEditButton) {
+    paddockCancelEditButton.classList.remove('hidden');
+  }
+
+  if (scroll) {
+    paddockSaveForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  if (focusName) {
+    paddockNameInput.focus();
+    paddockNameInput.select();
+  }
+}
+
+function clearPaddockWorkEditState(options = {}) {
+  const { clearFields = true, focus = false } = options;
+
+  if (paddockWorkEventIdInput) {
+    paddockWorkEventIdInput.value = '';
+  }
+
+  if (paddockWorkEditStatus) {
+    paddockWorkEditStatus.textContent = '';
+    paddockWorkEditStatus.classList.add('hidden');
+  }
+
+  if (paddockWorkSaveButton) {
+    paddockWorkSaveButton.textContent = 'Save Field Work';
+  }
+
+  if (paddockWorkCancelEditButton) {
+    paddockWorkCancelEditButton.classList.add('hidden');
+  }
+
+  if (clearFields) {
+    if (paddockWorkScopeSelect) {
+      paddockWorkScopeSelect.value = 'single';
+    }
+    if (paddockWorkDateInput) {
+      paddockWorkDateInput.value = new Date().toISOString().slice(0, 10);
+    }
+    if (paddockWorkReadyDaysInput) {
+      paddockWorkReadyDaysInput.value = '';
+    }
+    if (paddockWorkNotesInput) {
+      paddockWorkNotesInput.value = '';
+    }
+  }
+
+  if (focus) {
+    paddockWorkPaddockSelect?.focus();
+  }
+}
+
+function setPaddockWorkEditState(row, options = {}) {
+  if (!row) {
+    return;
+  }
+
+  const { scroll = true, focus = true } = options;
+
+  if (paddockWorkEventIdInput) {
+    paddockWorkEventIdInput.value = String(row.id);
+  }
+  if (paddockWorkPaddockSelect) {
+    paddockWorkPaddockSelect.value = String(row.paddock_id);
+  }
+  if (paddockWorkScopeSelect) {
+    paddockWorkScopeSelect.value = row.applies_to_descendants ? 'whole_block' : 'single';
+  }
+  if (paddockWorkTypeSelect) {
+    paddockWorkTypeSelect.value = row.event_type || 'other';
+  }
+  if (paddockWorkDateInput) {
+    paddockWorkDateInput.value = row.event_date || '';
+  }
+  if (paddockWorkReadyDaysInput) {
+    paddockWorkReadyDaysInput.value = row.ready_after_days == null ? '' : String(row.ready_after_days);
+  }
+  if (paddockWorkNotesInput) {
+    paddockWorkNotesInput.value = row.notes || '';
+  }
+
+  if (paddockWorkEditStatus) {
+    paddockWorkEditStatus.textContent = `Editing field work: ${row.paddock_name} ${formatPaddockWorkTypeLabel(
+      row.event_type
+    )}.`;
+    paddockWorkEditStatus.classList.remove('hidden');
+  }
+
+  if (paddockWorkSaveButton) {
+    paddockWorkSaveButton.textContent = 'Update Field Work';
+  }
+
+  if (paddockWorkCancelEditButton) {
+    paddockWorkCancelEditButton.classList.remove('hidden');
+  }
+
+  if (scroll) {
+    paddockWorkForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  if (focus) {
+    paddockWorkPaddockSelect?.focus();
+  }
+}
+
 function setHorseGroupEditState(group, options = {}) {
   if (!group || !horseGroupIdInput) {
     return;
   }
 
-  const { scroll = true } = options;
+  const { scroll = true, focusName = true } = options;
 
   horseGroupIdInput.value = String(group.id);
   horseGroupNameInput.value = group.name || '';
@@ -733,8 +2239,66 @@ function setHorseGroupEditState(group, options = {}) {
     horseGroupSaveForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
-  horseGroupNameInput.focus();
-  horseGroupNameInput.select();
+  if (focusName) {
+    horseGroupNameInput.focus();
+    horseGroupNameInput.select();
+  }
+}
+
+function syncHorseGroupMoveContext(group) {
+  if (!horseGroupMoveContext) {
+    return;
+  }
+
+  if (!group) {
+    horseGroupMoveContext.textContent = '';
+    horseGroupMoveContext.classList.add('hidden');
+    return;
+  }
+
+  const currentPaddocks = formatHorseGroupCurrentPaddockSummary(group);
+  const memberCount = Number(group.member_count || 0);
+  const horsesLabel = memberCount === 1 ? '1 horse' : `${memberCount} horses`;
+  horseGroupMoveContext.textContent = `Selected group: ${group.name}. ${horsesLabel}. Current paddocks: ${currentPaddocks}.`;
+  horseGroupMoveContext.classList.remove('hidden');
+}
+
+function syncHorseGroupMoveSelectionContext() {
+  const selectedGroup = findHorseGroupById(grazingGroupMoveInGroupSelect?.value || '');
+  syncHorseGroupMoveContext(selectedGroup);
+  return selectedGroup;
+}
+
+function focusHorseGroupMoveSection(group) {
+  const horseGroupsCard = document.getElementById('action-card-horse-groups');
+  expandPanelForElement(horseGroupMoveInSection || horseGroupsCard);
+  expandActionCard(horseGroupsCard);
+
+  let hasSelectedGroupOption = false;
+  if (group && grazingGroupMoveInGroupSelect) {
+    hasSelectedGroupOption = Array.from(grazingGroupMoveInGroupSelect.options).some(
+      (option) => String(option.value) === String(group.id)
+    );
+    if (hasSelectedGroupOption) {
+      grazingGroupMoveInGroupSelect.value = String(group.id);
+    }
+  }
+
+  if (group && !hasSelectedGroupOption) {
+    syncHorseGroupMoveContext(group);
+  } else {
+    syncHorseGroupMoveSelectionContext();
+  }
+
+  if (horseGroupMoveInSection) {
+    horseGroupMoveInSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  if (grazingGroupMoveInPaddockSelect && !grazingGroupMoveInPaddockSelect.disabled) {
+    grazingGroupMoveInPaddockSelect.focus();
+  }
+
+  return hasSelectedGroupOption;
 }
 
 function setActiveHorseSelection(horseId) {
@@ -773,8 +2337,30 @@ function setHorseHistorySelectedName(horse) {
   horseHistorySelectedName.textContent = horse?.name || '-';
 }
 
+function getSummaryMetricValue(data, metricKey) {
+  if (metricKey === 'pasture_status') {
+    const pastureCard = buildPastureRyegrassCardData(data?.paddocks || []);
+
+    if (pastureCard.state === 'ready') {
+      return 'Ready';
+    }
+    if (pastureCard.state === 'growing') {
+      return 'Growing';
+    }
+    if (pastureCard.state === 'occupied') {
+      return 'Active';
+    }
+    if (pastureCard.state === 'resting') {
+      return 'Resting';
+    }
+    return 'Setup';
+  }
+
+  return data?.summary?.[metricKey];
+}
+
 function renderSummary(data) {
-  const visibleCards = summaryCardConfig.filter((item) => item.visible);
+  const visibleCards = summaryCardConfig.filter((item) => item.visible && isSummaryMetricAvailable(item.key));
 
   if (!visibleCards.length) {
     summaryCards.innerHTML =
@@ -784,7 +2370,7 @@ function renderSummary(data) {
 
   summaryCards.innerHTML = visibleCards
     .map((item) => {
-      const value = data.summary?.[item.key];
+      const value = getSummaryMetricValue(data, item.key);
       const safeValue = value == null ? 0 : value;
       const targetId = SUMMARY_CARD_TARGETS[item.key];
 
@@ -848,12 +2434,28 @@ function initBackToTopButton() {
 function renderSummaryEditor() {
   summaryEditorList.innerHTML = summaryCardConfig
     .map((item, index) => {
+      const available = isSummaryMetricAvailable(item.key);
+      const disabledNote = available
+        ? ''
+        : `<span class="summary-editor-note">Module Off${
+            SUMMARY_METRIC_MODULE_KEYS[item.key]
+              ? `: ${escapeHtml(
+                  ADMIN_MODULES.find((module) => module.key === SUMMARY_METRIC_MODULE_KEYS[item.key])?.label ||
+                    SUMMARY_METRIC_MODULE_KEYS[item.key]
+                )}`
+              : ''
+          }</span>`;
       return `
-        <div class="summary-editor-row" data-key="${escapeHtml(item.key)}">
-          <input type="checkbox" ${item.visible ? 'checked' : ''} aria-label="Show ${escapeHtml(item.label)}" />
-          <input type="text" value="${escapeHtml(item.label)}" />
-          <button type="button" data-move="up" ${index === 0 ? 'disabled' : ''}>Up</button>
-          <button type="button" data-move="down" ${index === summaryCardConfig.length - 1 ? 'disabled' : ''}>Down</button>
+        <div class="summary-editor-row${available ? '' : ' is-disabled'}" data-key="${escapeHtml(item.key)}">
+          <input type="checkbox" ${item.visible ? 'checked' : ''} ${available ? '' : 'disabled'} aria-label="Show ${escapeHtml(
+            item.label
+          )}" />
+          <input type="text" value="${escapeHtml(item.label)}" ${available ? '' : 'disabled'} />
+          <button type="button" data-move="up" ${index === 0 || !available ? 'disabled' : ''}>Up</button>
+          <button type="button" data-move="down" ${
+            index === summaryCardConfig.length - 1 || !available ? 'disabled' : ''
+          }>Down</button>
+          ${disabledNote}
         </div>
       `;
     })
@@ -1089,7 +2691,7 @@ function renderStockRows(target, rows, emptyText) {
 
 function renderRainRows(rows) {
   if (!rows.length) {
-    rainBody.innerHTML = emptyStateRow(4, 'No rain records yet.');
+    rainBody.innerHTML = emptyStateRow(6, 'No rain records yet.');
     return;
   }
 
@@ -1098,7 +2700,9 @@ function renderRainRows(rows) {
       (row) => `
         <tr>
           <td>${escapeHtml(formatDate(row.event_date))}</td>
-          <td>${escapeHtml(row.rain_mm)}</td>
+          <td>${escapeHtml(formatRainMm(row.rain_mm))}</td>
+          <td>${escapeHtml(formatTemperatureValue(row.min_temp_c))}</td>
+          <td>${escapeHtml(formatTemperatureValue(row.max_temp_c))}</td>
           <td>${escapeHtml(row.source || '-')}</td>
           <td>${escapeHtml(row.notes || '-')}</td>
         </tr>
@@ -1201,6 +2805,8 @@ function getRainWindowRows(dailyRows, windowKey) {
         .map((row) => ({
           event_date: row.event_date || null,
           rain_mm: Number(row.rain_mm || 0),
+          min_temp_c: row.min_temp_c == null ? null : Number(row.min_temp_c),
+          max_temp_c: row.max_temp_c == null ? null : Number(row.max_temp_c),
         }))
         .filter((row) => row.event_date)
     : [];
@@ -1220,6 +2826,95 @@ function getRainWindowRows(dailyRows, windowKey) {
   }
 
   return normalizedRows.slice(-config.days);
+}
+
+function getCurrentDrySpellInfo(dailyRows) {
+  const rows = Array.isArray(dailyRows)
+    ? dailyRows
+        .map((row) => ({
+          event_date: row.event_date || null,
+          rain_mm: Number(row.rain_mm || 0),
+        }))
+        .filter((row) => row.event_date)
+    : [];
+
+  if (!rows.length) {
+    return {
+      dry_days: 0,
+      last_rain_date: null,
+    };
+  }
+
+  let dryDays = 0;
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    if (rows[index].rain_mm > 0) {
+      return {
+        dry_days: dryDays,
+        last_rain_date: rows[index].event_date,
+      };
+    }
+
+    dryDays += 1;
+  }
+
+  return {
+    dry_days: dryDays,
+    last_rain_date: null,
+  };
+}
+
+function formatDrySpellSummary(drySpellInfo) {
+  if (!drySpellInfo) {
+    return '';
+  }
+
+  const dryDays = Number(drySpellInfo.dry_days || 0);
+  if (dryDays <= 0) {
+    return 'Rain today';
+  }
+
+  const dayLabel = dryDays === 1 ? '1 dry day' : `${dryDays} dry days`;
+  if (drySpellInfo.last_rain_date) {
+    return `${dayLabel} since ${formatRangeDate(drySpellInfo.last_rain_date, true)}`;
+  }
+
+  return `${dayLabel} in record`;
+}
+
+function getRainTemperatureSummary(rows) {
+  const temperatureRows = Array.isArray(rows)
+    ? rows.filter((row) => hasTemperatureValue(row.min_temp_c) || hasTemperatureValue(row.max_temp_c))
+    : [];
+
+  if (!temperatureRows.length) {
+    return '';
+  }
+
+  const minValues = temperatureRows
+    .map((row) => Number(row.min_temp_c))
+    .filter((value) => Number.isFinite(value));
+  const maxValues = temperatureRows
+    .map((row) => Number(row.max_temp_c))
+    .filter((value) => Number.isFinite(value));
+
+  const averageMin = minValues.length
+    ? minValues.reduce((sum, value) => sum + value, 0) / minValues.length
+    : null;
+  const averageMax = maxValues.length
+    ? maxValues.reduce((sum, value) => sum + value, 0) / maxValues.length
+    : null;
+
+  if (averageMin == null && averageMax == null) {
+    return '';
+  }
+
+  if (averageMin != null && averageMax != null) {
+    return `Avg min/max ${formatTemperatureValue(averageMin)}/${formatTemperatureValue(averageMax)}C`;
+  }
+
+  return averageMin != null
+    ? `Avg min ${formatTemperatureC(averageMin)}`
+    : `Avg max ${formatTemperatureC(averageMax)}`;
 }
 
 function renderRainChartEmpty(message) {
@@ -1282,6 +2977,8 @@ function renderRainChart(rainPayload) {
   });
 
   const rows = getRainWindowRows(rainPayload?.daily || [], selectedRainWindow);
+  const drySpellSummary = formatDrySpellSummary(getCurrentDrySpellInfo(rainPayload?.daily || []));
+  const temperatureSummary = getRainTemperatureSummary(rows);
   const isRingMode = selectedRainWindow === '1d';
   setRainChartViewportMode(isRingMode);
   if (!rows.length) {
@@ -1302,10 +2999,23 @@ function renderRainChart(rainPayload) {
     }
 
     rainChartTotal.textContent = `${formatRainMm(rainMm)} mm`;
+    const temperatureBits = [];
+    if (hasTemperatureValue(row.min_temp_c)) {
+      temperatureBits.push(`Min ${formatTemperatureC(row.min_temp_c)}`);
+    }
+    if (hasTemperatureValue(row.max_temp_c)) {
+      temperatureBits.push(`Max ${formatTemperatureC(row.max_temp_c)}`);
+    }
     rainChartLabel.textContent =
       rainMm >= RAIN_TARGET_MET_MM
-        ? `Target met (>= ${RAIN_TARGET_MET_MM} mm)`
-        : `${formatRainMm(remainder)} mm to reach ${RAIN_TARGET_MET_MM} mm target`;
+        ? `Target met (>= ${RAIN_TARGET_MET_MM} mm)${
+            temperatureBits.length ? ` • ${temperatureBits.join(' • ')}` : ''
+          }${drySpellSummary ? ` • ${drySpellSummary}` : ''}`
+        : `${formatRainMm(remainder)} mm to reach ${RAIN_TARGET_MET_MM} mm target${
+            temperatureBits.length ? ` • ${temperatureBits.join(' • ')}` : ''
+          }${
+            drySpellSummary ? ` • ${drySpellSummary}` : ''
+          }`;
 
     const width = RAIN_RING_VIEWBOX_SIZE;
     const height = RAIN_RING_VIEWBOX_SIZE;
@@ -1356,7 +3066,11 @@ function renderRainChart(rainPayload) {
   const metDays = rows.filter((row) => row.rain_mm >= RAIN_TARGET_MET_MM).length;
   const averageRain = rows.length > 0 ? totalRain / rows.length : 0;
   rainChartTotal.textContent = `${formatRainMm(totalRain)} mm total`;
-  rainChartLabel.textContent = `Avg ${formatRainMm(averageRain)} mm/day • ${rainyDays}/${rows.length} rainy days • ${metDays} met target`;
+  rainChartLabel.textContent = `Avg ${formatRainMm(averageRain)} mm/day • ${rainyDays}/${rows.length} rainy days • ${metDays} met target${
+    temperatureSummary ? ` • ${temperatureSummary}` : ''
+  }${
+    drySpellSummary ? ` • ${drySpellSummary}` : ''
+  }`;
 
   const width = RAIN_BARS_VIEWBOX_WIDTH;
   const height = RAIN_BARS_VIEWBOX_HEIGHT;
@@ -1457,48 +3171,1129 @@ function renderTrainingHorseRows(target, rows, emptyText) {
     .join('');
 }
 
-function renderHorseHistoryRows(rows) {
-  if (!rows.length) {
-    horseHistoryBody.innerHTML = emptyStateRow(3, 'No history for this horse yet.');
+function formatActivityTimelineText(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function truncateActivityTimelineText(value, maxLength = 72) {
+  const normalized = String(value || '').trim().replace(/\s+/g, ' ');
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function buildActivityTimelineEntry({
+  date,
+  category,
+  title,
+  compactSummary = '',
+  summaryLines = [],
+  metaLines = [],
+}) {
+  const normalizedDate = normalizeDateForDateInput(date);
+  if (!normalizedDate || !title) {
+    return null;
+  }
+
+  const categoryMeta = ACTIVITY_TIMELINE_META[category] || {
+    icon: '📌',
+    label: formatActivityTimelineText(category),
+    priority: 99,
+  };
+
+  return {
+    date: normalizedDate,
+    category,
+    icon: categoryMeta.icon,
+    category_label: categoryMeta.label,
+    priority: categoryMeta.priority,
+    title,
+    compact_summary: compactSummary || summaryLines[0] || '',
+    summary_lines: summaryLines.filter(Boolean),
+    meta_lines: metaLines.filter(Boolean),
+  };
+}
+
+function buildFeedActivityTimelineEntries(rows) {
+  return groupFeedHistoryRows(Array.isArray(rows) ? rows : [])
+    .map((dayGroup) => {
+      const completedSlots = [];
+      let manualEntryCount = 0;
+
+      dayGroup.slotGroups.forEach((slotGroup) => {
+        if (slotGroup.feed_slot) {
+          completedSlots.push(getFeedSlotLabel(slotGroup.feed_slot));
+          return;
+        }
+
+        manualEntryCount += slotGroup.rows.length;
+      });
+
+      const summaryLines = [
+        ...completedSlots.map((slotLabel) => `${slotLabel} completed`),
+        ...(manualEntryCount === 1
+          ? ['1 manual feed entry logged']
+          : manualEntryCount > 1
+            ? [`${manualEntryCount} manual feed entries logged`]
+            : []),
+      ];
+
+      const completedSlotCount = completedSlots.length;
+      const completedSlotSummary = completedSlotCount
+        ? `${completedSlotCount} slot${completedSlotCount === 1 ? '' : 's'} completed`
+        : '';
+      const manualSummary = manualEntryCount
+        ? `${manualEntryCount} manual ${manualEntryCount === 1 ? 'entry' : 'entries'}`
+        : '';
+      const compactSummary = [completedSlotSummary, manualSummary].filter(Boolean).join(' + ');
+
+      const title = completedSlotCount
+        ? manualEntryCount > 0
+          ? 'Feed Activity'
+          : 'Feed Completed'
+        : 'Manual Feed Logged';
+
+      return buildActivityTimelineEntry({
+        date: dayGroup.dateKey,
+        category: 'feed',
+        title,
+        compactSummary,
+        summaryLines,
+      });
+    })
+    .filter(Boolean);
+}
+
+function buildDewormingActivityTimelineEntries(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) =>
+      buildActivityTimelineEntry({
+        date: row.event_date || row.at,
+        category: 'deworming',
+        title: 'Deworming',
+        compactSummary: truncateActivityTimelineText(`${row.product_name} administered`),
+        summaryLines: [`${row.product_name} administered`],
+        metaLines: row.next_due_date ? [`Next due: ${formatDate(row.next_due_date)}`] : [],
+      })
+    )
+    .filter(Boolean);
+}
+
+function buildFarrierActivityTimelineEntries(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) =>
+      buildActivityTimelineEntry({
+        date: row.at,
+        category: 'farrier',
+        title: 'Farrier Visit',
+        compactSummary: truncateActivityTimelineText(String(row.service_type || '').trim()),
+        summaryLines: [String(row.service_type || '').trim()],
+        metaLines: row.next_due_date ? [`Next due: ${formatDate(row.next_due_date)}`] : [],
+      })
+    )
+    .filter(Boolean);
+}
+
+function buildHealthActivityTimelineEntries(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const title = row.event_type ? formatActivityTimelineText(row.event_type) : 'Health Event';
+      const detail = String(row.description || '').trim() || 'Health event logged';
+      return buildActivityTimelineEntry({
+        date: row.at,
+        category: 'health',
+        title,
+        compactSummary: truncateActivityTimelineText(detail),
+        summaryLines: [detail],
+      });
+    })
+    .filter(Boolean);
+}
+
+function buildGrazingActivityTimelineEntries(rows) {
+  const chronologicalRows = [...(Array.isArray(rows) ? rows : [])].sort((left, right) => {
+    const leftDate = normalizeDateForDateInput(left.entered_at);
+    const rightDate = normalizeDateForDateInput(right.entered_at);
+    if (leftDate !== rightDate) {
+      return leftDate < rightDate ? -1 : 1;
+    }
+
+    return Number(left.id || 0) - Number(right.id || 0);
+  });
+
+  const activities = [];
+
+  chronologicalRows.forEach((row, index) => {
+    const previous = chronologicalRows[index - 1] || null;
+    const next = chronologicalRows[index + 1] || null;
+    const movedFromPrevious =
+      previous &&
+      previous.exited_at &&
+      row.entered_at &&
+      normalizeDateForDateInput(previous.exited_at) === normalizeDateForDateInput(row.entered_at);
+
+    const enteredMetaLines = row.source_group_name ? [`Via group: ${row.source_group_name}`] : [];
+
+    activities.push(
+      buildActivityTimelineEntry({
+        date: row.entered_at,
+        category: 'grazing',
+        title: movedFromPrevious ? 'Moved Paddocks' : 'Entered Paddock',
+        compactSummary: movedFromPrevious ? `${previous.paddock_name} -> ${row.paddock_name}` : row.paddock_name,
+        summaryLines: [movedFromPrevious ? `${previous.paddock_name} -> ${row.paddock_name}` : row.paddock_name],
+        metaLines: enteredMetaLines,
+      })
+    );
+
+    const movedIntoNext =
+      row.exited_at &&
+      next &&
+      next.entered_at &&
+      normalizeDateForDateInput(row.exited_at) === normalizeDateForDateInput(next.entered_at);
+
+    if (row.exited_at && !movedIntoNext) {
+      activities.push(
+        buildActivityTimelineEntry({
+          date: row.exited_at,
+          category: 'grazing',
+          title: 'Exited Paddock',
+          compactSummary: row.paddock_name,
+          summaryLines: [row.paddock_name],
+        })
+      );
+    }
+  });
+
+  return activities.filter(Boolean);
+}
+
+function buildSupplementalActivityTimelineEntries(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const category = String(row.category || '').trim().toLowerCase();
+      if (!['treatment_plan', 'dose'].includes(category)) {
+        return null;
+      }
+
+      return buildActivityTimelineEntry({
+        date: row.at,
+        category,
+        title: category === 'dose' ? 'Treatment Dose' : 'Treatment Plan',
+        compactSummary: truncateActivityTimelineText(row.detail),
+        summaryLines: [row.detail],
+      });
+    })
+    .filter(Boolean);
+}
+
+function sortActivityTimelineEntries(entries) {
+  return [...entries].sort((left, right) => {
+    if (left.date !== right.date) {
+      return left.date < right.date ? 1 : -1;
+    }
+
+    if (left.priority !== right.priority) {
+      return Number(left.priority || 99) - Number(right.priority || 99);
+    }
+
+    return String(left.title || '').localeCompare(String(right.title || ''));
+  });
+}
+
+function buildHorseActivityTimelineEntries(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+
+  return [
+    ...buildFeedActivityTimelineEntries(payload.feed_history || []),
+    ...buildDewormingActivityTimelineEntries(payload.deworming_history || []),
+    ...buildFarrierActivityTimelineEntries(payload.farrier_history || []),
+    ...buildHealthActivityTimelineEntries(payload.health_history || []),
+    ...buildGrazingActivityTimelineEntries(payload.grazing_history || []),
+    ...buildSupplementalActivityTimelineEntries(payload.history || []),
+  ];
+}
+
+function hasExpandableActivityTimelineDetails(entry) {
+  const summaryLines = Array.isArray(entry?.summary_lines) ? entry.summary_lines.filter(Boolean) : [];
+  const metaLines = Array.isArray(entry?.meta_lines) ? entry.meta_lines.filter(Boolean) : [];
+  const compactSummary = String(entry?.compact_summary || '').trim();
+  const firstSummaryLine = String(summaryLines[0] || '').trim();
+
+  if (summaryLines.length > 1 || metaLines.length > 0) {
+    return true;
+  }
+
+  return Boolean(firstSummaryLine && compactSummary && firstSummaryLine !== compactSummary);
+}
+
+function renderActivityTimelineDetails(entry) {
+  const summaryLines = Array.isArray(entry?.summary_lines) ? entry.summary_lines.filter(Boolean) : [];
+  const metaLines = Array.isArray(entry?.meta_lines) ? entry.meta_lines.filter(Boolean) : [];
+
+  if (!summaryLines.length && !metaLines.length) {
+    return '';
+  }
+
+  return `
+    <div class="activity-row-details">
+      ${
+        summaryLines.length
+          ? `<ul class="activity-row-list">${summaryLines
+              .map((line) => `<li>${escapeHtml(line)}</li>`)
+              .join('')}</ul>`
+          : ''
+      }
+      ${
+        metaLines.length
+          ? `<div class="activity-row-meta">${metaLines.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}</div>`
+          : ''
+      }
+    </div>
+  `;
+}
+
+function renderActivityTimelineRow(entry) {
+  const compactSummary = String(entry?.compact_summary || '').trim() || '-';
+  const dateLabel = formatDate(entry.date);
+  const summaryMarkup = `
+    <span class="activity-row-main">
+      <span class="activity-row-icon" aria-hidden="true">${escapeHtml(entry.icon)}</span>
+      <span class="activity-row-copy">
+        <strong>${escapeHtml(entry.title)}</strong>
+        <span>${escapeHtml(compactSummary)}</span>
+      </span>
+    </span>
+    <span class="activity-row-date">${escapeHtml(dateLabel)}</span>
+  `;
+
+  if (!hasExpandableActivityTimelineDetails(entry)) {
+    return `
+      <article class="activity-row activity-row-${escapeHtml(entry.category)} activity-row-static">
+        <div class="activity-row-summary activity-row-summary-static">
+          ${summaryMarkup}
+        </div>
+      </article>
+    `;
+  }
+
+  return `
+    <details class="activity-row activity-row-${escapeHtml(entry.category)}">
+      <summary class="activity-row-summary">
+        ${summaryMarkup}
+      </summary>
+      ${renderActivityTimelineDetails(entry)}
+    </details>
+  `;
+}
+
+function renderHorseActivityTimeline(payload) {
+  if (!horseActivityTimeline) {
     return;
   }
 
-  horseHistoryBody.innerHTML = rows
-    .map(
-      (row) => `
-        <tr>
-          <td>${escapeHtml(formatDateTime(row.at))}</td>
-          <td>${escapeHtml(row.category)}</td>
-          <td>${escapeHtml(row.detail)}</td>
-        </tr>
-      `
-    )
+  const hasHorse = Boolean(horseSelect?.value || horseProfileSelect?.value || '');
+  if (!hasHorse) {
+    horseActivityTimeline.innerHTML =
+      '<p class="activity-timeline-empty">Choose a horse to review the activity timeline.</p>';
+    return;
+  }
+
+  const entries = buildHorseActivityTimelineEntries(payload);
+
+  if (!entries.length) {
+    horseActivityTimeline.innerHTML =
+      '<p class="activity-timeline-empty">No activity timeline for this horse yet.</p>';
+    return;
+  }
+
+  const sortedEntries = sortActivityTimelineEntries(entries);
+
+  horseActivityTimeline.innerHTML = sortedEntries.map((entry) => renderActivityTimelineRow(entry)).join('');
+}
+
+function todayIsoDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysToIsoDateString(dateString, dayOffset) {
+  const normalized = normalizeDateForDateInput(dateString);
+  if (!normalized) {
+    return '';
+  }
+
+  const date = new Date(`${normalized}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  date.setUTCDate(date.getUTCDate() + Number(dayOffset || 0));
+  return date.toISOString().slice(0, 10);
+}
+
+function getFeedHistorySourceKey(row) {
+  const normalizedSource = String(row?.source || '')
+    .trim()
+    .toLowerCase();
+
+  if (normalizedSource === 'calendar_plan' || row?.calendar_slot_entry_id != null) {
+    return 'feed_plan';
+  }
+
+  return 'manual';
+}
+
+function getFeedHistorySourceLabel(sourceKey) {
+  if (sourceKey === 'feed_plan') {
+    return 'Feed Plan';
+  }
+
+  if (sourceKey === 'manual') {
+    return 'Manual';
+  }
+
+  return 'Unknown';
+}
+
+function getFeedHistoryRowDate(row) {
+  return normalizeDateForDateInput(row?.event_date || row?.at);
+}
+
+function getHorseFeedPlannedSlotKeys() {
+  const plannedSlots = new Set();
+
+  currentHorseFeedPlanRows.forEach((row) => {
+    if (row?.feed_slot && row?.feed_item_name) {
+      plannedSlots.add(row.feed_slot);
+    }
+  });
+
+  return plannedSlots;
+}
+
+function getHorseFeedMainIngredients() {
+  const ingredients = [];
+  const seen = new Set();
+
+  currentHorseFeedPlanRows.forEach((row) => {
+    const ingredientName = String(row?.feed_item_name || '').trim();
+    const ingredientKey = ingredientName.toLowerCase();
+    if (!ingredientName || seen.has(ingredientKey)) {
+      return;
+    }
+
+    seen.add(ingredientKey);
+    ingredients.push(ingredientName);
+  });
+
+  return ingredients;
+}
+
+function getHorseFeedCompletedDatesBySlot(rows) {
+  const completedDatesBySlot = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const feedSlot = row?.feed_slot;
+    const eventDate = getFeedHistoryRowDate(row);
+    if (!feedSlot || !eventDate) {
+      return;
+    }
+
+    if (!completedDatesBySlot.has(feedSlot)) {
+      completedDatesBySlot.set(feedSlot, new Set());
+    }
+
+    completedDatesBySlot.get(feedSlot).add(eventDate);
+  });
+
+  return completedDatesBySlot;
+}
+
+function getFeedSummaryTodayStatus(plannedSlots, completedDatesBySlot, todayIso, feedSlot) {
+  if (!plannedSlots.has(feedSlot)) {
+    return { label: 'Not planned', badgeClass: 'neutral' };
+  }
+
+  if (completedDatesBySlot.get(feedSlot)?.has(todayIso)) {
+    return { label: 'Completed', badgeClass: 'ok' };
+  }
+
+  return { label: 'Pending', badgeClass: 'soon' };
+}
+
+function getFeedSummarySevenDayStatus(plannedSlots, completedDatesBySlot, startIso, todayIso, feedSlot) {
+  if (!plannedSlots.has(feedSlot)) {
+    return 'Not planned';
+  }
+
+  const completedDates = completedDatesBySlot.get(feedSlot) || new Set();
+  let completedCount = 0;
+
+  completedDates.forEach((dateKey) => {
+    if (dateKey >= startIso && dateKey <= todayIso) {
+      completedCount += 1;
+    }
+  });
+
+  return `${completedCount}/7 completed`;
+}
+
+function renderHorseFeedSummary() {
+  if (!horseFeedSummary) {
+    return;
+  }
+
+  const hasHorse = Boolean(horseSelect?.value || horseProfileSelect?.value || '');
+  if (!hasHorse) {
+    horseFeedSummary.innerHTML = '<p class="feed-summary-empty">Choose a horse to review feed status.</p>';
+    return;
+  }
+
+  const plannedSlots = getHorseFeedPlannedSlotKeys();
+  const mainIngredients = getHorseFeedMainIngredients();
+  const completedDatesBySlot = getHorseFeedCompletedDatesBySlot(currentFeedHistoryRows);
+  const todayIso = todayIsoDateString();
+  const sevenDayStartIso = addDaysToIsoDateString(todayIso, -6);
+  const plannedSlotLabels = FEED_SLOT_META.filter((slot) => plannedSlots.has(slot.key)).map((slot) => slot.title);
+
+  const noPlanMessage = plannedSlotLabels.length
+    ? ''
+    : '<p class="feed-summary-empty">No feed plan saved for this horse yet. Save a plan to track slot completion automatically.</p>';
+
+  horseFeedSummary.innerHTML = `
+    ${noPlanMessage}
+    <div class="feed-summary-grid">
+      <section class="feed-summary-section">
+        <h4>Today</h4>
+        <ul class="feed-summary-list">
+          ${FEED_SLOT_META.map((slot) => {
+            const status = getFeedSummaryTodayStatus(plannedSlots, completedDatesBySlot, todayIso, slot.key);
+            return `
+              <li>
+                <span>${escapeHtml(slot.title)}</span>
+                <span class="badge ${status.badgeClass}">${escapeHtml(status.label)}</span>
+              </li>
+            `;
+          }).join('')}
+        </ul>
+      </section>
+
+      <section class="feed-summary-section">
+        <h4>Last 7 days</h4>
+        <ul class="feed-summary-list">
+          ${FEED_SLOT_META.map((slot) => `
+            <li>
+              <span>${escapeHtml(slot.title)}</span>
+              <strong>${escapeHtml(
+                getFeedSummarySevenDayStatus(plannedSlots, completedDatesBySlot, sevenDayStartIso, todayIso, slot.key)
+              )}</strong>
+            </li>
+          `).join('')}
+        </ul>
+      </section>
+
+      <section class="feed-summary-section">
+        <h4>Planned slots</h4>
+        <p class="feed-summary-copy">${
+          plannedSlotLabels.length ? escapeHtml(plannedSlotLabels.join(', ')) : 'No slots planned yet.'
+        }</p>
+      </section>
+
+      <section class="feed-summary-section">
+        <h4>Main ingredients</h4>
+        ${
+          mainIngredients.length
+            ? `<ul class="feed-summary-tag-list">${mainIngredients
+                .map((ingredient) => `<li>${escapeHtml(ingredient)}</li>`)
+                .join('')}</ul>`
+            : '<p class="feed-summary-copy">No ingredients saved yet.</p>'
+        }
+      </section>
+    </div>
+  `;
+}
+
+function syncHorseFeedHistoryFilterControls() {
+  if (horseFeedHistoryPeriodFilter) {
+    horseFeedHistoryPeriodFilter.value = currentHorseFeedHistoryFilters.period;
+  }
+
+  if (horseFeedHistorySlotFilter) {
+    horseFeedHistorySlotFilter.value = currentHorseFeedHistoryFilters.slot;
+  }
+
+  if (horseFeedHistorySourceFilter) {
+    horseFeedHistorySourceFilter.value = currentHorseFeedHistoryFilters.source;
+  }
+}
+
+function resetHorseFeedHistoryFilters() {
+  currentHorseFeedHistoryFilters = {
+    period: '7d',
+    slot: 'all',
+    source: 'all',
+  };
+  syncHorseFeedHistoryFilterControls();
+}
+
+function getFilteredFeedHistoryRows(rows) {
+  const period = currentHorseFeedHistoryFilters.period;
+  const slotFilter = currentHorseFeedHistoryFilters.slot;
+  const sourceFilter = currentHorseFeedHistoryFilters.source;
+  const todayIso = todayIsoDateString();
+  const periodStartIso =
+    period === 'today'
+      ? todayIso
+      : period === '30d'
+        ? addDaysToIsoDateString(todayIso, -29)
+        : period === '7d'
+          ? addDaysToIsoDateString(todayIso, -6)
+          : '';
+
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const eventDate = getFeedHistoryRowDate(row);
+    if (!eventDate) {
+      return false;
+    }
+
+    if (slotFilter !== 'all' && row.feed_slot !== slotFilter) {
+      return false;
+    }
+
+    if (sourceFilter !== 'all' && getFeedHistorySourceKey(row) !== sourceFilter) {
+      return false;
+    }
+
+    if (!periodStartIso) {
+      return true;
+    }
+
+    return eventDate >= periodStartIso && eventDate <= todayIso;
+  });
+}
+
+function groupFeedHistoryRows(rows) {
+  const sortedRows = [...rows].sort((left, right) => {
+    const leftDate = getFeedHistoryRowDate(left);
+    const rightDate = getFeedHistoryRowDate(right);
+
+    if (leftDate !== rightDate) {
+      return leftDate < rightDate ? 1 : -1;
+    }
+
+    const slotDiff = getFeedSlotSortValue(left.feed_slot) - getFeedSlotSortValue(right.feed_slot);
+    if (slotDiff !== 0) {
+      return slotDiff;
+    }
+
+    return Number(left.id || 0) - Number(right.id || 0);
+  });
+
+  const dayMap = new Map();
+
+  sortedRows.forEach((row) => {
+    const dateKey = getFeedHistoryRowDate(row);
+    if (!dateKey) {
+      return;
+    }
+
+    if (!dayMap.has(dateKey)) {
+      dayMap.set(dateKey, {
+        dateKey,
+        slotMap: new Map(),
+      });
+    }
+
+    const dayGroup = dayMap.get(dateKey);
+    const slotKey = row.feed_slot || '__manual__';
+    if (!dayGroup.slotMap.has(slotKey)) {
+      dayGroup.slotMap.set(slotKey, {
+        slotKey,
+        feed_slot: row.feed_slot || null,
+        rows: [],
+      });
+    }
+
+    dayGroup.slotMap.get(slotKey).rows.push(row);
+  });
+
+  return Array.from(dayMap.values()).map((dayGroup) => ({
+    dateKey: dayGroup.dateKey,
+    slotGroups: Array.from(dayGroup.slotMap.values()).sort(
+      (left, right) => getFeedSlotSortValue(left.feed_slot) - getFeedSlotSortValue(right.feed_slot)
+    ),
+  }));
+}
+
+function renderFeedHistoryGroups(rows) {
+  if (!horseFeedHistoryGroups) {
+    return;
+  }
+
+  const hasHorse = Boolean(horseSelect?.value || horseProfileSelect?.value || '');
+  if (!hasHorse) {
+    horseFeedHistoryGroups.innerHTML = '<p class="feed-history-empty">Choose a horse to review feed history.</p>';
+    return;
+  }
+
+  const filteredRows = getFilteredFeedHistoryRows(rows);
+
+  if (!filteredRows.length) {
+    horseFeedHistoryGroups.innerHTML = '<p class="feed-history-empty">No feed history in this range.</p>';
+    return;
+  }
+
+  const groupedRows = groupFeedHistoryRows(filteredRows);
+
+  horseFeedHistoryGroups.innerHTML = groupedRows
+    .map((dayGroup) => {
+      const slotCount = dayGroup.slotGroups.length;
+
+      return `
+        <details class="feed-history-day">
+          <summary>
+            <span class="feed-history-day-title">${escapeHtml(formatDate(dayGroup.dateKey))}</span>
+            <span class="feed-history-day-meta">${escapeHtml(
+              `${slotCount} slot${slotCount === 1 ? '' : 's'}`
+            )}</span>
+          </summary>
+          <div class="feed-history-day-body">
+            ${dayGroup.slotGroups
+              .map((slotGroup) => {
+                const sourceLabels = [
+                  ...new Set(slotGroup.rows.map((row) => getFeedHistorySourceLabel(getFeedHistorySourceKey(row)))),
+                ];
+                const slotLabel = slotGroup.feed_slot ? `${getFeedSlotLabel(slotGroup.feed_slot)} Mix` : 'Manual Entry';
+                const sourceCopy =
+                  sourceLabels.length === 1
+                    ? `Source: ${sourceLabels[0]}`
+                    : `Sources: ${sourceLabels.join(', ')}`;
+
+                return `
+                  <section class="feed-history-slot">
+                    <div class="feed-history-slot-head">
+                      <div>
+                        <h4>${escapeHtml(slotLabel)}</h4>
+                        <p>${escapeHtml(sourceCopy)}</p>
+                      </div>
+                    </div>
+                    <ul class="feed-history-ingredient-list">
+                      ${slotGroup.rows
+                        .map((row) => `
+                          <li class="feed-history-ingredient-row">
+                            <div class="feed-history-ingredient-copy">
+                              <strong>${escapeHtml(row.feed_item)}</strong>
+                              <span>${escapeHtml(`${row.quantity} ${row.unit}`)}</span>
+                            </div>
+                            ${
+                              row.calendar_slot_entry_id == null
+                                ? `<div class="feed-history-ingredient-actions">
+                                    <button
+                                      type="button"
+                                      class="inline-action-btn"
+                                      data-feed-action="edit"
+                                      data-feed-event-id="${escapeHtml(row.id)}"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      class="inline-action-btn danger"
+                                      data-feed-action="delete"
+                                      data-feed-event-id="${escapeHtml(row.id)}"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>`
+                                : ''
+                            }
+                          </li>
+                        `)
+                        .join('')}
+                    </ul>
+                  </section>
+                `;
+              })
+              .join('')}
+          </div>
+        </details>
+      `;
+    })
     .join('');
 }
 
 function renderFeedHistoryRows(rows) {
-  currentFeedHistoryRows = rows;
+  currentFeedHistoryRows = Array.isArray(rows) ? rows : [];
+  syncHorseFeedHistoryFilterControls();
+  renderHorseFeedSummary();
+  renderFeedHistoryGroups(currentFeedHistoryRows);
+}
 
-  if (!rows.length) {
-    horseFeedHistoryBody.innerHTML = emptyStateRow(4, 'No feed history.');
+function isBlankHorseFeedPlanDraftRow(row) {
+  return !row?.feed_item_name && String(row?.quantity || '').trim() === '' && !row?.unit && !row?.notes;
+}
+
+function sortHorseFeedPlanRows(rows) {
+  return [...rows].sort((left, right) => {
+    const slotDiff = getFeedSlotSortValue(left.feed_slot) - getFeedSlotSortValue(right.feed_slot);
+    if (slotDiff !== 0) {
+      return slotDiff;
+    }
+
+    const orderDiff = Number(left.sort_order || 0) - Number(right.sort_order || 0);
+    if (orderDiff !== 0) {
+      return orderDiff;
+    }
+
+    return Number(left.id || 0) - Number(right.id || 0);
+  });
+}
+
+function getHorseFeedPlanRowsForCalendar() {
+  return currentHorseFeedPlanRows.filter(
+    (row) => row.feed_slot && row.feed_item_name && Number.isFinite(Number(row.quantity)) && row.unit
+  );
+}
+
+function renderHorseFeedPlanRows(rows) {
+  if (!horseFeedPlanBody) {
     return;
   }
 
-  horseFeedHistoryBody.innerHTML = rows
-    .map(
-      (row) => `
-        <tr>
-          <td>${escapeHtml(formatDateTime(row.at))}</td>
-          <td>${escapeHtml(row.feed_item)}</td>
-          <td>${escapeHtml(`${row.quantity} ${row.unit}`)}</td>
-          <td class="row-actions">
-            <button type="button" class="inline-action-btn" data-feed-action="edit" data-feed-event-id="${escapeHtml(row.id)}">Edit</button>
-            <button type="button" class="inline-action-btn danger" data-feed-action="delete" data-feed-event-id="${escapeHtml(row.id)}">Delete</button>
-          </td>
-        </tr>
-      `
-    )
+  const hasHorse = Boolean(horseSelect?.value || horseProfileSelect?.value || '');
+  if (horseFeedCalendarMonthInput) {
+    horseFeedCalendarMonthInput.disabled = !hasHorse;
+  }
+
+  if (horseFeedCalendarTodayButton) {
+    horseFeedCalendarTodayButton.disabled = !hasHorse;
+  }
+
+  if (!hasHorse) {
+    horseFeedPlanBody.innerHTML =
+      '<p class="feed-plan-empty">Choose a horse to build its feed mixes.</p>';
+    return;
+  }
+
+  const sortedRows = sortHorseFeedPlanRows(rows);
+  horseFeedPlanBody.innerHTML = FEED_SLOT_META.map((slotRow) => {
+    const slotRows = sortedRows.filter((row) => row.feed_slot === slotRow.key);
+    const rowsMarkup = slotRows.length
+      ? `
+          <div class="feed-plan-ingredient-head">
+            <span>Feed</span>
+            <span>Qty</span>
+            <span>Unit</span>
+            <span>Auto Stock</span>
+            <span>Actions</span>
+          </div>
+          <div class="feed-plan-ingredient-list">
+            ${slotRows
+              .map(
+                (row) => `
+                  <div class="feed-plan-ingredient-row" data-feed-plan-row-key="${escapeHtml(row.row_key)}">
+                    <label class="feed-plan-ingredient-field">
+                      <span class="feed-plan-mobile-label">Feed</span>
+                      <input
+                        type="text"
+                        list="feed-item-options"
+                        placeholder="Feed item"
+                        value="${escapeHtml(row.feed_item_name || '')}"
+                        data-feed-plan-field="feed_item_name"
+                        data-feed-plan-row-key="${escapeHtml(row.row_key)}"
+                      />
+                    </label>
+                    <label class="feed-plan-ingredient-field">
+                      <span class="feed-plan-mobile-label">Qty</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        placeholder="Qty"
+                        value="${escapeHtml(row.quantity || '')}"
+                        data-feed-plan-field="quantity"
+                        data-feed-plan-row-key="${escapeHtml(row.row_key)}"
+                      />
+                    </label>
+                    <label class="feed-plan-ingredient-field">
+                      <span class="feed-plan-mobile-label">Unit</span>
+                      <input
+                        type="text"
+                        placeholder="Unit"
+                        value="${escapeHtml(row.unit || '')}"
+                        data-feed-plan-field="unit"
+                        data-feed-plan-row-key="${escapeHtml(row.row_key)}"
+                      />
+                    </label>
+                    <label class="feed-plan-ingredient-field feed-plan-stock-field">
+                      <span class="feed-plan-mobile-label">Auto Stock</span>
+                      <span class="feed-plan-stock-toggle">
+                        <input
+                          type="checkbox"
+                          ${row.auto_deduct_stock ? ' checked' : ''}
+                          data-feed-plan-field="auto_deduct_stock"
+                          data-feed-plan-row-key="${escapeHtml(row.row_key)}"
+                        />
+                        <span>${row.auto_deduct_stock ? 'Yes' : 'No'}</span>
+                      </span>
+                    </label>
+                    <div class="feed-plan-ingredient-actions">
+                      <span class="feed-plan-mobile-label">Actions</span>
+                      <button
+                        type="button"
+                        class="inline-action-btn danger"
+                        data-feed-plan-action="remove"
+                        data-feed-plan-row-key="${escapeHtml(row.row_key)}"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                `
+              )
+              .join('')}
+          </div>
+        `
+      : `<p class="feed-plan-slot-empty">No ${escapeHtml(
+          slotRow.title.toLowerCase()
+        )} ingredients yet. Add the mix items for this slot.</p>`;
+
+    return `
+      <section class="feed-plan-slot-card" data-feed-plan-slot="${escapeHtml(slotRow.key)}">
+        <div class="feed-plan-slot-head">
+          <div class="feed-plan-slot-copy">
+            <h4>${escapeHtml(slotRow.title)} Mix</h4>
+            <p>Tick ${escapeHtml(slotRow.title)} in the calendar to log every ingredient below together.</p>
+          </div>
+          <button
+            type="button"
+            class="secondary"
+            data-feed-plan-action="add-slot-row"
+            data-feed-plan-slot="${escapeHtml(slotRow.key)}"
+          >
+            Add Ingredient
+          </button>
+        </div>
+        ${rowsMarkup}
+      </section>
+    `;
+  }).join('');
+}
+
+function renderHorseFeedCalendar(calendarData) {
+  if (!horseFeedCalendarGrid) {
+    return;
+  }
+
+  const hasHorse = Boolean(horseSelect?.value || horseProfileSelect?.value || '');
+  if (!hasHorse) {
+    horseFeedCalendarGrid.innerHTML = '<p class="feed-calendar-empty">Choose a horse to use the feed calendar.</p>';
+    return;
+  }
+
+  const monthInfo = getMonthDateInfo(calendarData?.month || selectedHorseFeedCalendarMonth);
+  const slotEntries = Array.isArray(calendarData?.entries) ? calendarData.entries : [];
+  const entryMap = new Map(
+    slotEntries.map((row) => [`${row.event_date}:${row.feed_slot}`, row])
+  );
+  const planRows = getHorseFeedPlanRowsForCalendar();
+  const slotPlanCounts = new Map();
+  const slotSummaries = new Map();
+
+  if (!planRows.length) {
+    horseFeedCalendarGrid.innerHTML =
+      '<p class="feed-calendar-empty">Save at least one feed-plan row above to unlock the calendar.</p>';
+    return;
+  }
+
+  for (const row of planRows) {
+    slotPlanCounts.set(row.feed_slot, Number(slotPlanCounts.get(row.feed_slot) || 0) + 1);
+    const summaryLine = `${row.feed_item_name} ${row.quantity} ${row.unit}`;
+    slotSummaries.set(
+      row.feed_slot,
+      [...(slotSummaries.get(row.feed_slot) || []), summaryLine]
+    );
+  }
+
+  const weekdayHeaders = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    .map((label) => `<div class="feed-calendar-weekday">${escapeHtml(label)}</div>`)
     .join('');
+
+  const leadingSpacers = Array.from({ length: monthInfo.first_weekday }, () => '<div class="feed-calendar-spacer"></div>')
+    .join('');
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const dayCards = [];
+  for (let day = 1; day <= monthInfo.total_days; day += 1) {
+    const isoDate = buildIsoDateFromParts(monthInfo.year, monthInfo.month_index, day);
+    const weekdayLabel = new Date(`${isoDate}T00:00:00Z`).toLocaleDateString(undefined, {
+      weekday: 'short',
+      timeZone: 'UTC',
+    });
+
+    const slotMarkup = FEED_SLOT_META.map((slotRow) => {
+      const key = `${isoDate}:${slotRow.key}`;
+      const checked = entryMap.has(key);
+      const hasPlan = slotPlanCounts.has(slotRow.key);
+      const slotSummary = (slotSummaries.get(slotRow.key) || []).join(' + ');
+      const title = hasPlan
+        ? `${slotRow.title}: ${slotSummary}`
+        : `${slotRow.title}: no saved plan`;
+
+      return `
+        <label class="feed-calendar-slot${checked ? ' is-checked' : ''}${hasPlan ? '' : ' is-disabled'}" title="${escapeHtml(
+          title
+        )}">
+          <input
+            type="checkbox"
+            data-feed-calendar-toggle
+            data-feed-calendar-slot="${escapeHtml(slotRow.key)}"
+            data-feed-calendar-date="${escapeHtml(isoDate)}"
+            ${checked ? ' checked' : ''}
+            ${hasPlan ? '' : ' disabled'}
+          />
+          <span>${escapeHtml(slotRow.label)}</span>
+        </label>
+      `;
+    }).join('');
+
+    dayCards.push(`
+      <div class="feed-calendar-day${isoDate === todayIso ? ' is-today' : ''}">
+        <div class="feed-calendar-day-head">
+          <strong>${escapeHtml(String(day))}</strong>
+          <span>${escapeHtml(weekdayLabel)}</span>
+        </div>
+        <div class="feed-calendar-slots">${slotMarkup}</div>
+      </div>
+    `);
+  }
+
+  const noteMarkup =
+    slotPlanCounts.size < FEED_SLOT_META.length
+      ? '<p class="feed-calendar-note">Only slots with saved plan rows are clickable.</p>'
+      : '';
+
+  horseFeedCalendarGrid.innerHTML = `
+    ${noteMarkup}
+    <div class="feed-calendar-weekdays">${weekdayHeaders}</div>
+    <div class="feed-calendar-days">${leadingSpacers}${dayCards.join('')}</div>
+  `;
+}
+
+function updateHorseFeedPlanDraftRow(rowKey, field, rawValue) {
+  const row = currentHorseFeedPlanDraftRows.find((candidate) => candidate.row_key === rowKey);
+  if (!row || !field) {
+    return { row: null, didAutoFillUnit: false, didToggleStock: false };
+  }
+
+  if (field === 'auto_deduct_stock') {
+    row.auto_deduct_stock = Boolean(rawValue);
+    const feedItem = findFeedItemByName(row.feed_item_name);
+    if (row.auto_deduct_stock && feedItem?.unit) {
+      row.unit = feedItem.unit;
+      return { row, didAutoFillUnit: true, didToggleStock: true };
+    }
+
+    return { row, didAutoFillUnit: false, didToggleStock: true };
+  }
+
+  const nextValue = typeof rawValue === 'string' ? rawValue : String(rawValue ?? '');
+  row[field] = nextValue;
+
+  if (field === 'feed_item_name') {
+    const feedItem = findFeedItemByName(nextValue);
+    if (feedItem?.unit && (row.auto_deduct_stock || !String(row.unit || '').trim())) {
+      row.unit = feedItem.unit;
+      return { row, didAutoFillUnit: true, didToggleStock: false };
+    }
+  }
+
+  return { row, didAutoFillUnit: false, didToggleStock: false };
+}
+
+function buildHorseFeedPlanSaveItems() {
+  return sortHorseFeedPlanRows(currentHorseFeedPlanDraftRows)
+    .filter((row) => !isBlankHorseFeedPlanDraftRow(row))
+    .map((row) => ({
+      feed_slot: row.feed_slot,
+      feed_item_name: String(row.feed_item_name || '').trim(),
+      quantity: Number(row.quantity),
+      unit: String(row.unit || '').trim(),
+      auto_deduct_stock: Boolean(row.auto_deduct_stock),
+    }));
+}
+
+function formatHorseFeedCalendarStockSummary(stockChanges) {
+  if (!Array.isArray(stockChanges) || stockChanges.length === 0) {
+    return ' Logged without changing stock.';
+  }
+
+  const summary = stockChanges
+    .map((row) => {
+      const delta = Number(row.quantity_delta || 0);
+      const deltaPrefix = delta > 0 ? '+' : '';
+      return `${row.feed_item_name} ${deltaPrefix}${delta} ${row.unit} -> ${row.current_stock} ${row.unit}`;
+    })
+    .join(', ');
+
+  return ` Stock updated: ${summary}.`;
+}
+
+function syncHorseFeedPlanningState(payload) {
+  currentHorseFeedPlanRows = sortHorseFeedPlanRows(
+    Array.isArray(payload?.feed_plan?.items) ? payload.feed_plan.items : []
+  );
+  currentHorseFeedPlanDraftRows = currentHorseFeedPlanRows.map((row) =>
+    buildHorseFeedPlanDraftRow({
+      row_key: `saved-${row.id}`,
+      id: row.id,
+      feed_slot: row.feed_slot,
+      feed_item_name: row.feed_item_name,
+      quantity: row.quantity,
+      unit: row.unit,
+      auto_deduct_stock: row.auto_deduct_stock,
+      notes: row.notes,
+    })
+  );
+  currentHorseFeedCalendar = payload?.feed_calendar || {
+    month: selectedHorseFeedCalendarMonth,
+    entries: [],
+  };
+  selectedHorseFeedCalendarMonth = normalizeYearMonth(currentHorseFeedCalendar.month) || currentYearMonthString();
+
+  if (horseFeedCalendarMonthInput) {
+    horseFeedCalendarMonthInput.value = selectedHorseFeedCalendarMonth;
+  }
+
+  renderHorseFeedPlanRows(currentHorseFeedPlanDraftRows);
+  renderHorseFeedCalendar(currentHorseFeedCalendar);
+}
+
+function clearHorseFeedPlanningState(options = {}) {
+  const resetMonth = options.resetMonth !== false;
+  currentHorseFeedPlanRows = [];
+  currentHorseFeedPlanDraftRows = [];
+  currentHorseFeedCalendar = null;
+  if (resetMonth) {
+    selectedHorseFeedCalendarMonth = currentYearMonthString();
+  }
+
+  if (horseFeedCalendarMonthInput) {
+    horseFeedCalendarMonthInput.value = selectedHorseFeedCalendarMonth;
+  }
+
+  renderHorseFeedPlanRows([]);
+  renderHorseFeedCalendar(null);
+  setHorseFeedPlanMessage(
+    'Build each slot as a mix for the selected horse, then tick the calendar slots as you feed. Record bale finishes from Stock Action.'
+  );
 }
 
 function renderDewormingHistoryRows(rows) {
@@ -1577,9 +4372,36 @@ function setHorseCurrentGrazing(currentGrazing) {
   )} (${currentGrazing.grazing_days} day(s)${groupPart}).`;
 }
 
+function formatHorseGroupPreviousSummary(row) {
+  if (!row?.previous_group_name) {
+    return '-';
+  }
+
+  const daysPart = row.previous_group_days == null ? '' : ` (${row.previous_group_days} day(s))`;
+  return `${row.previous_group_name}${daysPart}`;
+}
+
+function setHorseCurrentGroup(currentGroupMembership) {
+  if (!horseHistoryCurrentGroup) {
+    return;
+  }
+
+  if (!currentGroupMembership) {
+    horseHistoryCurrentGroup.textContent = 'Not currently assigned to a horse group.';
+    return;
+  }
+
+  const previousPart = currentGroupMembership.previous_group_name
+    ? ` Previous group: ${formatHorseGroupPreviousSummary(currentGroupMembership)}.`
+    : '';
+  horseHistoryCurrentGroup.textContent = `Current group: ${
+    currentGroupMembership.group_name
+  } since ${formatDate(currentGroupMembership.started_at)} (${currentGroupMembership.group_days} day(s)).${previousPart}`;
+}
+
 function renderHorseGrazingHistoryRows(rows) {
   if (!rows.length) {
-    horseGrazingHistoryBody.innerHTML = emptyStateRow(4, 'No grazing history.');
+    horseGrazingHistoryBody.innerHTML = emptyStateRow(4, 'No grazing history for this horse yet.');
     return;
   }
 
@@ -1590,31 +4412,62 @@ function renderHorseGrazingHistoryRows(rows) {
           <td>${escapeHtml(row.paddock_name)}</td>
           <td>${escapeHtml(formatDate(row.entered_at))}</td>
           <td>${escapeHtml(row.exited_at ? formatDate(row.exited_at) : 'Current')}</td>
-          <td>${escapeHtml(
-            `${row.grazing_days || '-'}${row.source_group_name ? ` (${row.source_group_name})` : ''}`
-          )}</td>
+          <td>${escapeHtml(String(row.days ?? row.grazing_days ?? '-'))}</td>
         </tr>
       `
     )
     .join('');
 }
 
-function clearHorseCategoryHistories() {
+function renderHorseGroupHistoryRows(rows) {
+  if (!horseGroupHistoryBody) {
+    return;
+  }
+
+  if (!rows.length) {
+    horseGroupHistoryBody.innerHTML = emptyStateRow(5, 'No group history.');
+    return;
+  }
+
+  horseGroupHistoryBody.innerHTML = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(row.group_name || '-')}</td>
+          <td>${escapeHtml(formatDate(row.started_at))}</td>
+          <td>${escapeHtml(row.ended_at ? formatDate(row.ended_at) : 'Current')}</td>
+          <td>${escapeHtml(String(row.group_days || '-'))}</td>
+          <td>${escapeHtml(formatHorseGroupPreviousSummary(row))}</td>
+        </tr>
+      `
+    )
+    .join('');
+}
+
+function clearHorseCategoryHistories(options = {}) {
+  clearHorseFeedPlanningState(options);
+  renderHorseActivityTimeline(null);
   renderFeedHistoryRows([]);
   renderDewormingHistoryRows([]);
   renderFarrierHistoryRows([]);
   renderHealthHistoryRows([]);
   renderHorseGrazingHistoryRows([]);
+  renderHorseGroupHistoryRows([]);
   setHorseCurrentGrazing(null);
+  setHorseCurrentGroup(null);
 }
 
 function renderHorseCategoryHistories(payload) {
+  syncHorseFeedPlanningState(payload);
+  renderHorseActivityTimeline(payload);
   renderFeedHistoryRows(payload.feed_history || []);
   renderDewormingHistoryRows(payload.deworming_history || []);
   renderFarrierHistoryRows(payload.farrier_history || []);
   renderHealthHistoryRows(payload.health_history || []);
   renderHorseGrazingHistoryRows(payload.grazing_history || []);
+  renderHorseGroupHistoryRows(payload.group_history || []);
   setHorseCurrentGrazing(payload.current_grazing || null);
+  setHorseCurrentGroup(payload.current_group_membership || null);
 }
 
 function populatePaddockSelect(selectElement, rows, options = {}) {
@@ -1644,7 +4497,7 @@ function populatePaddockSelect(selectElement, rows, options = {}) {
 
 function renderPaddockStatusRows(rows) {
   if (!rows.length) {
-    paddockStatusBody.innerHTML = emptyStateRow(7, 'No paddocks saved yet.');
+    paddockStatusBody.innerHTML = emptyStateRow(10, 'No paddocks saved yet.');
     return;
   }
 
@@ -1656,6 +4509,9 @@ function renderPaddockStatusRows(rows) {
       if (row.occupancy_state === 'occupied') {
         badgeClass = 'ok';
         statusLabel = 'Occupied';
+      } else if (row.occupancy_state === 'growing') {
+        badgeClass = 'soon';
+        statusLabel = 'Growing';
       } else if (row.occupancy_state === 'resting') {
         badgeClass = 'soon';
         statusLabel = 'Resting';
@@ -1667,43 +4523,215 @@ function renderPaddockStatusRows(rows) {
       return `
         <tr>
           <td>${escapeHtml(row.name)}</td>
+          <td>${escapeHtml(row.parent_paddock_name || '-')}</td>
           <td>${escapeHtml(row.zone || '-')}</td>
           <td><span class="badge ${badgeClass}">${escapeHtml(statusLabel)}</span></td>
           <td>${escapeHtml(row.occupied_by || '-')}</td>
           <td>${escapeHtml(row.occupied_since ? formatDate(row.occupied_since) : '-')}</td>
           <td>${escapeHtml(row.grazing_days == null ? '-' : String(row.grazing_days))}</td>
           <td>${escapeHtml(row.rest_days == null ? '-' : String(row.rest_days))}</td>
+          <td>${escapeHtml(formatPaddockReadySummary(row))}</td>
+          <td>
+            <button type="button" data-paddock-action="edit" class="inline-action-btn" data-paddock-id="${escapeHtml(row.id)}">
+              Edit
+            </button>
+          </td>
         </tr>
       `;
     })
     .join('');
 }
 
-function renderGrazingHistoryRows(rows) {
-  currentGrazingHistoryRows = rows;
-
-  if (!rows.length) {
-    grazingHistoryBody.innerHTML = emptyStateRow(6, 'No grazing history yet.');
+function renderPaddockWorkHistoryRows(rows) {
+  if (!paddockWorkHistoryBody) {
     return;
   }
 
-  grazingHistoryBody.innerHTML = rows
+  if (!rows.length) {
+    paddockWorkHistoryBody.innerHTML = emptyStateRow(7, 'No paddock work history yet.');
+    return;
+  }
+
+  paddockWorkHistoryBody.innerHTML = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(row.paddock_name)}</td>
+          <td>${escapeHtml(
+            row.applies_to_descendants
+              ? `${formatPaddockWorkTypeLabel(row.event_type)} (whole block)`
+              : formatPaddockWorkTypeLabel(row.event_type)
+          )}</td>
+          <td>${escapeHtml(formatDate(row.event_date))}</td>
+          <td>${escapeHtml(row.ready_to_graze_on ? formatDate(row.ready_to_graze_on) : '-')}</td>
+          <td>${escapeHtml(row.ready_after_days == null ? '-' : String(row.ready_after_days))}</td>
+          <td>${escapeHtml(row.notes || '-')}</td>
+          <td>
+            <button type="button" data-paddock-work-action="edit" class="inline-action-btn" data-paddock-work-id="${escapeHtml(row.id)}">
+              Edit
+            </button>
+          </td>
+        </tr>
+      `
+    )
+    .join('');
+}
+
+function formatHorseCountLabel(count) {
+  const safeCount = Math.max(0, Number(count || 0));
+  return `${safeCount} horse${safeCount === 1 ? '' : 's'}`;
+}
+
+function formatDayCountLabel(count) {
+  if (count == null) {
+    return '-';
+  }
+
+  const safeCount = Math.max(0, Number(count || 0));
+  return `${safeCount} day${safeCount === 1 ? '' : 's'}`;
+}
+
+function getPaddockOccupancyStatusBadgeClass(status) {
+  const normalized = String(status || '')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === 'active') {
+    return 'ok';
+  }
+
+  if (normalized === 'resting') {
+    return 'soon';
+  }
+
+  if (normalized === 'inactive') {
+    return 'overdue';
+  }
+
+  return 'neutral';
+}
+
+function renderPaddockOccupancyHorseDetails(horses) {
+  if (!Array.isArray(horses) || !horses.length) {
+    return '';
+  }
+
+  return `
+    <details class="occupancy-horses-details">
+      <summary>Show horses</summary>
+      <ul class="occupancy-horse-list">
+        ${horses
+          .map((horse) => `<li>${escapeHtml(horse.name || `Horse ${horse.id}`)}</li>`)
+          .join('')}
+      </ul>
+    </details>
+  `;
+}
+
+function renderPaddockOccupancyRows(rows) {
+  currentPaddockOccupancyRows = rows;
+
+  const emptyMessage = 'No active paddock occupancy yet.';
+
+  if (!rows.length) {
+    paddockOccupancyBody.innerHTML = emptyStateRow(5, emptyMessage);
+    if (paddockOccupancyCards) {
+      paddockOccupancyCards.innerHTML = `<p class="paddock-occupancy-empty">${escapeHtml(emptyMessage)}</p>`;
+    }
+    return;
+  }
+
+  paddockOccupancyBody.innerHTML = rows
     .map((row) => {
-      const notes = [row.source_group_name ? `Group: ${row.source_group_name}` : '', row.entry_notes, row.exit_notes]
-        .filter(Boolean)
-        .join(' | ');
+      const horseCountLabel = formatHorseCountLabel(row.active_horse_count);
+      const statusLabel = row.status || 'Active';
+      const statusClass = getPaddockOccupancyStatusBadgeClass(statusLabel);
+
       return `
         <tr>
           <td>${escapeHtml(row.paddock_name)}</td>
-          <td>${escapeHtml(row.horse_name)}</td>
+          <td>
+            <div class="occupancy-count">${escapeHtml(horseCountLabel)}</div>
+            ${renderPaddockOccupancyHorseDetails(row.active_horses)}
+          </td>
           <td>${escapeHtml(formatDate(row.entered_at))}</td>
-          <td>${escapeHtml(row.exited_at ? formatDate(row.exited_at) : 'Current')}</td>
-          <td>${escapeHtml(String(row.grazing_days || '-'))}</td>
-          <td>${escapeHtml(notes || '-')}</td>
+          <td>${escapeHtml(formatDayCountLabel(row.days_grazed))}</td>
+          <td><span class="badge ${statusClass}">${escapeHtml(statusLabel)}</span></td>
         </tr>
       `;
     })
     .join('');
+
+  if (paddockOccupancyCards) {
+    paddockOccupancyCards.innerHTML = rows
+      .map((row) => {
+        const horseCountLabel = formatHorseCountLabel(row.active_horse_count);
+        const statusLabel = row.status || 'Active';
+        const statusClass = getPaddockOccupancyStatusBadgeClass(statusLabel);
+
+        return `
+          <article class="paddock-occupancy-card">
+            <div class="paddock-occupancy-card-head">
+              <h3>${escapeHtml(row.paddock_name)}</h3>
+              <span class="badge ${statusClass}">${escapeHtml(statusLabel)}</span>
+            </div>
+            <p class="paddock-occupancy-card-count">${escapeHtml(horseCountLabel)} currently grazing</p>
+            <dl class="paddock-occupancy-card-meta">
+              <div>
+                <dt>Entered</dt>
+                <dd>${escapeHtml(formatDate(row.entered_at))}</dd>
+              </div>
+              <div>
+                <dt>Days grazed</dt>
+                <dd>${escapeHtml(formatDayCountLabel(row.days_grazed))}</dd>
+              </div>
+            </dl>
+            ${renderPaddockOccupancyHorseDetails(row.active_horses)}
+          </article>
+        `;
+      })
+      .join('');
+  }
+}
+
+function formatHorseGroupCurrentPaddockSummary(row) {
+  const currentNames = String(row?.current_paddock_names || '').trim();
+  const memberCount = Number(row?.member_count || 0);
+  const grazingCount = Number(row?.grazing_member_count || 0);
+  const safeGrazingCount = Math.max(0, grazingCount);
+  const unassignedCount = Math.max(0, memberCount - safeGrazingCount);
+  const summaryParts = [];
+
+  if (currentNames) {
+    summaryParts.push(currentNames);
+  }
+
+  if (unassignedCount > 0) {
+    summaryParts.push(`${unassignedCount} unassigned`);
+  }
+
+  if (!summaryParts.length) {
+    return '-';
+  }
+
+  return summaryParts.join(' + ');
+}
+
+function formatHorseGroupMemberCountLabel(count) {
+  const safeCount = Math.max(0, Number(count || 0));
+  return `${safeCount} horse${safeCount === 1 ? '' : 's'}`;
+}
+
+function formatHorseGroupStartedSummary(row) {
+  if (row?.current_started_at) {
+    return formatDate(row.current_started_at);
+  }
+
+  if (Number(row?.member_count || 0) > 0) {
+    return 'Current members assigned';
+  }
+
+  return 'No current members';
 }
 
 function renderHorseGroupRows(rows) {
@@ -1712,23 +4740,49 @@ function renderHorseGroupRows(rows) {
   }
 
   if (!rows.length) {
-    horseGroupStatusBody.innerHTML = emptyStateRow(6, 'No groups saved yet.');
+    horseGroupStatusBody.innerHTML = '<p class="group-management-empty">No groups saved yet.</p>';
     return;
   }
 
   horseGroupStatusBody.innerHTML = rows
     .map((row) => {
-      const members = row.member_names?.length ? row.member_names.join(', ') : '-';
+      const memberCountLabel = formatHorseGroupMemberCountLabel(row.member_count);
+      const currentPaddocks = formatHorseGroupCurrentPaddockSummary(row);
+      const members = Array.isArray(row.members) ? row.members : [];
+      const startedSummary = formatHorseGroupStartedSummary(row);
+      const paddockSummary = currentPaddocks === '-' ? 'No paddock assigned' : currentPaddocks;
+      const membersDisclosureLabel = members.length
+        ? `View members (${members.length})`
+        : row.notes || row.current_started_at
+          ? 'View details'
+          : 'View members';
+      const membersMarkup = members.length
+        ? `<ul class="group-management-member-list">
+            ${members
+              .map((member) => `<li>${escapeHtml(member.name || `Horse ${member.id}`)}</li>`)
+              .join('')}
+          </ul>`
+        : '<p class="group-management-empty-members">No horses currently assigned.</p>';
+      const notesMarkup = row.notes
+        ? `<div>
+            <dt>Notes</dt>
+            <dd>${escapeHtml(row.notes)}</dd>
+          </div>`
+        : '';
+
       return `
-        <tr>
-          <td>${escapeHtml(row.name)}</td>
-          <td><span class="badge ${row.active ? 'ok' : 'neutral'}">${escapeHtml(
-            row.active ? 'Active' : 'Inactive'
-          )}</span></td>
-          <td>${escapeHtml(members)}</td>
-          <td>${escapeHtml(row.current_paddock_names || '-')}</td>
-          <td>${escapeHtml(row.notes || '-')}</td>
-          <td class="row-actions">
+        <article class="group-management-card">
+          <div class="group-management-card-head">
+            <div class="group-management-card-copy">
+              <div class="group-management-card-title-row">
+                <h3>${escapeHtml(row.name)}</h3>
+                <span class="badge ${row.active ? 'ok' : 'neutral'}">${escapeHtml(
+                  row.active ? 'Active' : 'Inactive'
+                )}</span>
+              </div>
+              <p class="group-management-card-count">${escapeHtml(memberCountLabel)}</p>
+              <p class="group-management-card-paddock">${escapeHtml(paddockSummary)}</p>
+            </div>
             <button
               type="button"
               class="inline-action-btn"
@@ -1737,10 +4791,58 @@ function renderHorseGroupRows(rows) {
             >
               Edit
             </button>
-          </td>
-        </tr>
+          </div>
+
+          <details class="group-management-disclosure">
+            <summary>${escapeHtml(membersDisclosureLabel)}</summary>
+            <div class="group-management-disclosure-body">
+              <dl class="group-management-meta">
+                <div>
+                  <dt>Started</dt>
+                  <dd>${escapeHtml(startedSummary)}</dd>
+                </div>
+                <div>
+                  <dt>Current Paddocks</dt>
+                  <dd>${escapeHtml(paddockSummary)}</dd>
+                </div>
+                ${notesMarkup}
+              </dl>
+
+              <div class="group-management-members">
+                <h4>Members</h4>
+                ${membersMarkup}
+              </div>
+            </div>
+          </details>
+        </article>
       `;
     })
+    .join('');
+}
+
+function renderHorseGroupHistoryRegistryRows(rows) {
+  if (!horseGroupHistoryRegistryBody) {
+    return;
+  }
+
+  if (!rows.length) {
+    horseGroupHistoryRegistryBody.innerHTML = emptyStateRow(6, 'No horse group history yet.');
+    return;
+  }
+
+  horseGroupHistoryRegistryBody.innerHTML = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(row.horse_name || '-')}</td>
+          <td>${escapeHtml(row.group_name || '-')}</td>
+          <td>${escapeHtml(formatDate(row.started_at))}</td>
+          <td>${escapeHtml(row.ended_at ? formatDate(row.ended_at) : 'Current')}</td>
+          <td>${escapeHtml(String(row.group_days || '-'))}</td>
+          <td>${escapeHtml(formatHorseGroupPreviousSummary(row))}</td>
+        </tr>
+      `
+    )
     .join('');
 }
 
@@ -1756,7 +4858,6 @@ function populateHorseSelect(rows) {
       selectElement.disabled = true;
     });
     setActiveHorseSelection('');
-    renderHorseHistoryRows([]);
     clearHorseCategoryHistories();
     populateHorseProfile(null);
     setHorseHistorySelectedName(null);
@@ -1940,6 +5041,8 @@ function populatePaddockActionSelects(rows) {
   populatePaddockSelect(grazingMoveInPaddockSelect, rows, { activeOnly: true });
   populatePaddockSelect(grazingGroupMoveInPaddockSelect, rows, { activeOnly: true });
   populatePaddockSelect(grazingGroupMoveOutPaddockSelect, rows);
+  populatePaddockSelect(paddockWorkPaddockSelect, rows, { activeOnly: true });
+  syncPaddockParentSelectOptions(rows);
 }
 
 function populateHorseGroupActionSelects(rows) {
@@ -1947,6 +5050,7 @@ function populateHorseGroupActionSelects(rows) {
   populateSimpleGroupSelect(grazingGroupMoveInGroupSelect, rows, { activeOnly: true });
   populateSimpleGroupSelect(grazingGroupMoveOutGroupSelect, rows);
   syncHorseGroupMembersSelection();
+  syncHorseGroupMoveSelectionContext();
 }
 
 function populateDewormHistoryHorseFilter(rows) {
@@ -2085,7 +5189,7 @@ function handleAuthError(error, fallbackMessage) {
 
 async function syncSessionState() {
   try {
-    const response = await fetch(SESSION_API_URL);
+    const response = await fetch(SESSION_API_URL, { cache: 'no-store' });
     const payload = await response.json();
 
     if (!response.ok || !payload.ok) {
@@ -2112,12 +5216,18 @@ function clearDashboardView() {
   currentHorseRows = [];
   currentHorseGroupRows = [];
   currentPaddockRows = [];
+  currentPaddockWorkRows = [];
+  currentFarmSettings = null;
+  currentAdminModuleSettings = getDefaultAdminModuleSettings();
   currentFeedHistoryRows = [];
-  currentGrazingHistoryRows = [];
+  resetHorseFeedHistoryFilters();
+  currentPaddockOccupancyRows = [];
   currentDewormingHistoryRows = [];
   currentFarrierHistoryRows = [];
   currentHorseGroupMemberSelection = new Set();
   clearHorseGroupEditState();
+  clearPaddockEditState();
+  clearPaddockWorkEditState();
   lastUpdated.textContent = '-';
   summaryCards.innerHTML = '';
   dewormingBody.innerHTML = emptyStateRow(4, 'Log in to view data.');
@@ -2128,20 +5238,35 @@ function clearDashboardView() {
   farrierBody.innerHTML = emptyStateRow(4, 'Log in to view data.');
   lowStockBody.innerHTML = emptyStateRow(2, 'Log in to view data.');
   allStockBody.innerHTML = emptyStateRow(2, 'Log in to view data.');
-  rainBody.innerHTML = emptyStateRow(4, 'Log in to view data.');
+  rainBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
   if (rainYearlyBody) {
     rainYearlyBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
   }
   activityBody.innerHTML = emptyStateRow(4, 'Log in to view data.');
   if (horseGroupStatusBody) {
-    horseGroupStatusBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
+    horseGroupStatusBody.innerHTML = '<p class="group-management-empty">Log in to view data.</p>';
   }
-  paddockStatusBody.innerHTML = emptyStateRow(7, 'Log in to view data.');
-  grazingHistoryBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
+  if (pastureOverviewBody) {
+    pastureOverviewBody.className = 'pasture-overview-grid';
+    pastureOverviewBody.innerHTML = '<p class="pasture-empty">Log in to view pasture readiness.</p>';
+  }
+  if (horseGroupHistoryRegistryBody) {
+    horseGroupHistoryRegistryBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
+  }
+  paddockStatusBody.innerHTML = emptyStateRow(10, 'Log in to view data.');
+  if (paddockWorkHistoryBody) {
+    paddockWorkHistoryBody.innerHTML = emptyStateRow(7, 'Log in to view data.');
+  }
+  if (paddockOccupancyBody) {
+    paddockOccupancyBody.innerHTML = emptyStateRow(5, 'Log in to view data.');
+  }
+  if (paddockOccupancyCards) {
+    paddockOccupancyCards.innerHTML = '<p class="paddock-occupancy-empty">Log in to view data.</p>';
+  }
   horsesInTrainingBody.innerHTML = emptyStateRow(3, 'Log in to view data.');
   horsesBreakingInBody.innerHTML = emptyStateRow(3, 'Log in to view data.');
-  renderHorseHistoryRows([]);
   clearHorseCategoryHistories();
+  populateFarmSettings(null);
   populateHorseSelect([]);
   populateHorseRenameSelect([]);
   populateHorseActionSelects([]);
@@ -2150,14 +5275,17 @@ function clearDashboardView() {
   renderHorseGroupMembersChecklist([]);
   populateFeedItemOptions([]);
   populateHorseProfile(null);
+  renderAdminModuleSettings();
+  applyAdminModuleVisibility();
   renderRainChartEmpty('Log in to view rain data.');
 }
 
-async function loadSelectedHorseHistory() {
+async function loadSelectedHorseHistory(options = {}) {
   const horseId = horseSelect?.value || horseProfileSelect?.value || '';
+  const showOverlay = Boolean(options?.showOverlay);
   if (!horseId) {
     setActiveHorseSelection('');
-    renderHorseHistoryRows([]);
+    resetHorseFeedHistoryFilters();
     clearHorseCategoryHistories();
     populateHorseProfile(null);
     setHorseHistorySelectedName(null);
@@ -2165,6 +5293,8 @@ async function loadSelectedHorseHistory() {
   }
 
   setActiveHorseSelection(horseId);
+  selectedHorseFeedCalendarMonth =
+    normalizeYearMonth(selectedHorseFeedCalendarMonth) || currentYearMonthString();
   const horseFromList = findHorseById(horseId);
   if (horseFromList) {
     populateHorseProfile(horseFromList);
@@ -2172,8 +5302,17 @@ async function loadSelectedHorseHistory() {
   }
 
   try {
-    const response = await fetch(`${HORSE_HISTORY_API_URL}?horseId=${encodeURIComponent(horseId)}`, {
+    if (showOverlay) {
+      beginLoadingOverlay('Loading horse history...', 'Updating the horse timeline, feed, and care records.');
+    }
+
+    const query = new URLSearchParams({
+      horseId: String(horseId),
+      month: selectedHorseFeedCalendarMonth,
+    });
+    const response = await fetch(`${HORSE_HISTORY_API_URL}?${query.toString()}`, {
       headers: getAuthHeaders(),
+      cache: 'no-store',
     });
     const payload = await response.json();
 
@@ -2184,7 +5323,6 @@ async function loadSelectedHorseHistory() {
       throw error;
     }
 
-    renderHorseHistoryRows(payload.history || []);
     renderHorseCategoryHistories(payload);
     if (payload.horse) {
       setActiveHorseSelection(payload.horse.id || horseId);
@@ -2193,12 +5331,15 @@ async function loadSelectedHorseHistory() {
     }
     return { ok: true };
   } catch (error) {
-    renderHorseHistoryRows([]);
-    clearHorseCategoryHistories();
+    clearHorseCategoryHistories({ resetMonth: false });
     if (handleAuthError(error, 'Session expired. Please log in to view horse history.')) {
       return { ok: false, error };
     }
     return { ok: false, error };
+  } finally {
+    if (showOverlay) {
+      endLoadingOverlay();
+    }
   }
 }
 
@@ -2222,17 +5363,29 @@ function renderActivityRows(rows) {
     .join('');
 }
 
-async function loadDashboard() {
+async function loadDashboard(options = {}) {
+  const silent = Boolean(options?.silent);
+  const showOverlay = !silent;
+
   if (!sessionAuthenticated) {
     setStatus('Please log in to access the admin dashboard.', true);
     clearDashboardView();
     return;
   }
 
-  setStatus('Refreshing dashboard...');
+  if (!silent) {
+    setStatus('Refreshing dashboard...');
+  }
 
   try {
-    const response = await fetch(API_URL, { headers: getAuthHeaders() });
+    if (showOverlay) {
+      beginLoadingOverlay('Loading dashboard...', 'Refreshing horses, paddocks, feed, and reminders.');
+    }
+
+    const response = await fetch(API_URL, {
+      headers: getAuthHeaders(),
+      cache: 'no-store',
+    });
     const payload = await response.json();
 
     if (!response.ok || !payload.ok) {
@@ -2243,6 +5396,8 @@ async function loadDashboard() {
     }
 
     latestDashboardPayload = payload;
+    populateFarmSettings(payload.farm_settings || null);
+    syncAdminModuleSettings(payload.module_settings || getDefaultAdminModuleSettings());
     renderSummary(payload);
 
     const dewormRows = mergeReminderRows(payload.reminders.deworming);
@@ -2259,13 +5414,17 @@ async function loadDashboard() {
     currentHorseRows = payload.horses || [];
     currentHorseGroupRows = payload.horse_groups || [];
     currentPaddockRows = payload.paddocks || [];
+    currentPaddockWorkRows = payload.paddock_work_history || [];
     currentHorseRows = currentHorseRows.map((horse) => ({
       ...horse,
       training_status: normalizeTrainingStatus(horse.training_status),
     }));
+    renderPastureOverview(payload);
     renderHorseGroupRows(currentHorseGroupRows);
+    renderHorseGroupHistoryRegistryRows(payload.horse_group_history || []);
     renderPaddockStatusRows(currentPaddockRows);
-    renderGrazingHistoryRows(payload.grazing_history || []);
+    renderPaddockWorkHistoryRows(currentPaddockWorkRows);
+    renderPaddockOccupancyRows(payload.paddock_occupancy || []);
     currentDewormingHistoryRows = payload.deworming_history || [];
     currentFarrierHistoryRows = payload.farrier_history_registry || [];
     populateDewormHistoryHorseFilter(currentHorseRows);
@@ -2286,7 +5445,7 @@ async function loadDashboard() {
     populateHorseGroupActionSelects(currentHorseGroupRows);
     populatePaddockActionSelects(currentPaddockRows);
     populateFeedItemOptions(payload.stock?.all || []);
-    const horseHistoryResult = await loadSelectedHorseHistory();
+    const horseHistoryResult = await loadSelectedHorseHistory({ showOverlay: false });
 
     const updatedAt = payload.meta?.refreshed_at || new Date().toISOString();
     lastUpdated.textContent = `Last updated: ${formatDateTime(updatedAt)}`;
@@ -2295,13 +5454,19 @@ async function loadDashboard() {
       return;
     }
 
-    setStatus('Dashboard is up to date.');
+    if (!silent) {
+      setStatus('Dashboard is up to date.');
+    }
   } catch (error) {
     if (handleAuthError(error, 'Session expired. Please log in to continue.')) {
       clearDashboardView();
       return;
     }
     setStatus(`Dashboard error: ${error.message}`, true);
+  } finally {
+    if (showOverlay) {
+      endLoadingOverlay();
+    }
   }
 }
 
@@ -2322,6 +5487,7 @@ authForm.addEventListener('submit', async (event) => {
   }
 
   try {
+    beginLoadingOverlay('Signing in...', 'Verifying your account and opening the dashboard.');
     const data = await postJson(LOGIN_API_URL, { username, password });
     setSessionAuthState(true, data.username || username);
     setStatus(`Logged in as ${data.username || username}.`);
@@ -2329,14 +5495,19 @@ authForm.addEventListener('submit', async (event) => {
   } catch (error) {
     setSessionAuthState(false);
     setStatus(`Login failed: ${error.message}`, true);
+  } finally {
+    endLoadingOverlay();
   }
 });
 
 logoutButton.addEventListener('click', async () => {
   try {
+    beginLoadingOverlay('Signing out...', 'Closing the current admin session.');
     await postJson(LOGOUT_API_URL, {});
   } catch (_error) {
     // Clear local UI even if logout API fails.
+  } finally {
+    endLoadingOverlay();
   }
 
   setSessionAuthState(false);
@@ -2347,6 +5518,69 @@ logoutButton.addEventListener('click', async () => {
 refreshButton.addEventListener('click', () => {
   loadDashboard();
 });
+
+if (farmSettingsForm) {
+  farmSettingsForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    try {
+      const data = await postJson(DATA_MUTATE_API_URL, {
+        action: 'farm_settings_save',
+        farmName: farmNameInput.value.trim() || undefined,
+        weatherLatitude: farmWeatherLatitudeInput.value || undefined,
+        weatherLongitude: farmWeatherLongitudeInput.value || undefined,
+        weatherTimezone: farmWeatherTimezoneInput.value.trim() || undefined,
+        weatherSyncDays: farmWeatherSyncDaysInput.value || undefined,
+        telegramAlertChatId: farmTelegramAlertChatIdInput.value.trim() || undefined,
+      });
+
+      populateFarmSettings(data.farm_settings || null);
+      setActionMessage('Farm setup saved.', false, { card: 'action-card-farm-setup' });
+      await loadDashboard();
+    } catch (error) {
+      if (handleAuthError(error, 'Session expired. Please log in to save farm setup.')) {
+        clearDashboardView();
+        return;
+      }
+      setActionMessage(`Save farm setup failed: ${error.message}`, true, {
+        card: 'action-card-farm-setup',
+      });
+    }
+  });
+}
+
+if (adminModulesForm) {
+  adminModulesForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    try {
+      const modules = normalizeAdminModuleSettings(currentAdminModuleSettings).map((module) => {
+        const checkbox = adminModulesForm.querySelector(`input[name="moduleKey"][value="${module.key}"]`);
+        return {
+          key: module.key,
+          enabled: checkbox ? checkbox.checked : module.enabled,
+        };
+      });
+
+      const data = await postJson(DATA_MUTATE_API_URL, {
+        action: 'admin_modules_save',
+        modules,
+      });
+
+      syncAdminModuleSettings(data.module_settings || modules);
+      setAdminModulesMessage('Admin modules saved.');
+      setActionMessage('Admin modules updated.');
+      await loadDashboard();
+    } catch (error) {
+      if (handleAuthError(error, 'Session expired. Please log in to save admin modules.')) {
+        clearDashboardView();
+        return;
+      }
+      setAdminModulesMessage(`Save failed: ${error.message}`, true);
+      setActionMessage(`Save admin modules failed: ${error.message}`, true);
+    }
+  });
+}
 
 if (dewormHistoryHorseFilter) {
   dewormHistoryHorseFilter.addEventListener('change', () => {
@@ -2398,7 +5632,8 @@ if (rainWindowControls) {
 if (horseSelect) {
   horseSelect.addEventListener('change', async () => {
     setActiveHorseSelection(horseSelect.value);
-    const result = await loadSelectedHorseHistory();
+    resetHorseFeedHistoryFilters();
+    const result = await loadSelectedHorseHistory({ showOverlay: true });
     if (!result.ok) {
       setStatus(`History error: ${result.error.message}`, true);
       return;
@@ -2410,7 +5645,8 @@ if (horseSelect) {
 if (horseProfileSelect) {
   horseProfileSelect.addEventListener('change', async () => {
     setActiveHorseSelection(horseProfileSelect.value);
-    const result = await loadSelectedHorseHistory();
+    resetHorseFeedHistoryFilters();
+    const result = await loadSelectedHorseHistory({ showOverlay: true });
     if (!result.ok) {
       setStatus(`History error: ${result.error.message}`, true);
       return;
@@ -2427,6 +5663,12 @@ trainingHorseSelect.addEventListener('change', () => {
 if (horseGroupMembersSelect) {
   horseGroupMembersSelect.addEventListener('change', () => {
     syncHorseGroupMembersSelection();
+  });
+}
+
+if (grazingGroupMoveInGroupSelect) {
+  grazingGroupMoveInGroupSelect.addEventListener('change', () => {
+    syncHorseGroupMoveSelectionContext();
   });
 }
 
@@ -2464,108 +5706,412 @@ if (horseGroupStatusBody) {
     const groupId = editButton.getAttribute('data-group-id');
     const group = findHorseGroupById(groupId);
     if (!group) {
-      setActionMessage('That group is no longer available to edit.', true);
+      setActionMessage('That group is no longer available to edit.', true, {
+        card: 'action-card-horse-groups',
+      });
       return;
     }
 
-    setHorseGroupEditState(group);
-    setActionMessage(`Editing group: ${group.name}`);
+    setHorseGroupEditState(group, { scroll: false, focusName: false });
+    const moveReady = focusHorseGroupMoveSection(group);
+    setActionMessage(
+      moveReady
+        ? `Ready for ${group.name}. Choose destination paddock and move date, then move it or correct its current paddock history.`
+        : `Editing group: ${group.name}. Activate it first if you want to move it to a paddock.`,
+      false,
+      {
+        card: 'action-card-horse-groups',
+      }
+    );
+  });
+}
+
+if (paddockStatusBody) {
+  paddockStatusBody.addEventListener('click', (event) => {
+    const editButton = event.target.closest('button[data-paddock-action="edit"]');
+    if (!editButton) {
+      return;
+    }
+
+    const paddockId = editButton.getAttribute('data-paddock-id');
+    const paddock = findPaddockById(paddockId);
+    if (!paddock) {
+      setActionMessage('That paddock is no longer available to edit.', true, {
+        card: 'action-card-paddocks',
+      });
+      return;
+    }
+
+    expandPanelForElement(actionHubPanel);
+    expandActionCard(document.getElementById('action-card-paddocks'));
+    setPaddockEditState(paddock, { scroll: true, focusName: true });
+    setActionMessage(`Editing paddock: ${paddock.name}. Update it and save when ready.`, false, {
+      card: 'action-card-paddocks',
+    });
+  });
+}
+
+if (paddockWorkHistoryBody) {
+  paddockWorkHistoryBody.addEventListener('click', (event) => {
+    const editButton = event.target.closest('button[data-paddock-work-action="edit"]');
+    if (!editButton) {
+      return;
+    }
+
+    const eventId = editButton.getAttribute('data-paddock-work-id');
+    const workRow = findPaddockWorkById(eventId);
+    if (!workRow) {
+      setActionMessage('That field-work entry is no longer available to edit.', true, {
+        card: 'action-card-paddocks',
+      });
+      return;
+    }
+
+    expandPanelForElement(actionHubPanel);
+    expandActionCard(document.getElementById('action-card-paddocks'));
+    setPaddockWorkEditState(workRow, { scroll: true, focus: true });
+    setActionMessage(
+      `Editing field work for ${workRow.paddock_name}. Update the scope, dates, or wait days, then save.`,
+      false,
+      {
+        card: 'action-card-paddocks',
+      }
+    );
   });
 }
 
 if (horseGroupCancelEditButton) {
   horseGroupCancelEditButton.addEventListener('click', () => {
     clearHorseGroupEditState({ focus: true });
-    setActionMessage('Group edit canceled.');
+    setActionMessage('Group edit canceled.', false, {
+      card: 'action-card-horse-groups',
+    });
   });
 }
 
-horseFeedHistoryBody.addEventListener('click', async (event) => {
-  const button = event.target.closest('button[data-feed-action]');
-  if (!button) {
-    return;
-  }
+if (paddockCancelEditButton) {
+  paddockCancelEditButton.addEventListener('click', () => {
+    clearPaddockEditState({ focus: true });
+    setActionMessage('Paddock edit canceled.', false, {
+      card: 'action-card-paddocks',
+    });
+  });
+}
 
-  const feedAction = button.getAttribute('data-feed-action');
-  const feedEventId = button.getAttribute('data-feed-event-id');
-  const feedEventRow = findFeedHistoryById(feedEventId);
+if (paddockWorkCancelEditButton) {
+  paddockWorkCancelEditButton.addEventListener('click', () => {
+    clearPaddockWorkEditState({ focus: true });
+    setActionMessage('Field-work edit canceled.', false, {
+      card: 'action-card-paddocks',
+    });
+  });
+}
 
-  if (!feedEventId || !feedEventRow) {
-    setHorseProfileMessage('Feed event not found in current table.', true);
-    return;
-  }
-
-  if (feedAction === 'edit') {
-    const quantityInput = window.prompt('New quantity', String(feedEventRow.quantity));
-    if (quantityInput == null) {
+if (horseFeedPlanBody) {
+  horseFeedPlanBody.addEventListener('input', (event) => {
+    const fieldElement = event.target.closest('[data-feed-plan-field]');
+    if (!fieldElement) {
       return;
     }
 
-    const nextQuantity = Number(quantityInput.trim());
-    if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
-      setHorseProfileMessage('Quantity must be a number greater than 0.', true);
+    const rowKey = fieldElement.getAttribute('data-feed-plan-row-key');
+    const field = fieldElement.getAttribute('data-feed-plan-field');
+    const rawValue =
+      fieldElement instanceof HTMLInputElement && fieldElement.type === 'checkbox'
+        ? fieldElement.checked
+        : fieldElement.value;
+
+    updateHorseFeedPlanDraftRow(rowKey, field, rawValue);
+  });
+
+  horseFeedPlanBody.addEventListener('change', (event) => {
+    const fieldElement = event.target.closest('[data-feed-plan-field]');
+    if (!fieldElement) {
       return;
     }
 
-    const defaultDate = normalizeDateForDateInput(feedEventRow.event_date || feedEventRow.at);
-    const dateInput = window.prompt('Date (YYYY-MM-DD)', defaultDate);
-    if (dateInput == null) {
-      return;
+    const rowKey = fieldElement.getAttribute('data-feed-plan-row-key');
+    const field = fieldElement.getAttribute('data-feed-plan-field');
+    const rawValue =
+      fieldElement instanceof HTMLInputElement && fieldElement.type === 'checkbox'
+        ? fieldElement.checked
+        : fieldElement.value;
+    const updateResult = updateHorseFeedPlanDraftRow(rowKey, field, rawValue);
+
+    if (updateResult.didAutoFillUnit || updateResult.didToggleStock) {
+      renderHorseFeedPlanRows(currentHorseFeedPlanDraftRows);
     }
+  });
 
-    const nextDate = dateInput.trim();
-
-    try {
-      const data = await postJson(DATA_MUTATE_API_URL, {
-        action: 'feed_event_update',
-        horseId: horseSelect.value,
-        feedEventId,
-        quantity: nextQuantity,
-        eventDate: nextDate || undefined,
-      });
-
-      setHorseProfileMessage(
-        `Feed updated. ${data.stock.feed_item_name}: ${data.stock.current_stock} ${data.stock.unit} remaining.`
-      );
-      await loadDashboard();
-    } catch (error) {
-      if (handleAuthError(error, 'Session expired. Please log in to edit feed history.')) {
-        clearDashboardView();
+  horseFeedPlanBody.addEventListener('click', (event) => {
+    const addButton = event.target.closest('button[data-feed-plan-action="add-slot-row"]');
+    if (addButton) {
+      const horseId = horseSelect?.value || horseProfileSelect?.value || '';
+      if (!horseId) {
+        setHorseFeedPlanMessage('Choose a horse before adding mix ingredients.', true);
         return;
       }
-      setHorseProfileMessage(`Edit failed: ${error.message}`, true);
-    }
-    return;
-  }
 
-  if (feedAction === 'delete') {
-    const confirmed = window.confirm(
-      `Delete this feed event (${feedEventRow.feed_item} ${feedEventRow.quantity} ${feedEventRow.unit})?`
+      const feedSlot = addButton.getAttribute('data-feed-plan-slot');
+      currentHorseFeedPlanDraftRows.push(buildHorseFeedPlanDraftRowForSlot(feedSlot));
+      renderHorseFeedPlanRows(currentHorseFeedPlanDraftRows);
+      setHorseFeedPlanMessage(
+        `${getFeedSlotLabel(feedSlot)} ingredient added. Fill it in, then save the feed plan.`
+      );
+      return;
+    }
+
+    const removeButton = event.target.closest('button[data-feed-plan-action="remove"]');
+    if (!removeButton) {
+      return;
+    }
+
+    const rowKey = removeButton.getAttribute('data-feed-plan-row-key');
+    currentHorseFeedPlanDraftRows = currentHorseFeedPlanDraftRows.filter(
+      (row) => row.row_key !== rowKey
     );
-    if (!confirmed) {
+    renderHorseFeedPlanRows(currentHorseFeedPlanDraftRows);
+    setHorseFeedPlanMessage('Mix ingredient removed. Save to apply the change.');
+  });
+}
+
+if (horseFeedPlanForm) {
+  horseFeedPlanForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const horseId = horseSelect?.value || horseProfileSelect?.value || '';
+    if (!horseId) {
+      setHorseFeedPlanMessage('Choose a horse before saving a feed plan.', true);
       return;
     }
 
     try {
+      pauseDashboardAutoRefresh();
+      const items = buildHorseFeedPlanSaveItems();
       const data = await postJson(DATA_MUTATE_API_URL, {
-        action: 'feed_event_delete',
-        horseId: horseSelect.value,
-        feedEventId,
+        action: 'horse_feed_plan_save',
+        horseId,
+        items,
       });
 
-      setHorseProfileMessage(
-        `Feed event deleted. ${data.stock.feed_item_name}: ${data.stock.current_stock} ${data.stock.unit} remaining.`
+      setHorseFeedPlanMessage(
+        items.length > 0
+          ? `Feed plan saved for ${data.horse.name}.`
+          : `Feed plan cleared for ${data.horse.name}.`
       );
-      await loadDashboard();
+
+      const historyResult = await loadSelectedHorseHistory();
+      if (!historyResult.ok) {
+        setStatus(`History error: ${historyResult.error.message}`, true);
+      }
     } catch (error) {
-      if (handleAuthError(error, 'Session expired. Please log in to delete feed history.')) {
+      if (handleAuthError(error, 'Session expired. Please log in to save feed plans.')) {
         clearDashboardView();
         return;
       }
-      setHorseProfileMessage(`Delete failed: ${error.message}`, true);
+      setHorseFeedPlanMessage(`Save failed: ${error.message}`, true);
     }
-  }
-});
+  });
+}
+
+if (horseFeedCalendarMonthInput) {
+  horseFeedCalendarMonthInput.addEventListener('change', async () => {
+    const nextMonth = normalizeYearMonth(horseFeedCalendarMonthInput.value);
+    if (!nextMonth) {
+      horseFeedCalendarMonthInput.value = selectedHorseFeedCalendarMonth;
+      return;
+    }
+
+    selectedHorseFeedCalendarMonth = nextMonth;
+    const result = await loadSelectedHorseHistory();
+    if (!result.ok) {
+      setStatus(`History error: ${result.error.message}`, true);
+      return;
+    }
+
+    setHorseFeedPlanMessage(`Showing ${selectedHorseFeedCalendarMonth} feed calendar.`);
+  });
+}
+
+if (horseFeedCalendarTodayButton) {
+  horseFeedCalendarTodayButton.addEventListener('click', async () => {
+    selectedHorseFeedCalendarMonth = currentYearMonthString();
+    if (horseFeedCalendarMonthInput) {
+      horseFeedCalendarMonthInput.value = selectedHorseFeedCalendarMonth;
+    }
+
+    const result = await loadSelectedHorseHistory();
+    if (!result.ok) {
+      setStatus(`History error: ${result.error.message}`, true);
+      return;
+    }
+
+    setHorseFeedPlanMessage('Showing the current month feed calendar.');
+  });
+}
+
+if (horseFeedCalendarGrid) {
+  horseFeedCalendarGrid.addEventListener('change', async (event) => {
+    const checkbox = event.target.closest('input[data-feed-calendar-toggle]');
+    if (!checkbox) {
+      return;
+    }
+
+    const horseId = horseSelect?.value || horseProfileSelect?.value || '';
+    const feedSlot = checkbox.getAttribute('data-feed-calendar-slot');
+    const eventDate = checkbox.getAttribute('data-feed-calendar-date');
+    const checked = checkbox.checked;
+
+    if (!horseId || !feedSlot || !eventDate) {
+      checkbox.checked = !checked;
+      setHorseFeedPlanMessage('Choose a horse and save a feed plan before using the calendar.', true);
+      return;
+    }
+
+    pauseDashboardAutoRefresh();
+    checkbox.disabled = true;
+
+    try {
+      const data = await postJson(DATA_MUTATE_API_URL, {
+        action: 'horse_feed_slot_toggle',
+        horseId,
+        feedSlot,
+        eventDate,
+        checked,
+      });
+
+      setHorseFeedPlanMessage(
+        `${getFeedSlotLabel(feedSlot)} ${checked ? 'checked' : 'unchecked'} for ${formatDate(
+          eventDate
+        )}.${formatHorseFeedCalendarStockSummary(data.stock_changes)}`
+      );
+      applyStockChangesToCachedDashboard(data.stock_changes);
+      const historyResult = await loadSelectedHorseHistory();
+      if (!historyResult.ok) {
+        setStatus(`History error: ${historyResult.error.message}`, true);
+      }
+    } catch (error) {
+      checkbox.checked = !checked;
+      if (handleAuthError(error, 'Session expired. Please log in to use the feed calendar.')) {
+        clearDashboardView();
+        return;
+      }
+      setHorseFeedPlanMessage(`Calendar update failed: ${error.message}`, true);
+    } finally {
+      checkbox.disabled = false;
+    }
+  });
+}
+
+if (horseFeedHistoryPeriodFilter) {
+  horseFeedHistoryPeriodFilter.addEventListener('change', () => {
+    currentHorseFeedHistoryFilters.period = horseFeedHistoryPeriodFilter.value || '7d';
+    renderFeedHistoryGroups(currentFeedHistoryRows);
+  });
+}
+
+if (horseFeedHistorySlotFilter) {
+  horseFeedHistorySlotFilter.addEventListener('change', () => {
+    currentHorseFeedHistoryFilters.slot = horseFeedHistorySlotFilter.value || 'all';
+    renderFeedHistoryGroups(currentFeedHistoryRows);
+  });
+}
+
+if (horseFeedHistorySourceFilter) {
+  horseFeedHistorySourceFilter.addEventListener('change', () => {
+    currentHorseFeedHistoryFilters.source = horseFeedHistorySourceFilter.value || 'all';
+    renderFeedHistoryGroups(currentFeedHistoryRows);
+  });
+}
+
+if (horseFeedHistoryGroups) {
+  horseFeedHistoryGroups.addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-feed-action]');
+    if (!button) {
+      return;
+    }
+
+    const feedAction = button.getAttribute('data-feed-action');
+    const feedEventId = button.getAttribute('data-feed-event-id');
+    const feedEventRow = findFeedHistoryById(feedEventId);
+
+    if (!feedEventId || !feedEventRow) {
+      setHorseProfileMessage('Feed event not found in current history.', true);
+      return;
+    }
+
+    if (feedAction === 'edit') {
+      const quantityInput = window.prompt('New quantity', String(feedEventRow.quantity));
+      if (quantityInput == null) {
+        return;
+      }
+
+      const nextQuantity = Number(quantityInput.trim());
+      if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
+        setHorseProfileMessage('Quantity must be a number greater than 0.', true);
+        return;
+      }
+
+      const defaultDate = normalizeDateForDateInput(feedEventRow.event_date || feedEventRow.at);
+      const dateInput = window.prompt('Date (YYYY-MM-DD)', defaultDate);
+      if (dateInput == null) {
+        return;
+      }
+
+      const nextDate = dateInput.trim();
+
+      try {
+        const data = await postJson(DATA_MUTATE_API_URL, {
+          action: 'feed_event_update',
+          horseId: horseSelect.value,
+          feedEventId,
+          quantity: nextQuantity,
+          eventDate: nextDate || undefined,
+        });
+
+        setHorseProfileMessage(
+          `Feed updated. ${data.stock.feed_item_name}: ${data.stock.current_stock} ${data.stock.unit} remaining.`
+        );
+        await loadDashboard();
+      } catch (error) {
+        if (handleAuthError(error, 'Session expired. Please log in to edit feed history.')) {
+          clearDashboardView();
+          return;
+        }
+        setHorseProfileMessage(`Edit failed: ${error.message}`, true);
+      }
+      return;
+    }
+
+    if (feedAction === 'delete') {
+      const confirmed = window.confirm(
+        `Delete this feed event (${feedEventRow.feed_item} ${feedEventRow.quantity} ${feedEventRow.unit})?`
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        const data = await postJson(DATA_MUTATE_API_URL, {
+          action: 'feed_event_delete',
+          horseId: horseSelect.value,
+          feedEventId,
+        });
+
+        setHorseProfileMessage(
+          `Feed event deleted. ${data.stock.feed_item_name}: ${data.stock.current_stock} ${data.stock.unit} remaining.`
+        );
+        await loadDashboard();
+      } catch (error) {
+        if (handleAuthError(error, 'Session expired. Please log in to delete feed history.')) {
+          clearDashboardView();
+          return;
+        }
+        setHorseProfileMessage(`Delete failed: ${error.message}`, true);
+      }
+    }
+  });
+}
 
 stockActionType.addEventListener('change', () => {
   stockQuantityInput.min = stockActionType.value === 'set' ? '0' : '0.01';
@@ -2687,9 +6233,31 @@ horseGroupMembersForm.addEventListener('submit', async (event) => {
     });
 
     const reassignedCount = Array.isArray(data.reassigned_members) ? data.reassigned_members.length : 0;
-    const reassignedMessage = reassignedCount > 0 ? ` ${reassignedCount} horse(s) were moved from another group.` : '';
+    const removedCount = Array.isArray(data.removed_members) ? data.removed_members.length : 0;
+    const reassignedSample = reassignedCount > 0 ? data.reassigned_members[0] : null;
+    const removedSample = removedCount > 0 ? data.removed_members[0] : null;
+    const reassignedMessage =
+      reassignedCount > 0
+        ? ` ${reassignedCount} horse(s) were moved from another group${
+            reassignedSample?.previous_group_name
+              ? `, starting with ${reassignedSample.horse_name} from ${
+                  reassignedSample.previous_group_name
+                }${reassignedSample.previous_group_days == null ? '' : ` after ${reassignedSample.previous_group_days} day(s)`}`
+              : ''
+          }.`
+        : '';
+    const removedMessage =
+      removedCount > 0
+        ? ` ${removedCount} horse(s) were removed from ${data.group.name}${
+            removedSample?.horse_name
+              ? `, starting with ${removedSample.horse_name}${
+                  removedSample.previous_group_days == null ? '' : ` after ${removedSample.previous_group_days} day(s)`
+                }`
+              : ''
+          }.`
+        : '';
     setActionMessage(
-      `Saved ${data.members.length} horse(s) in ${data.group.name}.${reassignedMessage}`
+      `Saved ${data.members.length} horse(s) in ${data.group.name}.${reassignedMessage}${removedMessage}`
     );
     await loadDashboard();
   } catch (error) {
@@ -2700,6 +6268,12 @@ horseGroupMembersForm.addEventListener('submit', async (event) => {
     setActionMessage(`Save members failed: ${error.message}`, true);
   }
 });
+
+if (paddockNameInput) {
+  paddockNameInput.addEventListener('input', () => {
+    syncPaddockParentSelectOptions();
+  });
+}
 
 paddockSaveForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -2712,15 +6286,14 @@ paddockSaveForm.addEventListener('submit', async (event) => {
       sizeHa: paddockSizeInput.value.trim() || undefined,
       notes: paddockNotesInput.value.trim() || undefined,
       active: paddockActiveSelect.value,
+      parentPaddockId: paddockParentSelect.value || undefined,
     });
 
-    paddockNameInput.value = '';
-    paddockZoneInput.value = '';
-    paddockSizeInput.value = '';
-    paddockNotesInput.value = '';
-    paddockActiveSelect.value = 'true';
+    clearPaddockEditState();
     setActionMessage(
-      `Paddock ${data.mode === 'created' ? 'saved' : 'updated'}: ${data.paddock.name}`
+      `Paddock ${data.mode === 'created' ? 'saved' : 'updated'}: ${data.paddock.name}${
+        data.paddock.parent_paddock_name ? ` under ${data.paddock.parent_paddock_name}` : ''
+      }`
     );
     await loadDashboard();
   } catch (error) {
@@ -2729,6 +6302,45 @@ paddockSaveForm.addEventListener('submit', async (event) => {
       return;
     }
     setActionMessage(`Save paddock failed: ${error.message}`, true);
+  }
+});
+
+paddockWorkForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+
+  try {
+    const editingEventId = paddockWorkEventIdInput?.value || '';
+    const data = await postJson(DATA_MUTATE_API_URL, {
+      action: editingEventId ? 'paddock_work_update' : 'paddock_work_save',
+      eventId: editingEventId || undefined,
+      paddockId: paddockWorkPaddockSelect.value,
+      applyScope: paddockWorkScopeSelect?.value || 'single',
+      eventType: paddockWorkTypeSelect.value,
+      eventDate: paddockWorkDateInput.value || undefined,
+      readyAfterDays: paddockWorkReadyDaysInput.value.trim() || undefined,
+      notes: paddockWorkNotesInput.value.trim() || undefined,
+    });
+
+    clearPaddockWorkEditState();
+    const workScopeLabel = data.paddock_work_event.applies_to_descendants ? ' for the whole block' : '';
+    setActionMessage(
+      data.paddock_work_event.ready_to_graze_on
+        ? `${data.paddock.name} ${formatPaddockWorkTypeLabel(
+            data.paddock_work_event.event_type
+          ).toLowerCase()} ${editingEventId ? 'updated' : 'saved'}${workScopeLabel}. Ready to graze on ${formatDate(
+            data.paddock_work_event.ready_to_graze_on
+          )}.`
+        : `${data.paddock.name} ${formatPaddockWorkTypeLabel(
+            data.paddock_work_event.event_type
+          ).toLowerCase()} ${editingEventId ? 'updated' : 'saved'}${workScopeLabel}.`
+    );
+    await loadDashboard();
+  } catch (error) {
+    if (handleAuthError(error, 'Session expired. Please log in to save paddock work.')) {
+      clearDashboardView();
+      return;
+    }
+    setActionMessage(`Save paddock work failed: ${error.message}`, true);
   }
 });
 
@@ -2785,61 +6397,107 @@ grazingMoveOutForm.addEventListener('submit', async (event) => {
   }
 });
 
-grazingGroupMoveInForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
+if (grazingGroupMoveInForm) {
+  grazingGroupMoveInForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
 
-  try {
-    const data = await postJson(DATA_MUTATE_API_URL, {
-      action: 'grazing_group_move_in',
-      groupId: grazingGroupMoveInGroupSelect.value,
-      paddockId: grazingGroupMoveInPaddockSelect.value,
-      eventDate: grazingGroupMoveInDateInput.value || undefined,
-      notes: grazingGroupMoveInNotesInput.value.trim() || undefined,
-    });
+    try {
+      const moveMode = event.submitter?.getAttribute('data-move-mode') === 'correct_current'
+        ? 'correct_current'
+        : 'move';
+      const data = await postJson(DATA_MUTATE_API_URL, {
+        action: moveMode === 'correct_current' ? 'grazing_group_correct_current' : 'grazing_group_move_in',
+        groupId: grazingGroupMoveInGroupSelect.value,
+        paddockId: grazingGroupMoveInPaddockSelect.value,
+        eventDate: grazingGroupMoveInDateInput.value || undefined,
+        notes: grazingGroupMoveInNotesInput.value.trim() || undefined,
+      });
 
-    grazingGroupMoveInNotesInput.value = '';
-    setActionMessage(
-      `${data.group.name} moved into ${data.paddock.name} on ${formatDate(
-        data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
-      )} (${data.moved_count} horse(s)).`
-    );
-    await loadDashboard();
-  } catch (error) {
-    if (handleAuthError(error, 'Session expired. Please log in to record group grazing moves.')) {
-      clearDashboardView();
-      return;
+      grazingGroupMoveInNotesInput.value = '';
+      if (moveMode === 'correct_current') {
+        const correctedCount = Number(data.corrected_count || 0);
+        const insertedCount = Number(data.inserted_count || 0);
+        const updatedCount = Number(data.updated_count || 0);
+        const unchangedCount = Number(data.unchanged_count || 0);
+        const correctionParts = [];
+
+        if (correctedCount > 0) {
+          correctionParts.push(
+            `${correctedCount} corrected${insertedCount > 0 || updatedCount > 0 ? ` (${updatedCount} updated, ${insertedCount} added)` : ''}`
+          );
+        }
+        if (unchangedCount > 0) {
+          correctionParts.push(`${unchangedCount} already matched`);
+        }
+
+        setActionMessage(
+          `${data.group.name} corrected to ${data.paddock.name} from ${formatDate(
+            data.entered_at || data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
+          )}. ${correctionParts.join(', ') || 'Current paddock history updated.'}`
+        );
+      } else {
+        const movedCount = Number(data.moved_count || 0);
+        const groupMemberCount = Number(data.group_member_count || movedCount);
+        const alreadyThereCount = Number(data.already_in_paddock_count || 0);
+        const movementSummary =
+          alreadyThereCount > 0
+            ? `${movedCount} moved, ${alreadyThereCount} already there`
+            : `${groupMemberCount} horse(s) moved`;
+
+        setActionMessage(
+          `${data.group.name} moved to ${data.paddock.name} on ${formatDate(
+            data.entered_at || data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
+          )}. ${movementSummary}.`
+        );
+      }
+      await loadDashboard();
+    } catch (error) {
+      if (handleAuthError(error, 'Session expired. Please log in to record group grazing moves.')) {
+        clearDashboardView();
+        return;
+      }
+      const moveMode = event.submitter?.getAttribute('data-move-mode') === 'correct_current'
+        ? 'correct_current'
+        : 'move';
+      setActionMessage(
+        moveMode === 'correct_current'
+          ? `Correct current paddock failed: ${error.message}`
+          : `Move group failed: ${error.message}`,
+        true
+      );
     }
-    setActionMessage(`Group move in failed: ${error.message}`, true);
-  }
-});
+  });
+}
 
-grazingGroupMoveOutForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
+if (grazingGroupMoveOutForm) {
+  grazingGroupMoveOutForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
 
-  try {
-    const data = await postJson(DATA_MUTATE_API_URL, {
-      action: 'grazing_group_move_out',
-      groupId: grazingGroupMoveOutGroupSelect.value,
-      paddockId: grazingGroupMoveOutPaddockSelect.value,
-      eventDate: grazingGroupMoveOutDateInput.value || undefined,
-      notes: grazingGroupMoveOutNotesInput.value.trim() || undefined,
-    });
+    try {
+      const data = await postJson(DATA_MUTATE_API_URL, {
+        action: 'grazing_group_move_out',
+        groupId: grazingGroupMoveOutGroupSelect.value,
+        paddockId: grazingGroupMoveOutPaddockSelect.value,
+        eventDate: grazingGroupMoveOutDateInput.value || undefined,
+        notes: grazingGroupMoveOutNotesInput.value.trim() || undefined,
+      });
 
-    grazingGroupMoveOutNotesInput.value = '';
-    setActionMessage(
-      `${data.group.name} moved out of ${data.paddock.name} on ${formatDate(
-        data.grazing_events?.[0]?.exited_at || grazingGroupMoveOutDateInput.value
-      )} (${data.moved_count} horse(s)).`
-    );
-    await loadDashboard();
-  } catch (error) {
-    if (handleAuthError(error, 'Session expired. Please log in to record group grazing exits.')) {
-      clearDashboardView();
-      return;
+      grazingGroupMoveOutNotesInput.value = '';
+      setActionMessage(
+        `${data.group.name} moved out of ${data.paddock.name} on ${formatDate(
+          data.grazing_events?.[0]?.exited_at || grazingGroupMoveOutDateInput.value
+        )} (${data.moved_count} horse(s)).`
+      );
+      await loadDashboard();
+    } catch (error) {
+      if (handleAuthError(error, 'Session expired. Please log in to record group grazing exits.')) {
+        clearDashboardView();
+        return;
+      }
+      setActionMessage(`Group move out failed: ${error.message}`, true);
     }
-    setActionMessage(`Group move out failed: ${error.message}`, true);
-  }
-});
+  });
+}
 
 feedItemSaveForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -3031,6 +6689,37 @@ rainSaveForm.addEventListener('submit', async (event) => {
   }
 });
 
+if (rainSyncWeatherButton) {
+  rainSyncWeatherButton.addEventListener('click', async () => {
+    const originalLabel = rainSyncWeatherButton.textContent;
+    rainSyncWeatherButton.disabled = true;
+    rainSyncWeatherButton.textContent = 'Syncing...';
+
+    try {
+      const data = await postJson(DATA_MUTATE_API_URL, {
+        action: 'rain_weather_sync',
+      });
+
+      const sync = data.weather_sync || {};
+      setActionMessage(
+        `Weather synced ${formatDate(sync.start_date)} - ${formatDate(sync.end_date)}. ${sync.row_count || 0} day(s) checked, ${sync.inserted_count || 0} inserted, ${sync.updated_count || 0} updated.`,
+        false,
+        { card: 'action-card-rain' }
+      );
+      await loadDashboard();
+    } catch (error) {
+      if (handleAuthError(error, 'Session expired. Please log in to sync weather.')) {
+        clearDashboardView();
+        return;
+      }
+      setActionMessage(`Weather sync failed: ${error.message}`, true, { card: 'action-card-rain' });
+    } finally {
+      rainSyncWeatherButton.disabled = false;
+      rainSyncWeatherButton.textContent = originalLabel;
+    }
+  });
+}
+
 horseProfileDobInput.addEventListener('change', () => {
   horseProfileAgeInput.value = computeAgeYears(horseProfileDobInput.value);
 });
@@ -3048,7 +6737,9 @@ horseProfileForm.addEventListener('submit', async (event) => {
       color: horseProfileColorInput.value.trim() || undefined,
       activity: horseProfileActivityInput.value || undefined,
       sex: horseProfileSexInput.value || undefined,
-      trainingStatus: horseProfileTrainingStatusInput.value || undefined,
+      trainingStatus: isAdminModuleEnabled('training')
+        ? horseProfileTrainingStatusInput.value || undefined
+        : undefined,
     });
 
     setHorseProfileMessage(`Profile saved for ${data.horse.name}`);
@@ -3063,8 +6754,12 @@ horseProfileForm.addEventListener('submit', async (event) => {
 });
 
 initSummaryCardCustomization();
+syncAdminModuleSettings(getDefaultAdminModuleSettings());
 initPanelAccordions();
+initActionCardAccordions();
+initActionCardMessages();
 initRainRegistryAccordion();
+initHorseFeedHistoryAccordion();
 const todayDate = new Date().toISOString().slice(0, 10);
 rainDateInput.value = todayDate;
 feedEntryDateInput.value = todayDate;
@@ -3086,23 +6781,40 @@ if (grazingGroupMoveInDateInput) {
 if (grazingGroupMoveOutDateInput) {
   grazingGroupMoveOutDateInput.value = todayDate;
 }
+if (paddockWorkDateInput) {
+  paddockWorkDateInput.value = todayDate;
+}
 clearHorseGroupEditState();
+clearPaddockEditState();
+clearPaddockWorkEditState();
 
 async function initializeAdminApp() {
-  const session = await syncSessionState();
-  if (!session?.authenticated) {
-    clearDashboardView();
-    setStatus('Please log in to access the admin dashboard.', true);
-    return;
-  }
+  beginLoadingOverlay('Loading dashboard...', 'Checking your session and pulling the latest farm data.');
 
-  await loadDashboard();
+  try {
+    const session = await syncSessionState();
+    if (!session?.authenticated) {
+      clearDashboardView();
+      setStatus('Please log in to access the admin dashboard.', true);
+      return;
+    }
+
+    await loadDashboard();
+  } finally {
+    endLoadingOverlay();
+  }
 }
 
 initializeAdminApp();
 initBackToTopButton();
 setInterval(() => {
   if (sessionAuthenticated) {
-    loadDashboard();
+    if (Date.now() < dashboardAutoRefreshPauseUntil) {
+      return;
+    }
+    if (isFeedPlanningInteractionActive()) {
+      return;
+    }
+    loadDashboard({ silent: true });
   }
 }, 60000);
