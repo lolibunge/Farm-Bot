@@ -1,5 +1,6 @@
 const API_URL = '/api/admin/overview';
 const HORSE_HISTORY_API_URL = '/api/admin/horse-history';
+const CALENDAR_EVENTS_API_URL = '/api/admin/calendar-events';
 const STOCK_MUTATE_API_URL = '/api/admin/mutate-stock';
 const DATA_MUTATE_API_URL = '/api/admin/mutate-data';
 const LOGIN_API_URL = '/api/admin/login';
@@ -10,6 +11,7 @@ const ACTION_CARD_STATE_STORAGE_KEY = 'farm_bot_admin_action_card_state';
 const SUMMARY_PREFS_STORAGE_KEY = 'farm_bot_admin_summary_prefs';
 const RAIN_REGISTRY_COLLAPSED_STORAGE_KEY = 'farm_bot_admin_rain_registry_collapsed';
 const HORSE_FEED_HISTORY_COLLAPSED_STORAGE_KEY = 'farm_bot_horse_feed_history_collapsed';
+const MOBILE_NAV_VIEW_STORAGE_KEY = 'farm_bot_admin_mobile_nav_view';
 
 const SUMMARY_METRICS = [
   { key: 'horses_count', defaultLabel: 'Horses' },
@@ -32,7 +34,7 @@ const SUMMARY_METRICS = [
 ];
 
 const SUMMARY_CARD_TARGETS = {
-  horses_count: 'panel-horse-history',
+  horses_count: 'action-card-horse-profile',
   horse_groups_count: 'panel-horse-groups-status',
   paddocks_count: 'panel-paddock-status',
   paddocks_occupied_count: 'panel-paddock-status',
@@ -58,6 +60,140 @@ const RAIN_WINDOW_CONFIG = {
   '1y': { days: 365, label: 'Year to date' },
 };
 const RAIN_TARGET_MET_MM = 20;
+const MOBILE_NAV_VIEWS = {
+  home: {
+    title: 'Home',
+    description: 'Daily overview with alerts, pending work, and the general farm status.',
+    pageId: 'mobile-page-home',
+    primaryTargetId: 'mobile-page-home',
+    showIntro: false,
+    blockSelectors: [
+      '#dashboard-top',
+      '.status-row',
+      '.summary-toolbar',
+      '#summary-editor',
+      '#summary-cards',
+      '#panel-in-training',
+      '#panel-breaking-in',
+      '#panel-deworming-alerts',
+      '#panel-farrier-alerts',
+    ],
+    shortcuts: [
+      { label: 'Quick View', targetId: 'summary-cards' },
+      { label: 'Training', targetId: 'panel-in-training' },
+      { label: 'Deworm', targetId: 'panel-deworming-alerts' },
+      { label: 'Farrier', targetId: 'panel-farrier-alerts' },
+    ],
+  },
+  potreros: {
+    title: 'Potreros',
+    description: 'Pasture cards, occupancy, grazing movement, and paddock readiness in one view.',
+    pageId: 'mobile-page-potreros',
+    primaryTargetId: 'mobile-page-potreros',
+    blockSelectors: [
+      '#panel-pasture',
+      '#panel-horse-groups-status',
+      '#panel-paddock-status',
+      '#panel-paddock-work-history',
+      '#panel-paddock-occupancy',
+    ],
+    shortcuts: [
+      { label: 'Pasture', targetId: 'panel-pasture' },
+      { label: 'Groups', targetId: 'panel-horse-groups-status' },
+      { label: 'Status', targetId: 'panel-paddock-status' },
+      { label: 'Occupancy', targetId: 'panel-paddock-occupancy' },
+    ],
+  },
+  calendar: {
+    title: 'Calendar',
+    description: 'Date-based view for rain, feeding, field work, care, and movement across the month.',
+    pageId: 'mobile-page-calendar',
+    primaryTargetId: 'mobile-page-calendar',
+    blockSelectors: [
+      '#panel-admin-calendar',
+      '#panel-deworm-history-registry',
+      '#panel-farrier-history-registry',
+    ],
+    shortcuts: [
+      { label: 'Month', targetId: 'panel-admin-calendar' },
+      { label: 'Deworm', targetId: 'panel-deworm-history-registry' },
+      { label: 'Farrier', targetId: 'panel-farrier-history-registry' },
+    ],
+  },
+  logs: {
+    title: 'Logs',
+    description: 'Climate, recent activity, and inventory records grouped as one operational log page.',
+    pageId: 'mobile-page-logs',
+    primaryTargetId: 'mobile-page-logs',
+    blockSelectors: [
+      '#panel-low-stock',
+      '#panel-current-inventory',
+      '#panel-rain-registry',
+      '#panel-recent-activity',
+    ],
+    shortcuts: [
+      { label: 'Stock', targetId: 'panel-current-inventory' },
+      { label: 'Rain', targetId: 'panel-rain-registry' },
+      { label: 'Activity', targetId: 'panel-recent-activity' },
+    ],
+  },
+  more: {
+    title: 'More',
+    description: 'Horse records, groups, stock actions, and admin setup live here.',
+    pageId: 'mobile-page-more',
+    primaryTargetId: 'mobile-page-more',
+    blockSelectors: [
+      '#action-hub-panel',
+      '#panel-horse-history',
+    ],
+    shortcuts: [
+      { label: 'Setup', targetId: 'action-card-farm-setup' },
+      { label: 'Caballos', targetId: 'action-card-horse-profile' },
+      { label: 'Grupos', targetId: 'action-card-horse-groups' },
+      { label: 'Stock', targetId: 'action-card-feed' },
+      { label: 'Config', targetId: 'action-card-admin-modules' },
+    ],
+  },
+};
+const MOBILE_NAV_TARGET_VIEW_OVERRIDES = {
+  'mobile-page-home': 'home',
+  'mobile-page-potreros': 'potreros',
+  'mobile-page-calendar': 'calendar',
+  'mobile-page-logs': 'logs',
+  'mobile-page-more': 'more',
+  'dashboard-top': 'home',
+  'summary-editor': 'home',
+  'summary-cards': 'home',
+  'action-hub-panel': 'more',
+  'action-card-paddocks': 'more',
+  'action-card-farm-setup': 'more',
+  'action-card-admin-modules': 'more',
+  'action-card-horses-training': 'more',
+  'action-card-horse-groups': 'more',
+  'action-card-feed': 'more',
+  'action-card-horse-profile': 'more',
+  'paddock-save-form': 'more',
+  'paddock-work-form': 'more',
+  'horse-group-save-form': 'more',
+  'horse-group-move-in-section': 'more',
+  'panel-admin-calendar': 'calendar',
+  'panel-horse-history': 'more',
+  'panel-horse-groups-status': 'potreros',
+  'panel-pasture': 'potreros',
+  'panel-paddock-status': 'potreros',
+  'panel-paddock-work-history': 'potreros',
+  'panel-paddock-occupancy': 'potreros',
+  'panel-in-training': 'home',
+  'panel-breaking-in': 'home',
+  'panel-deworming-alerts': 'home',
+  'panel-farrier-alerts': 'home',
+  'panel-deworm-history-registry': 'calendar',
+  'panel-farrier-history-registry': 'calendar',
+  'panel-rain-registry': 'logs',
+  'panel-recent-activity': 'logs',
+  'panel-low-stock': 'logs',
+  'panel-current-inventory': 'logs',
+};
 
 const authForm = document.getElementById('auth-form');
 const loginUsernameLabel = document.getElementById('login-username-label');
@@ -73,9 +209,25 @@ const loadingOverlayDetail = document.getElementById('loading-overlay-detail');
 const statusMessage = document.getElementById('status-message');
 const lastUpdated = document.getElementById('last-updated');
 const backToTopButton = document.getElementById('back-to-top-btn');
+const dashboardMain = document.querySelector('.dashboard');
 const actionHubPanel = document.querySelector('.action-hub-panel');
+const desktopTopNav = document.getElementById('desktop-top-nav');
+const desktopTopNavDescription = document.getElementById('desktop-nav-description');
+const desktopTopNavItems = Array.from(document.querySelectorAll('.desktop-nav-item[data-view-key]'));
+const mobileBottomNav = document.getElementById('mobile-bottom-nav');
+const mobileBottomNavItems = Array.from(document.querySelectorAll('.mobile-nav-item[data-view-key]'));
 
 const summaryCards = document.getElementById('summary-cards');
+const adminCalendarMonthLabel = document.getElementById('admin-calendar-month-label');
+const adminCalendarPrevButton = document.getElementById('admin-calendar-prev-btn');
+const adminCalendarNextButton = document.getElementById('admin-calendar-next-btn');
+const adminCalendarTodayButton = document.getElementById('admin-calendar-today-btn');
+const adminCalendarGrid = document.getElementById('admin-calendar-grid');
+const adminCalendarSelectedLabel = document.getElementById('admin-calendar-selected-label');
+const adminCalendarSelectedMeta = document.getElementById('admin-calendar-selected-meta');
+const adminCalendarFilterBar = document.getElementById('admin-calendar-filter-bar');
+const adminCalendarDayEvents = document.getElementById('admin-calendar-day-events');
+const adminCalendarDayPanel = document.querySelector('.admin-calendar-day-panel');
 const summaryEditToggleButton = document.getElementById('summary-edit-toggle-btn');
 const summaryResetButton = document.getElementById('summary-reset-btn');
 const summaryEditor = document.getElementById('summary-editor');
@@ -103,9 +255,11 @@ const farrierHistoryResetButton = document.getElementById('farrier-history-reset
 const lowStockBody = document.getElementById('low-stock-body');
 const allStockBody = document.getElementById('all-stock-body');
 const rainBody = document.getElementById('rain-body');
+const frostBody = document.getElementById('frost-body');
 const rainYearlyBody = document.getElementById('rain-yearly-body');
 const rainChart = document.getElementById('rain-chart');
 const rainChartWrap = document.getElementById('rain-chart-wrap');
+const rainChartTooltip = document.getElementById('rain-chart-tooltip');
 const rainWindowControls = document.getElementById('rain-window-controls');
 const rainRangeLabel = document.getElementById('rain-range-label');
 const rainChartLegend = document.getElementById('rain-chart-legend');
@@ -162,6 +316,8 @@ const paddockZoneInput = document.getElementById('paddock-zone-input');
 const paddockSizeInput = document.getElementById('paddock-size-input');
 const paddockActiveSelect = document.getElementById('paddock-active-select');
 const paddockParentSelect = document.getElementById('paddock-parent-select');
+const paddockRestDaysInput = document.getElementById('paddock-rest-days-input');
+const paddockRestScopeSelect = document.getElementById('paddock-rest-scope-select');
 const paddockNotesInput = document.getElementById('paddock-notes-input');
 const paddockEditStatus = document.getElementById('paddock-edit-status');
 const paddockSaveButton = document.getElementById('paddock-save-btn');
@@ -259,6 +415,10 @@ const rainSaveForm = document.getElementById('rain-save-form');
 const rainDateInput = document.getElementById('rain-date-input');
 const rainMmInput = document.getElementById('rain-mm-input');
 const rainNotesInput = document.getElementById('rain-notes-input');
+const frostSaveForm = document.getElementById('frost-save-form');
+const frostDateInput = document.getElementById('frost-date-input');
+const frostIntensitySelect = document.getElementById('frost-intensity-select');
+const frostNotesInput = document.getElementById('frost-notes-input');
 const rainSyncWeatherButton = document.getElementById('rain-sync-weather-btn');
 const actionMessage = document.getElementById('action-message');
 const feedItemOptions = document.getElementById('feed-item-options');
@@ -282,11 +442,23 @@ let currentAdminModuleSettings = [];
 let latestDashboardPayload = null;
 let sessionAuthenticated = false;
 let selectedRainWindow = '7d';
+let selectedRainTooltipIndex = null;
 let selectedHorseFeedCalendarMonth = new Date().toISOString().slice(0, 7);
 let nextHorseFeedPlanDraftRowKey = 1;
 let dashboardAutoRefreshPauseUntil = 0;
 let lastActionCardId = null;
 let loadingOverlayCount = 0;
+let activeMobileNavView = 'home';
+let originalDashboardChildOrder = [];
+let mobilePageDeck = null;
+let mobilePageLayoutActive = false;
+let selectedAdminCalendarMonth = currentYearMonthString();
+let selectedAdminCalendarDate = todayIsoDateString();
+let selectedAdminCalendarFilter = 'all';
+let adminCalendarLoadToken = 0;
+let lastActionTrigger = null;
+const adminCalendarMonthCache = new Map();
+const mobilePageContainers = new Map();
 
 const RAIN_RING_VIEWBOX_SIZE = 360;
 const RAIN_BARS_VIEWBOX_WIDTH = 960;
@@ -296,6 +468,65 @@ const FEED_SLOT_META = [
   { key: 'afternoon', label: 'A', title: 'Afternoon' },
   { key: 'night', label: 'N', title: 'Night' },
 ];
+const ADMIN_CALENDAR_EVENT_META = {
+  rain: { label: 'Rain', shortLabel: 'RN', markerGroup: 'rain' },
+  frost: { label: 'Frost', shortLabel: 'FS', markerGroup: 'frost' },
+  feed: { label: 'Feed', shortLabel: 'FD', markerGroup: 'feed' },
+  stock: { label: 'Stock', shortLabel: 'ST', markerGroup: 'feed' },
+  paddock: { label: 'Field Work', shortLabel: 'FW', markerGroup: 'field' },
+  grazing: { label: 'Movement', shortLabel: 'MV', markerGroup: 'movement' },
+  group: { label: 'Group', shortLabel: 'GR', markerGroup: 'movement' },
+  deworming: { label: 'Deworming', shortLabel: 'DW', markerGroup: 'care' },
+  farrier: { label: 'Farrier', shortLabel: 'FR', markerGroup: 'care' },
+  health: { label: 'Health', shortLabel: 'HL', markerGroup: 'care' },
+  treatment: { label: 'Treatment', shortLabel: 'TR', markerGroup: 'care' },
+  dose: { label: 'Dose', shortLabel: 'DS', markerGroup: 'care' },
+};
+const ADMIN_CALENDAR_MARKER_META = {
+  rain: { label: 'Rain' },
+  frost: { label: 'Frost' },
+  feed: { label: 'Feed' },
+  field: { label: 'Field' },
+  care: { label: 'Care' },
+  movement: { label: 'Movement' },
+};
+const ACTION_PROGRESS_META = {
+  default: { pendingMessage: 'Working on it...', busyLabel: 'Working...' },
+  set: { pendingMessage: 'Applying stock change...', busyLabel: 'Applying...' },
+  add: { pendingMessage: 'Applying stock change...', busyLabel: 'Applying...' },
+  use: { pendingMessage: 'Applying stock change...', busyLabel: 'Applying...' },
+  horse_add: { pendingMessage: 'Adding horse...', busyLabel: 'Adding...' },
+  horse_rename: { pendingMessage: 'Renaming horse...', busyLabel: 'Saving...' },
+  horse_group_save: { pendingMessage: 'Saving group...', busyLabel: 'Saving...' },
+  horse_group_memberships_set: { pendingMessage: 'Saving group members...', busyLabel: 'Saving...' },
+  paddock_save: { pendingMessage: 'Saving paddock...', busyLabel: 'Saving...' },
+  paddock_work_save: { pendingMessage: 'Saving field work...', busyLabel: 'Saving...' },
+  paddock_work_update: { pendingMessage: 'Updating field work...', busyLabel: 'Saving...' },
+  grazing_move_in: { pendingMessage: 'Moving horse into paddock...', busyLabel: 'Moving...' },
+  grazing_move_out: { pendingMessage: 'Recording horse move out...', busyLabel: 'Saving...' },
+  grazing_group_move_in: { pendingMessage: 'Moving group to paddock...', busyLabel: 'Moving...' },
+  grazing_group_correct_current: {
+    pendingMessage: 'Correcting current paddock and move date...',
+    busyLabel: 'Correcting...',
+  },
+  grazing_group_move_out: { pendingMessage: 'Recording group move out...', busyLabel: 'Saving...' },
+  feed_item_save: { pendingMessage: 'Saving feed item...', busyLabel: 'Saving...' },
+  feed_event_add: { pendingMessage: 'Saving feed entry...', busyLabel: 'Saving...' },
+  feed_event_update: { pendingMessage: 'Updating feed entry...', busyLabel: 'Saving...' },
+  feed_event_delete: { pendingMessage: 'Deleting feed entry...', busyLabel: 'Deleting...' },
+  horse_feed_plan_save: { pendingMessage: 'Saving feed plan...', busyLabel: 'Saving...' },
+  horse_feed_slot_toggle: { pendingMessage: 'Updating feed calendar...', busyLabel: 'Updating...' },
+  deworm_event_add: { pendingMessage: 'Saving deworming event...', busyLabel: 'Saving...' },
+  farrier_event_add: { pendingMessage: 'Saving farrier event...', busyLabel: 'Saving...' },
+  health_event_add: { pendingMessage: 'Saving health event...', busyLabel: 'Saving...' },
+  horse_training_set: { pendingMessage: 'Saving training status...', busyLabel: 'Saving...' },
+  rain_save: { pendingMessage: 'Saving rain entry...', busyLabel: 'Saving...' },
+  frost_save: { pendingMessage: 'Saving frost day...', busyLabel: 'Saving...' },
+  rain_weather_sync: { pendingMessage: 'Syncing weather data...', busyLabel: 'Syncing...' },
+  horse_profile_save: { pendingMessage: 'Saving horse profile...', busyLabel: 'Saving...' },
+  farm_settings_save: { pendingMessage: 'Saving farm setup...', busyLabel: 'Saving...' },
+  admin_modules_save: { pendingMessage: 'Updating admin modules...', busyLabel: 'Saving...' },
+};
 const ACTIVITY_TIMELINE_META = {
   feed: { icon: '🍽', label: 'Feed', priority: 10 },
   deworming: { icon: '💊', label: 'Deworming', priority: 20 },
@@ -708,6 +939,32 @@ function buildPastureRyegrassCardData(rows) {
     };
   }
 
+  if (!trackedRows.length && restingRows.length) {
+    const focusRow = [...restingRows].sort(
+      (left, right) => Number(right.rest_days || 0) - Number(left.rest_days || 0)
+    )[0];
+
+    return {
+      state: 'resting',
+      status_title: 'Resting phase',
+      badge_class: 'neutral',
+      badge_text: formatDaysLabel(focusRow.rest_days || 0, 'resting'),
+      focus: focusRow.name,
+      copy:
+        focusRow.effective_rest_started_on &&
+        ['manual', 'baseline'].includes(String(focusRow.rest_source || ''))
+          ? `Estimated resting since ${formatDate(focusRow.effective_rest_started_on)}.`
+          : focusRow.last_exited_at
+            ? `Last grazed ${formatDate(focusRow.last_exited_at)}.`
+            : 'Recovery window in progress.',
+      meta: [
+        { label: 'Resting paddocks', value: String(restingCount) },
+        { label: 'Active paddocks', value: String(activeRows.length) },
+      ],
+      progress: null,
+    };
+  }
+
   if (!trackedRows.length) {
     return {
       state: 'empty',
@@ -767,7 +1024,7 @@ function buildPastureRyegrassCardData(rows) {
     return {
       state: 'growing',
       status_title: 'Growing',
-      badge_class: 'soon',
+      badge_class: 'growing',
       badge_text: formatDaysLabel(daysRemaining, 'remaining'),
       focus: focusRow.name,
       copy: `${formatPaddockWorkTypeLabel(
@@ -820,9 +1077,13 @@ function buildPastureRyegrassCardData(rows) {
       badge_class: 'neutral',
       badge_text: formatDaysLabel(focusRow.rest_days || 0, 'resting'),
       focus: focusRow.name,
-      copy: focusRow.last_exited_at
-        ? `Last grazed ${formatDate(focusRow.last_exited_at)}.`
-        : 'Recovery window in progress.',
+      copy:
+        ['manual', 'baseline'].includes(String(focusRow.rest_source || '')) &&
+        focusRow.effective_rest_started_on
+          ? `Estimated resting since ${formatDate(focusRow.effective_rest_started_on)}.`
+          : focusRow.last_exited_at
+            ? `Last grazed ${formatDate(focusRow.last_exited_at)}.`
+            : 'Recovery window in progress.',
       meta: [
         { label: 'Resting paddocks', value: String(restingCount) },
         { label: 'Ready paddocks', value: String(readyCount) },
@@ -963,6 +1224,24 @@ function formatTemperatureC(value) {
   return formatted === '-' ? '-' : `${formatted}C`;
 }
 
+function formatFrostIntensityLabel(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === 'light') {
+    return 'Light Frost';
+  }
+  if (normalized === 'moderate') {
+    return 'Moderate Frost';
+  }
+  if (normalized === 'heavy') {
+    return 'Heavy Frost';
+  }
+
+  return normalized ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)} Frost` : '-';
+}
+
 function hasTemperatureValue(value) {
   return value != null && Number.isFinite(Number(value));
 }
@@ -1046,6 +1325,478 @@ function getMonthDateInfo(yearMonth) {
 
 function buildIsoDateFromParts(year, monthIndex, day) {
   return new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10);
+}
+
+function formatMonthYearLabel(yearMonth) {
+  const normalizedYearMonth = normalizeYearMonth(yearMonth) || currentYearMonthString();
+  const [year, month] = normalizedYearMonth.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+
+  return date.toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+function addMonthsToYearMonth(yearMonth, monthDelta) {
+  const monthInfo = getMonthDateInfo(yearMonth);
+  const date = new Date(Date.UTC(monthInfo.year, monthInfo.month_index + Number(monthDelta || 0), 1));
+  return date.toISOString().slice(0, 7);
+}
+
+function formatAdminCalendarMetric(value, unit) {
+  if (value == null || !Number.isFinite(Number(value))) {
+    return '';
+  }
+
+  const numericValue = Number(value);
+  const formattedValue =
+    unit === 'mm' ? formatRainMm(numericValue) : numericValue.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+  return unit ? `${formattedValue} ${unit}` : formattedValue;
+}
+
+function formatAdminCalendarEventStamp(eventAt) {
+  if (!eventAt) {
+    return '';
+  }
+
+  const date = new Date(eventAt);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  if (date.getUTCHours() === 0 && date.getUTCMinutes() === 0 && date.getUTCSeconds() === 0) {
+    return 'Day log';
+  }
+
+  return date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatAdminCalendarSelectedDateLabel(isoDate) {
+  if (!isoDate) {
+    return '-';
+  }
+
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    return isoDate;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+function getAdminCalendarEventMeta(category) {
+  return ADMIN_CALENDAR_EVENT_META[String(category || '').trim().toLowerCase()] || {
+    label: 'Activity',
+    shortLabel: 'AC',
+    markerGroup: 'movement',
+  };
+}
+
+function getAdminCalendarMarkerGroup(category) {
+  return getAdminCalendarEventMeta(category).markerGroup || 'movement';
+}
+
+function buildAdminCalendarEventsByDate(events) {
+  const groupedEvents = new Map();
+
+  (Array.isArray(events) ? events : []).forEach((event) => {
+    const eventDate = normalizeDateForDateInput(event?.event_date);
+    if (!eventDate) {
+      return;
+    }
+
+    if (!groupedEvents.has(eventDate)) {
+      groupedEvents.set(eventDate, []);
+    }
+
+    groupedEvents.get(eventDate).push(event);
+  });
+
+  groupedEvents.forEach((rows) => {
+    rows.sort((left, right) => String(left.event_at || '').localeCompare(String(right.event_at || '')));
+  });
+
+  return groupedEvents;
+}
+
+function resolveAdminCalendarSelectedDate(payload, preferredDate = '') {
+  const normalizedMonth = normalizeYearMonth(payload?.month) || currentYearMonthString();
+  const normalizedPreferredDate = normalizeDateForDateInput(preferredDate);
+  if (normalizedPreferredDate && normalizedPreferredDate.startsWith(normalizedMonth)) {
+    return normalizedPreferredDate;
+  }
+
+  const todayIso = todayIsoDateString();
+  if (todayIso.startsWith(normalizedMonth)) {
+    return todayIso;
+  }
+
+  const groupedEvents = buildAdminCalendarEventsByDate(payload?.events || []);
+  const firstEventDate = Array.from(groupedEvents.keys()).sort()[0];
+  if (firstEventDate) {
+    return firstEventDate;
+  }
+
+  return `${normalizedMonth}-01`;
+}
+
+function renderAdminCalendarStatus(message, detail = '') {
+  if (adminCalendarMonthLabel) {
+    adminCalendarMonthLabel.textContent = formatMonthYearLabel(selectedAdminCalendarMonth);
+  }
+
+  if (adminCalendarGrid) {
+    adminCalendarGrid.innerHTML = `
+      <div class="admin-calendar-status-card">
+        <p>${escapeHtml(message)}</p>
+        ${detail ? `<span>${escapeHtml(detail)}</span>` : ''}
+      </div>
+    `;
+  }
+
+  if (adminCalendarSelectedLabel) {
+    adminCalendarSelectedLabel.textContent = message;
+  }
+
+  if (adminCalendarSelectedMeta) {
+    adminCalendarSelectedMeta.textContent = detail || '';
+  }
+
+  if (adminCalendarFilterBar) {
+    adminCalendarFilterBar.innerHTML = '';
+  }
+
+  if (adminCalendarDayEvents) {
+    adminCalendarDayEvents.innerHTML = '';
+  }
+}
+
+function renderAdminCalendarGrid(payload) {
+  if (!adminCalendarGrid) {
+    return;
+  }
+
+  const monthInfo = getMonthDateInfo(payload?.month || selectedAdminCalendarMonth);
+  const groupedEvents = buildAdminCalendarEventsByDate(payload?.events || []);
+  const visibleMonth = normalizeYearMonth(payload?.month) || selectedAdminCalendarMonth;
+  const todayIso = todayIsoDateString();
+  const gridStartDate = addDaysToIsoDateString(
+    buildIsoDateFromParts(monthInfo.year, monthInfo.month_index, 1),
+    -monthInfo.first_weekday
+  );
+  const weekdayHeaders = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+    .map((label) => `<div class="admin-calendar-weekday">${escapeHtml(label)}</div>`)
+    .join('');
+  const dayCells = [];
+
+  for (let offset = 0; offset < 42; offset += 1) {
+    const isoDate = addDaysToIsoDateString(gridStartDate, offset);
+    const targetMonth = isoDate.slice(0, 7);
+    const isOutsideMonth = targetMonth !== visibleMonth;
+    const dayEvents = groupedEvents.get(isoDate) || [];
+    const markerGroups = [...new Set(dayEvents.map((event) => getAdminCalendarMarkerGroup(event.category)))];
+    const markerMarkup = markerGroups
+      .slice(0, 5)
+      .map(
+        (markerGroup) =>
+          `<span class="admin-calendar-day-marker is-${escapeHtml(markerGroup)}" aria-hidden="true"></span>`
+      )
+      .join('');
+    const overflowMarker =
+      markerGroups.length > 5
+        ? `<span class="admin-calendar-day-marker is-overflow">+${escapeHtml(markerGroups.length - 5)}</span>`
+        : '';
+    const isSelected = isoDate === selectedAdminCalendarDate;
+    const accessibleLabel = `${formatAdminCalendarSelectedDateLabel(isoDate)}${
+      dayEvents.length ? `, ${dayEvents.length} activities` : ', no activities'
+    }`;
+
+    dayCells.push(`
+      <button
+        type="button"
+        class="admin-calendar-day${isOutsideMonth ? ' is-outside-month' : ''}${isoDate === todayIso ? ' is-today' : ''}${
+          isSelected ? ' is-selected' : ''
+        }${dayEvents.length ? ' has-events' : ''}"
+        data-admin-calendar-date="${escapeHtml(isoDate)}"
+        data-admin-calendar-month="${escapeHtml(targetMonth)}"
+        aria-label="${escapeHtml(accessibleLabel)}"
+      >
+        <span class="admin-calendar-day-number">${escapeHtml(String(Number(isoDate.slice(8, 10))))}</span>
+        <span class="admin-calendar-day-markers">${markerMarkup}${overflowMarker}</span>
+      </button>
+    `);
+  }
+
+  adminCalendarGrid.innerHTML = `
+    <div class="admin-calendar-weekdays">${weekdayHeaders}</div>
+    <div class="admin-calendar-days">${dayCells.join('')}</div>
+  `;
+}
+
+function renderAdminCalendarFilterBar(events) {
+  if (!adminCalendarFilterBar) {
+    return;
+  }
+
+  const groupedCounts = new Map();
+  (Array.isArray(events) ? events : []).forEach((event) => {
+    const markerGroup = getAdminCalendarMarkerGroup(event.category);
+    groupedCounts.set(markerGroup, (groupedCounts.get(markerGroup) || 0) + 1);
+  });
+
+  if (!groupedCounts.size) {
+    adminCalendarFilterBar.innerHTML = '';
+    return;
+  }
+
+  const filters = [
+    { key: 'all', label: 'All', count: events.length },
+    ...Array.from(groupedCounts.entries()).map(([key, count]) => ({
+      key,
+      label: ADMIN_CALENDAR_MARKER_META[key]?.label || key,
+      count,
+    })),
+  ];
+
+  if (!filters.some((filter) => filter.key === selectedAdminCalendarFilter)) {
+    selectedAdminCalendarFilter = 'all';
+  }
+
+  adminCalendarFilterBar.innerHTML = filters
+    .map(
+      (filter) => `
+        <button
+          type="button"
+          class="admin-calendar-filter-btn${filter.key === selectedAdminCalendarFilter ? ' is-active' : ''}"
+          data-admin-calendar-filter="${escapeHtml(filter.key)}"
+        >
+          ${escapeHtml(filter.label)} <span>${escapeHtml(String(filter.count))}</span>
+        </button>
+      `
+    )
+    .join('');
+}
+
+function getFilteredAdminCalendarDayEvents(events) {
+  if (selectedAdminCalendarFilter === 'all') {
+    return events;
+  }
+
+  return (Array.isArray(events) ? events : []).filter(
+    (event) => getAdminCalendarMarkerGroup(event.category) === selectedAdminCalendarFilter
+  );
+}
+
+function renderAdminCalendarEventCard(event) {
+  const eventMeta = getAdminCalendarEventMeta(event.category);
+  const markerGroup = getAdminCalendarMarkerGroup(event.category);
+  const metric = formatAdminCalendarMetric(event.metric_value, event.metric_unit);
+  const eventStamp = formatAdminCalendarEventStamp(event.event_at);
+
+  return `
+    <article class="admin-calendar-event-card is-${escapeHtml(markerGroup)}">
+      <div class="admin-calendar-event-badge is-${escapeHtml(markerGroup)}">${escapeHtml(eventMeta.shortLabel)}</div>
+      <div class="admin-calendar-event-copy">
+        <div class="admin-calendar-event-head">
+          <p class="admin-calendar-event-type">${escapeHtml(eventMeta.label)}</p>
+          ${metric ? `<p class="admin-calendar-event-metric">${escapeHtml(metric)}</p>` : ''}
+        </div>
+        <h4>${escapeHtml(event.title || eventMeta.label)}</h4>
+        ${event.subtitle ? `<p class="admin-calendar-event-subtitle">${escapeHtml(event.subtitle)}</p>` : ''}
+        ${event.detail ? `<p class="admin-calendar-event-detail">${escapeHtml(event.detail)}</p>` : ''}
+        <div class="admin-calendar-event-tags">
+          ${event.meta ? `<span class="admin-calendar-event-tag">${escapeHtml(event.meta)}</span>` : ''}
+          ${eventStamp ? `<span class="admin-calendar-event-tag">${escapeHtml(eventStamp)}</span>` : ''}
+        </div>
+        ${event.notes ? `<p class="admin-calendar-event-note">${escapeHtml(event.notes)}</p>` : ''}
+      </div>
+    </article>
+  `;
+}
+
+function renderAdminCalendarDayDetails(payload) {
+  const groupedEvents = buildAdminCalendarEventsByDate(payload?.events || []);
+  const selectedEvents = groupedEvents.get(selectedAdminCalendarDate) || [];
+  const filteredEvents = getFilteredAdminCalendarDayEvents(selectedEvents);
+
+  if (adminCalendarSelectedLabel) {
+    adminCalendarSelectedLabel.textContent = formatAdminCalendarSelectedDateLabel(selectedAdminCalendarDate);
+  }
+
+  if (adminCalendarSelectedMeta) {
+    adminCalendarSelectedMeta.textContent = selectedEvents.length
+      ? `${selectedEvents.length} activit${selectedEvents.length === 1 ? 'y' : 'ies'} recorded`
+      : 'No activities recorded';
+  }
+
+  renderAdminCalendarFilterBar(selectedEvents);
+
+  if (!adminCalendarDayEvents) {
+    return;
+  }
+
+  if (!selectedEvents.length) {
+    adminCalendarDayEvents.innerHTML = `
+      <div class="admin-calendar-empty-state">
+        <p>No activities were recorded for this day.</p>
+        <span>When you log rain, feed, field work, treatments, or movements, they will show here.</span>
+      </div>
+    `;
+    return;
+  }
+
+  if (!filteredEvents.length) {
+    adminCalendarDayEvents.innerHTML = `
+      <div class="admin-calendar-empty-state">
+        <p>No activities matched this filter.</p>
+        <span>Try another activity group for this day.</span>
+      </div>
+    `;
+    return;
+  }
+
+  adminCalendarDayEvents.innerHTML = filteredEvents.map((event) => renderAdminCalendarEventCard(event)).join('');
+}
+
+function renderAdminCalendarPanel(payload) {
+  if (!payload) {
+    return;
+  }
+
+  selectedAdminCalendarMonth = normalizeYearMonth(payload.month) || currentYearMonthString();
+
+  if (adminCalendarMonthLabel) {
+    adminCalendarMonthLabel.textContent = formatMonthYearLabel(selectedAdminCalendarMonth);
+  }
+
+  renderAdminCalendarGrid(payload);
+  renderAdminCalendarDayDetails(payload);
+}
+
+function getAdminCalendarMonthPayload(yearMonth = selectedAdminCalendarMonth) {
+  return adminCalendarMonthCache.get(normalizeYearMonth(yearMonth) || currentYearMonthString()) || null;
+}
+
+function setAdminCalendarSelectedDate(isoDate, options = {}) {
+  const normalizedDate = normalizeDateForDateInput(isoDate);
+  if (!normalizedDate) {
+    return;
+  }
+
+  selectedAdminCalendarDate = normalizedDate;
+  if (options.preserveFilter !== true) {
+    selectedAdminCalendarFilter = 'all';
+  }
+
+  const payload = getAdminCalendarMonthPayload(normalizedDate.slice(0, 7));
+  if (payload) {
+    renderAdminCalendarPanel(payload);
+  }
+}
+
+function setAdminCalendarFilter(filterKey) {
+  selectedAdminCalendarFilter = String(filterKey || 'all');
+  const payload = getAdminCalendarMonthPayload(selectedAdminCalendarMonth);
+  if (payload) {
+    renderAdminCalendarDayDetails(payload);
+  }
+}
+
+function revealAdminCalendarDayDetails() {
+  if (!adminCalendarDayPanel) {
+    return;
+  }
+
+  adminCalendarDayPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  adminCalendarDayPanel.classList.remove('panel-flash');
+  void adminCalendarDayPanel.offsetWidth;
+  adminCalendarDayPanel.classList.add('panel-flash');
+
+  window.setTimeout(() => {
+    adminCalendarDayPanel.classList.remove('panel-flash');
+  }, 1400);
+}
+
+function getAdminCalendarPreferredDateForMonth(targetMonth) {
+  const monthInfo = getMonthDateInfo(targetMonth);
+  const currentDay = Number((selectedAdminCalendarDate || '').slice(8, 10) || 1);
+  return buildIsoDateFromParts(monthInfo.year, monthInfo.month_index, Math.min(currentDay, monthInfo.total_days));
+}
+
+async function loadAdminCalendarMonth(yearMonth, options = {}) {
+  const normalizedMonth = normalizeYearMonth(yearMonth) || currentYearMonthString();
+  const preferredDate = options.selectedDate || getAdminCalendarPreferredDateForMonth(normalizedMonth);
+  const force = Boolean(options.force);
+
+  if (!force) {
+    const cachedPayload = adminCalendarMonthCache.get(normalizedMonth);
+    if (cachedPayload) {
+      selectedAdminCalendarMonth = normalizedMonth;
+      selectedAdminCalendarDate = resolveAdminCalendarSelectedDate(cachedPayload, preferredDate);
+      if (options.preserveFilter !== true) {
+        selectedAdminCalendarFilter = 'all';
+      }
+      renderAdminCalendarPanel(cachedPayload);
+      return { ok: true, payload: cachedPayload };
+    }
+  }
+
+  selectedAdminCalendarMonth = normalizedMonth;
+  if (options.silent !== true) {
+    renderAdminCalendarStatus('Loading month...', 'Pulling activities for this month.');
+  }
+
+  const requestToken = ++adminCalendarLoadToken;
+
+  try {
+    const response = await fetch(`${CALENDAR_EVENTS_API_URL}?month=${encodeURIComponent(normalizedMonth)}`, {
+      headers: getAuthHeaders(),
+      cache: 'no-store',
+    });
+    const payload = await response.json();
+
+    if (!response.ok || !payload.ok) {
+      const errorMessage = payload.error || `Request failed (${response.status})`;
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      throw error;
+    }
+
+    adminCalendarMonthCache.set(normalizedMonth, payload);
+
+    if (requestToken === adminCalendarLoadToken) {
+      selectedAdminCalendarMonth = normalizedMonth;
+      selectedAdminCalendarDate = resolveAdminCalendarSelectedDate(payload, preferredDate);
+      if (options.preserveFilter !== true) {
+        selectedAdminCalendarFilter = 'all';
+      }
+      renderAdminCalendarPanel(payload);
+    }
+
+    return { ok: true, payload };
+  } catch (error) {
+    if (handleAuthError(error, 'Session expired. Please log in to view calendar.')) {
+      clearDashboardView();
+      return { ok: false, error };
+    }
+
+    if (requestToken === adminCalendarLoadToken) {
+      renderAdminCalendarStatus('Calendar unavailable', error.message);
+    }
+    return { ok: false, error };
+  }
 }
 
 function buildHorseFeedPlanDraftRow(partial = {}) {
@@ -1159,15 +1910,210 @@ function setStatus(message, isError = false) {
   statusMessage.style.color = isError ? 'var(--danger)' : 'var(--ink-soft)';
 }
 
-function applyMessageState(target, message, isError = false) {
+function applyMessageState(target, message, stateOrError = false) {
   if (!target) {
     return;
   }
 
+  const hasMessage = Boolean(String(message || '').trim());
+  const state = !hasMessage
+    ? 'empty'
+    : stateOrError === 'pending'
+      ? 'pending'
+      : stateOrError === true || stateOrError === 'error'
+        ? 'error'
+        : 'success';
+
   target.textContent = message;
-  target.classList.toggle('is-error', Boolean(isError));
-  target.classList.toggle('is-success', !isError && Boolean(String(message || '').trim()));
-  target.classList.toggle('is-empty', !String(message || '').trim());
+  target.classList.toggle('is-error', state === 'error');
+  target.classList.toggle('is-success', state === 'success');
+  target.classList.toggle('is-pending', state === 'pending');
+  target.classList.toggle('is-empty', state === 'empty');
+}
+
+function rememberActionTrigger(trigger) {
+  if (trigger instanceof Element) {
+    lastActionTrigger = trigger;
+  }
+}
+
+function resolveActionRequestTrigger(explicitTrigger = null) {
+  if (explicitTrigger instanceof Element) {
+    return explicitTrigger;
+  }
+
+  if (lastActionTrigger instanceof Element && document.contains(lastActionTrigger)) {
+    return lastActionTrigger;
+  }
+
+  return document.activeElement instanceof Element ? document.activeElement : null;
+}
+
+function resolveActionProgressMeta(url, payload, options = {}) {
+  const inferredAction =
+    options.actionKey ||
+    (payload && typeof payload === 'object' && payload.action ? String(payload.action).trim() : '') ||
+    (url === LOGIN_API_URL ? 'login' : '') ||
+    (url === LOGOUT_API_URL ? 'logout' : '') ||
+    'default';
+  const meta = ACTION_PROGRESS_META[inferredAction] || ACTION_PROGRESS_META.default;
+
+  return {
+    actionKey: inferredAction,
+    pendingMessage: options.pendingMessage || meta.pendingMessage || ACTION_PROGRESS_META.default.pendingMessage,
+    busyLabel: options.busyLabel || meta.busyLabel || ACTION_PROGRESS_META.default.busyLabel,
+  };
+}
+
+function resolveActionProgressTarget(trigger, options = {}) {
+  if (options.targetKind === 'horseProfile') {
+    return { kind: 'horseProfile' };
+  }
+
+  if (options.targetKind === 'horseFeedPlan') {
+    return { kind: 'horseFeedPlan' };
+  }
+
+  if (options.targetKind === 'global') {
+    return { kind: 'global' };
+  }
+
+  const explicitCard = resolveActionCard(options.card);
+  if (explicitCard) {
+    return { kind: 'action-card', card: explicitCard };
+  }
+
+  if (trigger instanceof Element) {
+    if (horseFeedPlanForm?.contains(trigger) || horseFeedCalendarGrid?.contains(trigger)) {
+      return { kind: 'horseFeedPlan' };
+    }
+
+    if (horseProfileForm?.contains(trigger) || horseFeedHistoryGroups?.contains(trigger)) {
+      return { kind: 'horseProfile' };
+    }
+
+    const card = resolveActionCard(trigger) || resolveActionCard(lastActionCardId);
+    if (card) {
+      return { kind: 'action-card', card };
+    }
+  }
+
+  const fallbackCard = resolveActionCard(lastActionCardId);
+  if (fallbackCard) {
+    return { kind: 'action-card', card: fallbackCard };
+  }
+
+  return { kind: 'global' };
+}
+
+function applyPendingMessageToTarget(targetConfig, message) {
+  if (!String(message || '').trim()) {
+    return;
+  }
+
+  if (targetConfig?.kind === 'horseProfile') {
+    applyMessageState(horseProfileMessage, message, 'pending');
+    return;
+  }
+
+  if (targetConfig?.kind === 'horseFeedPlan') {
+    applyMessageState(horseFeedPlanMessage, message, 'pending');
+    return;
+  }
+
+  if (targetConfig?.kind === 'action-card' && targetConfig.card) {
+    applyMessageState(getActionCardMessageElement(targetConfig.card), message, 'pending');
+    applyMessageState(actionMessage, '', false);
+    return;
+  }
+
+  applyMessageState(actionMessage, message, 'pending');
+}
+
+function applyBusyStateToTrigger(trigger, busyLabel) {
+  const form = trigger instanceof Element ? trigger.closest('form') : null;
+  const primaryControl =
+    trigger instanceof HTMLButtonElement ||
+    (trigger instanceof HTMLInputElement && ['submit', 'button'].includes(trigger.type))
+      ? trigger
+      : form?.querySelector('button[type="submit"], button:not([type]), input[type="submit"]') || null;
+  const controls = new Set();
+
+  if (form) {
+    form.querySelectorAll('button, input[type="submit"], input[type="button"]').forEach((element) => {
+      controls.add(element);
+    });
+  }
+
+  if (primaryControl instanceof Element) {
+    controls.add(primaryControl);
+  }
+
+  if (trigger instanceof HTMLInputElement && trigger.type === 'checkbox') {
+    controls.add(trigger);
+  }
+
+  const snapshots = [];
+  controls.forEach((control) => {
+    snapshots.push({
+      control,
+      disabled: Boolean(control.disabled),
+      text: control instanceof HTMLInputElement ? control.value : control.textContent,
+    });
+
+    control.disabled = true;
+    control.setAttribute('aria-busy', 'true');
+    control.classList.add('is-busy');
+
+    if (control === primaryControl && busyLabel) {
+      if (control instanceof HTMLInputElement) {
+        control.value = busyLabel;
+      } else {
+        control.textContent = busyLabel;
+      }
+    }
+  });
+
+  if (form) {
+    form.classList.add('is-busy');
+    form.setAttribute('aria-busy', 'true');
+  }
+
+  return () => {
+    snapshots.forEach(({ control, disabled, text }) => {
+      control.disabled = disabled;
+      control.classList.remove('is-busy');
+      control.removeAttribute('aria-busy');
+
+      if (control === primaryControl && text != null) {
+        if (control instanceof HTMLInputElement) {
+          control.value = text;
+        } else {
+          control.textContent = text;
+        }
+      }
+    });
+
+    if (form) {
+      form.classList.remove('is-busy');
+      form.removeAttribute('aria-busy');
+    }
+  };
+}
+
+function beginActionRequestFeedback(url, payload, options = {}) {
+  if (options.skipFeedback) {
+    return () => {};
+  }
+
+  const trigger = resolveActionRequestTrigger(options.trigger);
+  const meta = resolveActionProgressMeta(url, payload, options);
+  const target = resolveActionProgressTarget(trigger, options);
+
+  applyPendingMessageToTarget(target, meta.pendingMessage);
+  pauseDashboardAutoRefresh();
+
+  return applyBusyStateToTrigger(trigger, meta.busyLabel);
 }
 
 function resolveActionCard(targetOrId = null) {
@@ -2064,6 +3010,12 @@ function clearPaddockEditState(options = {}) {
     paddockZoneInput.value = '';
     paddockSizeInput.value = '';
     paddockActiveSelect.value = 'true';
+    if (paddockRestDaysInput) {
+      paddockRestDaysInput.value = '';
+    }
+    if (paddockRestScopeSelect) {
+      paddockRestScopeSelect.value = 'single';
+    }
     paddockNotesInput.value = '';
     if (paddockParentSelect) {
       paddockParentSelect.value = '';
@@ -2088,6 +3040,12 @@ function setPaddockEditState(paddock, options = {}) {
   paddockZoneInput.value = paddock.zone || '';
   paddockSizeInput.value = paddock.size_ha == null ? '' : String(paddock.size_ha);
   paddockActiveSelect.value = paddock.active ? 'true' : 'false';
+  if (paddockRestDaysInput) {
+    paddockRestDaysInput.value = paddock.manual_rest_days == null ? '' : String(paddock.manual_rest_days);
+  }
+  if (paddockRestScopeSelect) {
+    paddockRestScopeSelect.value = paddock.manual_rest_applies_to_descendants ? 'whole_block' : 'single';
+  }
   paddockNotesInput.value = paddock.notes || '';
   syncPaddockParentSelectOptions();
   if (paddockParentSelect) {
@@ -2269,6 +3227,28 @@ function syncHorseGroupMoveSelectionContext() {
   return selectedGroup;
 }
 
+function getHorseGroupCurrentPaddockIds(group) {
+  return Array.isArray(group?.current_paddock_ids)
+    ? group.current_paddock_ids
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    : [];
+}
+
+function resolveHorseGroupCurrentPaddockId(group) {
+  const currentPaddockIds = getHorseGroupCurrentPaddockIds(group);
+  if (currentPaddockIds.length === 1) {
+    return String(currentPaddockIds[0]);
+  }
+
+  const singleCurrentPaddockName = String(group?.current_paddock_names || '').trim();
+  if (!singleCurrentPaddockName || singleCurrentPaddockName.includes(',')) {
+    return '';
+  }
+
+  return String(findPaddockByName(singleCurrentPaddockName)?.id || '');
+}
+
 function focusHorseGroupMoveSection(group) {
   const horseGroupsCard = document.getElementById('action-card-horse-groups');
   expandPanelForElement(horseGroupMoveInSection || horseGroupsCard);
@@ -2299,6 +3279,64 @@ function focusHorseGroupMoveSection(group) {
   }
 
   return hasSelectedGroupOption;
+}
+
+function openHorseGroupCurrentMoveCorrection(group) {
+  if (!group) {
+    return;
+  }
+
+  const preferredPaddockId = resolveHorseGroupCurrentPaddockId(group);
+  const currentPaddockIds = getHorseGroupCurrentPaddockIds(group);
+  const targetDate = normalizeDateForDateInput(group.current_grazing_entered_at);
+
+  withTargetViewVisible('horse-group-move-in-section', () => {
+    const moveReady = focusHorseGroupMoveSection(group);
+
+    if (!moveReady) {
+      setActionMessage(`Activate ${group.name} before correcting its current paddock or move date.`, true, {
+        card: 'action-card-horse-groups',
+      });
+      return;
+    }
+
+    if (grazingGroupMoveInDateInput) {
+      grazingGroupMoveInDateInput.value = targetDate || '';
+    }
+
+    let prefilledPaddock = false;
+    if (preferredPaddockId && grazingGroupMoveInPaddockSelect) {
+      const hasOption = Array.from(grazingGroupMoveInPaddockSelect.options).some(
+        (option) => String(option.value) === preferredPaddockId
+      );
+      if (hasOption) {
+        grazingGroupMoveInPaddockSelect.value = preferredPaddockId;
+        prefilledPaddock = true;
+      }
+    }
+
+    if (grazingGroupMoveInNotesInput) {
+      grazingGroupMoveInNotesInput.value = '';
+    }
+
+    if (grazingGroupMoveInDateInput) {
+      grazingGroupMoveInDateInput.focus();
+    }
+
+    setActionMessage(
+      prefilledPaddock
+        ? targetDate
+          ? `Fixing ${group.name}. Review the move date, and use "Correct Current Paddock + Date" to save it.`
+          : `Fixing ${group.name}. Confirm the current move date, then use "Correct Current Paddock + Date" to save it.`
+        : currentPaddockIds.length > 1
+          ? `Fixing ${group.name}. Choose which paddock should stay current, then save with "Correct Current Paddock + Date".`
+          : `Fixing ${group.name}. Confirm the paddock and move date, then save with "Correct Current Paddock + Date".`,
+      false,
+      {
+        card: 'action-card-horse-groups',
+      }
+    );
+  });
 }
 
 function setActiveHorseSelection(horseId) {
@@ -2394,13 +3432,29 @@ function renderSummary(data) {
     .join('');
 }
 
-function focusSummaryTarget(targetId) {
+function focusSectionTarget(targetId, options = {}) {
   const target = document.getElementById(targetId);
   if (!target) {
     return;
   }
 
-  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (target.classList.contains('panel') && target.classList.contains('panel-collapsed')) {
+    setPanelCollapsed(target, false);
+    const stateMap = readPanelStateMap();
+    const header = target.querySelector(':scope > h2');
+    const panelId = target.dataset.panelId || panelIdFromTitle(header?.textContent, 0);
+    target.dataset.panelId = panelId;
+    stateMap[panelId] = false;
+    savePanelStateMap(stateMap);
+  }
+
+  const offset = Number(options?.offset || 0);
+  if (offset > 0) {
+    const targetTop = target.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+  } else {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   target.classList.remove('panel-flash');
   void target.offsetWidth;
   target.classList.add('panel-flash');
@@ -2429,6 +3483,574 @@ function initBackToTopButton() {
 
   window.addEventListener('scroll', syncBackToTopVisibility, { passive: true });
   syncBackToTopVisibility();
+}
+
+function isMobileBottomNavActiveViewport() {
+  return typeof window !== 'undefined' ? window.innerWidth <= 780 : false;
+}
+
+function isDesktopTopNavActiveViewport() {
+  return typeof window !== 'undefined' ? window.innerWidth > 780 : false;
+}
+
+function getMobileNavViewConfig(viewKey) {
+  return MOBILE_NAV_VIEWS[viewKey] || MOBILE_NAV_VIEWS.home;
+}
+
+function getDesktopTopNavScrollOffset() {
+  if (!desktopTopNav || !isDesktopTopNavActiveViewport()) {
+    return 0;
+  }
+
+  return desktopTopNav.offsetHeight + 22;
+}
+
+function buildMobilePageIntro(view) {
+  if (view.showIntro === false) {
+    return null;
+  }
+
+  const intro = document.createElement('section');
+  intro.className = 'mobile-page-intro';
+
+  const eyebrow = document.createElement('p');
+  eyebrow.className = 'mobile-page-eyebrow';
+  eyebrow.textContent = 'Mobile View';
+
+  const title = document.createElement('h2');
+  title.textContent = view.title;
+
+  const description = document.createElement('p');
+  description.className = 'mobile-page-description';
+  description.textContent = view.description;
+
+  intro.append(eyebrow, title, description);
+
+  if (Array.isArray(view.shortcuts) && view.shortcuts.length) {
+    const shortcuts = document.createElement('div');
+    shortcuts.className = 'mobile-page-shortcuts';
+
+    view.shortcuts.forEach((shortcut) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'mobile-page-shortcut';
+      button.setAttribute('data-target-id', shortcut.targetId);
+      button.textContent = shortcut.label;
+      shortcuts.appendChild(button);
+    });
+
+    intro.appendChild(shortcuts);
+  }
+
+  return intro;
+}
+
+function ensureMobilePageDeck() {
+  if (!dashboardMain) {
+    return null;
+  }
+
+  if (!originalDashboardChildOrder.length) {
+    originalDashboardChildOrder = Array.from(dashboardMain.children);
+  }
+
+  if (mobilePageDeck) {
+    return mobilePageDeck;
+  }
+
+  mobilePageDeck = document.createElement('div');
+  mobilePageDeck.id = 'mobile-page-deck';
+  mobilePageDeck.className = 'mobile-page-deck';
+
+  Object.entries(MOBILE_NAV_VIEWS).forEach(([viewKey, view]) => {
+    const page = document.createElement('section');
+    page.id = view.pageId;
+    page.className = 'mobile-admin-page';
+    page.setAttribute('data-mobile-page', viewKey);
+
+    const intro = buildMobilePageIntro(view);
+    if (intro) {
+      page.appendChild(intro);
+    }
+
+    const content = document.createElement('div');
+    content.className = 'mobile-admin-page-content';
+    page.appendChild(content);
+
+    mobilePageContainers.set(viewKey, { page, content });
+    mobilePageDeck.appendChild(page);
+  });
+
+  mobilePageDeck.addEventListener('click', (event) => {
+    const button = event.target.closest('.mobile-page-shortcut[data-target-id]');
+    if (!button) {
+      return;
+    }
+
+    const targetId = button.getAttribute('data-target-id');
+    if (!targetId) {
+      return;
+    }
+
+    const targetViewKey = findMobileNavViewKeyForTarget(targetId);
+    if (targetViewKey !== activeMobileNavView) {
+      applyMobileNavView(targetViewKey, { targetId });
+      return;
+    }
+
+    focusSectionTarget(targetId);
+  });
+
+  dashboardMain.appendChild(mobilePageDeck);
+  return mobilePageDeck;
+}
+
+function resolveMobileNavDashboardBlock(selector) {
+  if (!dashboardMain) {
+    return null;
+  }
+
+  const element = document.querySelector(selector);
+  if (!element) {
+    return null;
+  }
+
+  if (element.parentElement === dashboardMain) {
+    return element;
+  }
+
+  let current = element;
+  while (current && current.parentElement && current.parentElement !== dashboardMain) {
+    current = current.parentElement;
+  }
+
+  return current?.parentElement === dashboardMain ? current : null;
+}
+
+function activateMobilePageLayout() {
+  if (!dashboardMain) {
+    return false;
+  }
+
+  ensureMobilePageDeck();
+
+  if (!mobilePageDeck) {
+    return false;
+  }
+
+  const assignedBlocks = new Set();
+
+  Object.entries(MOBILE_NAV_VIEWS).forEach(([viewKey, view]) => {
+    const pageContainer = mobilePageContainers.get(viewKey);
+    if (!pageContainer) {
+      return;
+    }
+
+    view.blockSelectors.forEach((selector) => {
+      const block = resolveMobileNavDashboardBlock(selector);
+      if (!block || assignedBlocks.has(block) || block === mobilePageDeck) {
+        return;
+      }
+
+      assignedBlocks.add(block);
+      pageContainer.content.appendChild(block);
+    });
+  });
+
+  dashboardMain.setAttribute('data-mobile-page-layout', 'active');
+  mobilePageLayoutActive = true;
+  return true;
+}
+
+function deactivateMobilePageLayout() {
+  if (!dashboardMain || !mobilePageDeck || !originalDashboardChildOrder.length) {
+    return;
+  }
+
+  originalDashboardChildOrder.forEach((child) => {
+    if (child === mobilePageDeck) {
+      return;
+    }
+
+    dashboardMain.insertBefore(child, mobilePageDeck);
+  });
+
+  mobilePageContainers.forEach(({ page }) => {
+    page.classList.remove('is-active');
+  });
+
+  dashboardMain.setAttribute('data-mobile-page-layout', 'inactive');
+  mobilePageLayoutActive = false;
+}
+
+function readMobileNavView() {
+  try {
+    const stored = localStorage.getItem(MOBILE_NAV_VIEW_STORAGE_KEY);
+    return MOBILE_NAV_VIEWS[stored] ? stored : 'home';
+  } catch (_error) {
+    return 'home';
+  }
+}
+
+function saveMobileNavView(viewKey) {
+  try {
+    localStorage.setItem(MOBILE_NAV_VIEW_STORAGE_KEY, viewKey);
+  } catch (_error) {
+    // Ignore storage failures and keep the current in-memory state.
+  }
+}
+
+function setActiveMobileBottomNavItem(viewKey) {
+  if (!mobileBottomNavItems.length) {
+    return;
+  }
+
+  mobileBottomNavItems.forEach((item) => {
+    const isActive = item.getAttribute('data-view-key') === viewKey;
+    item.classList.toggle('is-active', isActive);
+    if (isActive) {
+      item.setAttribute('aria-current', 'page');
+    } else {
+      item.removeAttribute('aria-current');
+    }
+  });
+}
+
+function setActiveDesktopTopNavItem(viewKey) {
+  if (!desktopTopNavItems.length) {
+    return;
+  }
+
+  desktopTopNavItems.forEach((item) => {
+    const isActive = item.getAttribute('data-view-key') === viewKey;
+    item.classList.toggle('is-active', isActive);
+    if (isActive) {
+      item.setAttribute('aria-current', 'page');
+    } else {
+      item.removeAttribute('aria-current');
+    }
+  });
+
+  if (desktopTopNavDescription) {
+    desktopTopNavDescription.textContent = getMobileNavViewConfig(viewKey).description || '';
+  }
+}
+
+function setActiveMobilePage(viewKey) {
+  mobilePageContainers.forEach(({ page }, key) => {
+    page.classList.toggle('is-active', key === viewKey);
+  });
+}
+
+function clearMobileNavHiddenState() {
+  deactivateMobilePageLayout();
+}
+
+function clearDesktopNavHiddenState() {
+  if (!dashboardMain) {
+    return;
+  }
+
+  Array.from(dashboardMain.children).forEach((child) => {
+    child.classList.remove('desktop-nav-hidden');
+  });
+
+  dashboardMain.removeAttribute('data-desktop-view-layout');
+  dashboardMain.removeAttribute('data-desktop-active-view');
+}
+
+function findMobileNavViewKeyForTarget(targetId) {
+  if (!targetId) {
+    return 'home';
+  }
+
+  if (MOBILE_NAV_TARGET_VIEW_OVERRIDES[targetId]) {
+    return MOBILE_NAV_TARGET_VIEW_OVERRIDES[targetId];
+  }
+
+  const targetSelector = `#${targetId}`;
+  const matchingView = Object.entries(MOBILE_NAV_VIEWS).find(([, view]) => {
+    return (
+      view.primaryTargetId === targetId ||
+      view.pageId === targetId ||
+      view.blockSelectors.includes(targetSelector) ||
+      view.shortcuts?.some((shortcut) => shortcut.targetId === targetId)
+    );
+  });
+
+  return matchingView?.[0] || 'more';
+}
+
+function applyMobileNavView(viewKey, options = {}) {
+  const resolvedViewKey = MOBILE_NAV_VIEWS[viewKey] ? viewKey : 'home';
+  const view = getMobileNavViewConfig(resolvedViewKey);
+
+  activeMobileNavView = resolvedViewKey;
+  setActiveMobileBottomNavItem(resolvedViewKey);
+
+  if (!isMobileBottomNavActiveViewport()) {
+    clearMobileNavHiddenState();
+    return;
+  }
+
+  if (!mobilePageLayoutActive) {
+    activateMobilePageLayout();
+  }
+
+  setActiveMobilePage(resolvedViewKey);
+
+  if (options.persist !== false) {
+    saveMobileNavView(resolvedViewKey);
+  }
+
+  if (options.scrollToTarget !== false) {
+    const targetId = options.targetId || view.primaryTargetId;
+    window.requestAnimationFrame(() => {
+      focusSectionTarget(targetId);
+    });
+  }
+}
+
+function applyDesktopTopNavView(viewKey, options = {}) {
+  const resolvedViewKey = MOBILE_NAV_VIEWS[viewKey] ? viewKey : 'home';
+  const view = getMobileNavViewConfig(resolvedViewKey);
+
+  activeMobileNavView = resolvedViewKey;
+  setActiveDesktopTopNavItem(resolvedViewKey);
+
+  if (!isDesktopTopNavActiveViewport()) {
+    clearDesktopNavHiddenState();
+    return;
+  }
+
+  const visibleBlocks = new Set();
+  ['#dashboard-top', '.status-row'].forEach((selector) => {
+    const block = resolveMobileNavDashboardBlock(selector);
+    if (block) {
+      visibleBlocks.add(block);
+    }
+  });
+  view.blockSelectors.forEach((selector) => {
+    const block = resolveMobileNavDashboardBlock(selector);
+    if (block) {
+      visibleBlocks.add(block);
+    }
+  });
+
+  Array.from(dashboardMain.children).forEach((child) => {
+    if (child === desktopTopNav || child.tagName === 'DATALIST') {
+      child.classList.remove('desktop-nav-hidden');
+      return;
+    }
+
+    child.classList.toggle('desktop-nav-hidden', !visibleBlocks.has(child));
+  });
+
+  dashboardMain.setAttribute('data-desktop-view-layout', 'active');
+  dashboardMain.setAttribute('data-desktop-active-view', resolvedViewKey);
+
+  if (options.persist !== false) {
+    saveMobileNavView(resolvedViewKey);
+  }
+
+  if (options.scrollToTarget !== false) {
+    const targetId = options.targetId || view.primaryTargetId;
+    window.requestAnimationFrame(() => {
+      focusSectionTarget(targetId, { offset: getDesktopTopNavScrollOffset() });
+    });
+  }
+}
+
+function withTargetViewVisible(targetId, callback) {
+  const runCallback = typeof callback === 'function' ? callback : null;
+  const viewKey = targetId ? findMobileNavViewKeyForTarget(targetId) : null;
+
+  if (isMobileBottomNavActiveViewport() && targetId) {
+    applyMobileNavView(viewKey, { targetId, scrollToTarget: false });
+
+    if (runCallback) {
+      window.requestAnimationFrame(() => {
+        runCallback();
+      });
+    }
+    return;
+  }
+
+  if (isDesktopTopNavActiveViewport() && targetId) {
+    applyDesktopTopNavView(viewKey, { targetId, scrollToTarget: false });
+
+    if (runCallback) {
+      window.requestAnimationFrame(() => {
+        runCallback();
+      });
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      focusSectionTarget(targetId, { offset: getDesktopTopNavScrollOffset() });
+    });
+    return;
+  }
+
+  if (runCallback) {
+    runCallback();
+    return;
+  }
+
+  if (targetId) {
+    focusSectionTarget(targetId);
+  }
+}
+
+function syncDesktopTopNavForViewport() {
+  if (!desktopTopNav || !desktopTopNavItems.length) {
+    return;
+  }
+
+  if (!isDesktopTopNavActiveViewport()) {
+    clearDesktopNavHiddenState();
+    return;
+  }
+
+  applyDesktopTopNavView(activeMobileNavView || readMobileNavView(), {
+    persist: false,
+    scrollToTarget: false,
+  });
+}
+
+function syncMobileNavForViewport() {
+  if (!mobileBottomNav || !mobileBottomNavItems.length) {
+    return;
+  }
+
+  if (!isMobileBottomNavActiveViewport()) {
+    clearMobileNavHiddenState();
+    return;
+  }
+
+  if (!mobilePageLayoutActive) {
+    activateMobilePageLayout();
+  }
+
+  applyMobileNavView(activeMobileNavView || readMobileNavView(), {
+    persist: false,
+    scrollToTarget: false,
+  });
+}
+
+function initMobileBottomNav() {
+  if (!mobileBottomNav || !mobileBottomNavItems.length) {
+    return;
+  }
+
+  activeMobileNavView = readMobileNavView();
+  setActiveMobileBottomNavItem(activeMobileNavView);
+
+  mobileBottomNavItems.forEach((item) => {
+    item.addEventListener('click', () => {
+      const viewKey = item.getAttribute('data-view-key') || 'home';
+      const targetId = item.getAttribute('data-target-id') || getMobileNavViewConfig(viewKey).primaryTargetId;
+      applyMobileNavView(viewKey, { targetId });
+    });
+  });
+
+  window.addEventListener('resize', syncMobileNavForViewport);
+  syncMobileNavForViewport();
+}
+
+function initDesktopTopNav() {
+  if (!desktopTopNav || !desktopTopNavItems.length) {
+    return;
+  }
+
+  activeMobileNavView = readMobileNavView();
+  setActiveDesktopTopNavItem(activeMobileNavView);
+
+  desktopTopNavItems.forEach((item) => {
+    item.addEventListener('click', () => {
+      const viewKey = item.getAttribute('data-view-key') || 'home';
+      const targetId = item.getAttribute('data-target-id') || getMobileNavViewConfig(viewKey).primaryTargetId;
+      applyDesktopTopNavView(viewKey, { targetId });
+    });
+  });
+
+  window.addEventListener('resize', syncDesktopTopNavForViewport);
+  syncDesktopTopNavForViewport();
+}
+
+function initAdminCalendarPanel() {
+  if (adminCalendarGrid) {
+    adminCalendarGrid.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-admin-calendar-date]');
+      if (!button) {
+        return;
+      }
+
+      const targetDate = button.getAttribute('data-admin-calendar-date');
+      const targetMonth = button.getAttribute('data-admin-calendar-month') || selectedAdminCalendarMonth;
+      if (!targetDate) {
+        return;
+      }
+      const shouldRevealDetails = true;
+
+      if (targetMonth !== selectedAdminCalendarMonth) {
+        await loadAdminCalendarMonth(targetMonth, { selectedDate: targetDate });
+        if (shouldRevealDetails) {
+          window.requestAnimationFrame(() => {
+            revealAdminCalendarDayDetails();
+          });
+        }
+        return;
+      }
+
+      setAdminCalendarSelectedDate(targetDate);
+      if (shouldRevealDetails) {
+        window.requestAnimationFrame(() => {
+          revealAdminCalendarDayDetails();
+        });
+      }
+    });
+  }
+
+  if (adminCalendarFilterBar) {
+    adminCalendarFilterBar.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-admin-calendar-filter]');
+      if (!button) {
+        return;
+      }
+
+      setAdminCalendarFilter(button.getAttribute('data-admin-calendar-filter') || 'all');
+    });
+  }
+
+  if (adminCalendarPrevButton) {
+    adminCalendarPrevButton.addEventListener('click', async () => {
+      const previousMonth = addMonthsToYearMonth(selectedAdminCalendarMonth, -1);
+      await loadAdminCalendarMonth(previousMonth, {
+        selectedDate: getAdminCalendarPreferredDateForMonth(previousMonth),
+      });
+    });
+  }
+
+  if (adminCalendarNextButton) {
+    adminCalendarNextButton.addEventListener('click', async () => {
+      const nextMonth = addMonthsToYearMonth(selectedAdminCalendarMonth, 1);
+      await loadAdminCalendarMonth(nextMonth, {
+        selectedDate: getAdminCalendarPreferredDateForMonth(nextMonth),
+      });
+    });
+  }
+
+  if (adminCalendarTodayButton) {
+    adminCalendarTodayButton.addEventListener('click', async () => {
+      const todayMonth = currentYearMonthString();
+      await loadAdminCalendarMonth(todayMonth, {
+        selectedDate: todayIsoDateString(),
+      });
+    });
+  }
+
+  renderAdminCalendarStatus('Calendar ready', 'Log in to load the month view.');
 }
 
 function renderSummaryEditor() {
@@ -2562,7 +4184,7 @@ function initSummaryCardCustomization() {
       return;
     }
 
-    focusSummaryTarget(targetId);
+    withTargetViewVisible(targetId);
   });
 }
 
@@ -2703,6 +4325,30 @@ function renderRainRows(rows) {
           <td>${escapeHtml(formatRainMm(row.rain_mm))}</td>
           <td>${escapeHtml(formatTemperatureValue(row.min_temp_c))}</td>
           <td>${escapeHtml(formatTemperatureValue(row.max_temp_c))}</td>
+          <td>${escapeHtml(row.source || '-')}</td>
+          <td>${escapeHtml(row.notes || '-')}</td>
+        </tr>
+      `
+    )
+    .join('');
+}
+
+function renderFrostRows(rows) {
+  if (!frostBody) {
+    return;
+  }
+
+  if (!rows.length) {
+    frostBody.innerHTML = emptyStateRow(4, 'No frost days logged yet.');
+    return;
+  }
+
+  frostBody.innerHTML = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(formatDate(row.event_date))}</td>
+          <td>${escapeHtml(formatFrostIntensityLabel(row.intensity))}</td>
           <td>${escapeHtml(row.source || '-')}</td>
           <td>${escapeHtml(row.notes || '-')}</td>
         </tr>
@@ -2917,7 +4563,138 @@ function getRainTemperatureSummary(rows) {
     : `Avg max ${formatTemperatureC(averageMax)}`;
 }
 
+function rainChartUsesTapTooltip() {
+  return typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(hover: none), (pointer: coarse)').matches
+    : false;
+}
+
+function clearRainChartInteractionData() {
+  if (!rainChart) {
+    return;
+  }
+
+  rainChart.removeAttribute('data-row-count');
+  rainChart.removeAttribute('data-padding-left');
+  rainChart.removeAttribute('data-slot-width');
+}
+
+function clearRainChartBarHighlight() {
+  if (!rainChart) {
+    return;
+  }
+
+  rainChart.querySelectorAll('.rain-bar.is-active').forEach((bar) => {
+    bar.classList.remove('is-active');
+  });
+}
+
+function hideRainChartTooltip() {
+  selectedRainTooltipIndex = null;
+  clearRainChartBarHighlight();
+
+  if (!rainChartTooltip) {
+    return;
+  }
+
+  rainChartTooltip.classList.remove('is-visible');
+  rainChartTooltip.setAttribute('aria-hidden', 'true');
+}
+
+function positionRainChartTooltip(clientX, clientY) {
+  if (!rainChartTooltip || !rainChartWrap) {
+    return;
+  }
+
+  const wrapRect = rainChartWrap.getBoundingClientRect();
+  if (wrapRect.width <= 0 || wrapRect.height <= 0) {
+    return;
+  }
+
+  const tooltipWidth = rainChartTooltip.offsetWidth;
+  const tooltipHeight = rainChartTooltip.offsetHeight;
+  const maxLeft = Math.max(8, wrapRect.width - tooltipWidth - 8);
+  const maxTop = Math.max(8, wrapRect.height - tooltipHeight - 8);
+  const relativeX = clientX - wrapRect.left;
+  const relativeY = clientY - wrapRect.top;
+  const gap = 12;
+
+  let left = relativeX - tooltipWidth / 2;
+  let top = relativeY - tooltipHeight - gap;
+
+  if (top < 8) {
+    top = relativeY + gap;
+  }
+
+  left = Math.min(Math.max(left, 8), maxLeft);
+  top = Math.min(Math.max(top, 8), maxTop);
+
+  rainChartTooltip.style.left = `${left}px`;
+  rainChartTooltip.style.top = `${top}px`;
+}
+
+function showRainChartTooltipForBar(bar, options = {}) {
+  if (!bar || !rainChartTooltip) {
+    return;
+  }
+
+  const eventDate = bar.getAttribute('data-event-date') || '';
+  const rainMm = Number(bar.getAttribute('data-rain-mm') || 0);
+
+  clearRainChartBarHighlight();
+  bar.classList.add('is-active');
+
+  rainChartTooltip.innerHTML = `
+    <p class="rain-chart-tooltip-date">${escapeHtml(formatDate(eventDate))}</p>
+    <p class="rain-chart-tooltip-amount">${escapeHtml(formatRainMm(rainMm))} mm</p>
+  `;
+  rainChartTooltip.classList.add('is-visible');
+  rainChartTooltip.setAttribute('aria-hidden', 'false');
+
+  const barRect = bar.getBoundingClientRect();
+  const clientX =
+    Number.isFinite(options.clientX) && options.clientX != null
+      ? options.clientX
+      : barRect.left + barRect.width / 2;
+  const clientY =
+    Number.isFinite(options.clientY) && options.clientY != null
+      ? options.clientY
+      : barRect.top;
+
+  positionRainChartTooltip(clientX, clientY);
+}
+
+function getRainChartBarFromClientPosition(clientX) {
+  if (!rainChart) {
+    return null;
+  }
+
+  const rowCount = Number.parseInt(rainChart.getAttribute('data-row-count') || '', 10);
+  const paddingLeft = Number(rainChart.getAttribute('data-padding-left') || 0);
+  const slotWidth = Number(rainChart.getAttribute('data-slot-width') || 0);
+  if (!Number.isFinite(rowCount) || rowCount <= 0 || !Number.isFinite(slotWidth) || slotWidth <= 0) {
+    return null;
+  }
+
+  const rect = rainChart.getBoundingClientRect();
+  if (rect.width <= 0) {
+    return null;
+  }
+
+  const scaledX = ((clientX - rect.left) / rect.width) * RAIN_BARS_VIEWBOX_WIDTH;
+  if (!Number.isFinite(scaledX)) {
+    return null;
+  }
+
+  const rawIndex = Math.floor((scaledX - paddingLeft) / slotWidth);
+  const boundedIndex = Math.max(0, Math.min(rowCount - 1, rawIndex));
+  return rainChart.querySelector(`.rain-bar[data-row-index="${boundedIndex}"]`);
+}
+
 function renderRainChartEmpty(message) {
+  clearRainChartInteractionData();
+  hideRainChartTooltip();
+
   const label = RAIN_WINDOW_CONFIG[selectedRainWindow]?.label || 'Rain';
   const isRingMode = selectedRainWindow === '1d';
   setRainChartViewportMode(isRingMode);
@@ -2980,6 +4757,8 @@ function renderRainChart(rainPayload) {
   const drySpellSummary = formatDrySpellSummary(getCurrentDrySpellInfo(rainPayload?.daily || []));
   const temperatureSummary = getRainTemperatureSummary(rows);
   const isRingMode = selectedRainWindow === '1d';
+  clearRainChartInteractionData();
+  hideRainChartTooltip();
   setRainChartViewportMode(isRingMode);
   if (!rows.length) {
     renderRainChartEmpty('No rain data');
@@ -3109,10 +4888,22 @@ function renderRainChart(rainPayload) {
       const y = baselineY - barHeight;
       const fillGradient =
         row.rain_mm >= RAIN_TARGET_MET_MM ? 'url(#rainBarsGreenGradient)' : 'url(#rainBarsBlueGradient)';
-      return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="${Math.min(
-        3,
-        barWidth / 2
-      )}" fill="${fillGradient}" />`;
+      const label = `${formatDate(row.event_date)}: ${formatRainMm(row.rain_mm)} mm`;
+      return `
+        <rect
+          class="rain-bar ${row.rain_mm >= RAIN_TARGET_MET_MM ? 'is-target-met' : ''}"
+          data-row-index="${index}"
+          data-event-date="${escapeHtml(row.event_date)}"
+          data-rain-mm="${escapeHtml(row.rain_mm)}"
+          x="${x}"
+          y="${y}"
+          width="${barWidth}"
+          height="${barHeight}"
+          rx="${Math.min(3, barWidth / 2)}"
+          fill="${fillGradient}"
+          aria-label="${escapeHtml(label)}"
+        />
+      `;
     })
     .join('');
 
@@ -3134,6 +4925,10 @@ function renderRainChart(rainPayload) {
     })
     .join('');
 
+  rainChart.setAttribute('data-row-count', String(rows.length));
+  rainChart.setAttribute('data-padding-left', String(padding.left));
+  rainChart.setAttribute('data-slot-width', String(slotWidth));
+
   rainChart.innerHTML = `
     <defs>
       <linearGradient id="rainBarsBlueGradient" x1="0" y1="0" x2="0" y2="1">
@@ -3148,6 +4943,14 @@ function renderRainChart(rainPayload) {
     ${gridSvg.join('')}
     <line x1="${padding.left}" y1="${baselineY}" x2="${width - padding.right}" y2="${baselineY}" stroke="#3b4657" stroke-width="1.2" />
     ${barsSvg}
+    <rect
+      class="rain-chart-hit-area"
+      x="${padding.left}"
+      y="${padding.top}"
+      width="${plotWidth}"
+      height="${plotHeight}"
+      fill="transparent"
+    />
     ${labelsSvg}
   `;
 }
@@ -4504,13 +6307,13 @@ function renderPaddockStatusRows(rows) {
   paddockStatusBody.innerHTML = rows
     .map((row) => {
       let badgeClass = 'neutral';
-      let statusLabel = 'Available';
+      let statusLabel = 'Ready';
 
       if (row.occupancy_state === 'occupied') {
         badgeClass = 'ok';
         statusLabel = 'Occupied';
       } else if (row.occupancy_state === 'growing') {
-        badgeClass = 'soon';
+        badgeClass = 'growing';
         statusLabel = 'Growing';
       } else if (row.occupancy_state === 'resting') {
         badgeClass = 'soon';
@@ -4734,6 +6537,18 @@ function formatHorseGroupStartedSummary(row) {
   return 'No current members';
 }
 
+function formatHorseGroupCurrentMoveDateSummary(row) {
+  if (row?.current_paddock_names && row?.current_grazing_entered_at) {
+    return formatDate(row.current_grazing_entered_at);
+  }
+
+  if (row?.current_paddock_names) {
+    return 'Check current move';
+  }
+
+  return 'No paddock assigned';
+}
+
 function renderHorseGroupRows(rows) {
   if (!horseGroupStatusBody) {
     return;
@@ -4750,7 +6565,9 @@ function renderHorseGroupRows(rows) {
       const currentPaddocks = formatHorseGroupCurrentPaddockSummary(row);
       const members = Array.isArray(row.members) ? row.members : [];
       const startedSummary = formatHorseGroupStartedSummary(row);
+      const currentMoveDateSummary = formatHorseGroupCurrentMoveDateSummary(row);
       const paddockSummary = currentPaddocks === '-' ? 'No paddock assigned' : currentPaddocks;
+      const canCorrectCurrentMove = Boolean(row.current_paddock_names);
       const membersDisclosureLabel = members.length
         ? `View members (${members.length})`
         : row.notes || row.current_started_at
@@ -4783,14 +6600,30 @@ function renderHorseGroupRows(rows) {
               <p class="group-management-card-count">${escapeHtml(memberCountLabel)}</p>
               <p class="group-management-card-paddock">${escapeHtml(paddockSummary)}</p>
             </div>
-            <button
-              type="button"
-              class="inline-action-btn"
-              data-group-action="edit"
-              data-group-id="${escapeHtml(row.id)}"
-            >
-              Edit
-            </button>
+            <div class="group-management-card-actions">
+              <button
+                type="button"
+                class="inline-action-btn"
+                data-group-action="edit"
+                data-group-id="${escapeHtml(row.id)}"
+              >
+                Edit
+              </button>
+              ${
+                canCorrectCurrentMove
+                  ? `
+                <button
+                  type="button"
+                  class="inline-action-btn"
+                  data-group-action="correct-current"
+                  data-group-id="${escapeHtml(row.id)}"
+                >
+                  Fix Move Date
+                </button>
+              `
+                  : ''
+              }
+            </div>
           </div>
 
           <details class="group-management-disclosure">
@@ -4800,6 +6633,10 @@ function renderHorseGroupRows(rows) {
                 <div>
                   <dt>Started</dt>
                   <dd>${escapeHtml(startedSummary)}</dd>
+                </div>
+                <div>
+                  <dt>Current Move Date</dt>
+                  <dd>${escapeHtml(currentMoveDateSummary)}</dd>
                 </div>
                 <div>
                   <dt>Current Paddocks</dt>
@@ -5150,31 +6987,37 @@ function getAuthHeaders() {
   return {};
 }
 
-async function postJson(url, payload) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      ...getAuthHeaders(),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
+async function postJson(url, payload, options = {}) {
+  const feedbackCleanup = beginActionRequestFeedback(url, payload, options);
 
-  let data = null;
   try {
-    data = await response.json();
-  } catch (_error) {
-    data = { ok: false, error: `Request failed (${response.status})` };
-  }
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
 
-  if (!response.ok || !data.ok) {
-    const errorMessage = data?.error || `Request failed (${response.status})`;
-    const error = new Error(errorMessage);
-    error.status = response.status;
-    throw error;
-  }
+    let data = null;
+    try {
+      data = await response.json();
+    } catch (_error) {
+      data = { ok: false, error: `Request failed (${response.status})` };
+    }
 
-  return data;
+    if (!response.ok || !data.ok) {
+      const errorMessage = data?.error || `Request failed (${response.status})`;
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      throw error;
+    }
+
+    return data;
+  } finally {
+    feedbackCleanup();
+  }
 }
 
 function handleAuthError(error, fallbackMessage) {
@@ -5185,6 +7028,28 @@ function handleAuthError(error, fallbackMessage) {
   setSessionAuthState(false);
   setStatus(fallbackMessage || 'Session expired. Please log in again.', true);
   return true;
+}
+
+function initActionRequestFeedback() {
+  document.addEventListener(
+    'click',
+    (event) => {
+      const trigger =
+        event.target instanceof Element
+          ? event.target.closest('button, input[type="submit"], input[type="button"], input[type="checkbox"]')
+          : null;
+      rememberActionTrigger(trigger);
+    },
+    true
+  );
+
+  document.addEventListener(
+    'submit',
+    (event) => {
+      rememberActionTrigger(event.submitter instanceof Element ? event.submitter : event.target);
+    },
+    true
+  );
 }
 
 async function syncSessionState() {
@@ -5213,6 +7078,10 @@ async function syncSessionState() {
 
 function clearDashboardView() {
   latestDashboardPayload = null;
+  adminCalendarMonthCache.clear();
+  selectedAdminCalendarMonth = currentYearMonthString();
+  selectedAdminCalendarDate = todayIsoDateString();
+  selectedAdminCalendarFilter = 'all';
   currentHorseRows = [];
   currentHorseGroupRows = [];
   currentPaddockRows = [];
@@ -5239,6 +7108,9 @@ function clearDashboardView() {
   lowStockBody.innerHTML = emptyStateRow(2, 'Log in to view data.');
   allStockBody.innerHTML = emptyStateRow(2, 'Log in to view data.');
   rainBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
+  if (frostBody) {
+    frostBody.innerHTML = emptyStateRow(4, 'Log in to view data.');
+  }
   if (rainYearlyBody) {
     rainYearlyBody.innerHTML = emptyStateRow(6, 'Log in to view data.');
   }
@@ -5278,6 +7150,7 @@ function clearDashboardView() {
   renderAdminModuleSettings();
   applyAdminModuleVisibility();
   renderRainChartEmpty('Log in to view rain data.');
+  renderAdminCalendarStatus('Calendar locked', 'Log in to view activities by day.');
 }
 
 async function loadSelectedHorseHistory(options = {}) {
@@ -5349,12 +7222,26 @@ function renderActivityRows(rows) {
     return;
   }
 
+  const categoryLabels = {
+    rain: 'Rain',
+    frost: 'Frost',
+    paddock: 'Field Work',
+    grazing: 'Movement',
+    stock: 'Stock',
+    deworming: 'Deworming',
+    farrier: 'Farrier',
+    health: 'Health',
+    feed: 'Feed',
+    dose: 'Dose',
+    treatment_plan: 'Treatment',
+  };
+
   activityBody.innerHTML = rows
     .map(
       (row) => `
         <tr>
           <td>${escapeHtml(formatDateTime(row.at))}</td>
-          <td>${escapeHtml(row.category)}</td>
+          <td>${escapeHtml(categoryLabels[String(row.category || '').trim().toLowerCase()] || row.category)}</td>
           <td>${escapeHtml(row.horse_name || '-')}</td>
           <td>${escapeHtml(row.detail)}</td>
         </tr>
@@ -5408,6 +7295,7 @@ async function loadDashboard(options = {}) {
     renderStockRows(lowStockBody, payload.stock.low, 'No low stock items.');
     renderStockRows(allStockBody, payload.stock.all, 'No inventory data.');
     renderRainRows(payload.rain?.recent || []);
+    renderFrostRows(payload.frost?.recent || []);
     renderRainYearlyRows(payload.rain?.yearly || []);
     renderRainChart(payload.rain || null);
     renderActivityRows(payload.recent_activity);
@@ -5445,18 +7333,35 @@ async function loadDashboard(options = {}) {
     populateHorseGroupActionSelects(currentHorseGroupRows);
     populatePaddockActionSelects(currentPaddockRows);
     populateFeedItemOptions(payload.stock?.all || []);
-    const horseHistoryResult = await loadSelectedHorseHistory({ showOverlay: false });
+    const [horseHistoryResult, calendarResult] = await Promise.all([
+      loadSelectedHorseHistory({ showOverlay: false }),
+      loadAdminCalendarMonth(selectedAdminCalendarMonth, {
+        force: true,
+        silent: true,
+        selectedDate: selectedAdminCalendarDate,
+        preserveFilter: true,
+      }),
+    ]);
 
     const updatedAt = payload.meta?.refreshed_at || new Date().toISOString();
     lastUpdated.textContent = `Last updated: ${formatDateTime(updatedAt)}`;
     if (!horseHistoryResult.ok) {
       setStatus(`Dashboard loaded, but history failed: ${horseHistoryResult.error.message}`, true);
+      syncMobileNavForViewport();
+      return;
+    }
+
+    if (!calendarResult.ok) {
+      setStatus(`Dashboard loaded, but calendar failed: ${calendarResult.error.message}`, true);
+      syncMobileNavForViewport();
       return;
     }
 
     if (!silent) {
       setStatus('Dashboard is up to date.');
     }
+
+    syncMobileNavForViewport();
   } catch (error) {
     if (handleAuthError(error, 'Session expired. Please log in to continue.')) {
       clearDashboardView();
@@ -5488,7 +7393,7 @@ authForm.addEventListener('submit', async (event) => {
 
   try {
     beginLoadingOverlay('Signing in...', 'Verifying your account and opening the dashboard.');
-    const data = await postJson(LOGIN_API_URL, { username, password });
+    const data = await postJson(LOGIN_API_URL, { username, password }, { skipFeedback: true });
     setSessionAuthState(true, data.username || username);
     setStatus(`Logged in as ${data.username || username}.`);
     await loadDashboard();
@@ -5503,7 +7408,7 @@ authForm.addEventListener('submit', async (event) => {
 logoutButton.addEventListener('click', async () => {
   try {
     beginLoadingOverlay('Signing out...', 'Closing the current admin session.');
-    await postJson(LOGOUT_API_URL, {});
+    await postJson(LOGOUT_API_URL, {}, { skipFeedback: true });
   } catch (_error) {
     // Clear local UI even if logout API fails.
   } finally {
@@ -5629,6 +7534,85 @@ if (rainWindowControls) {
   });
 }
 
+if (rainChart) {
+  rainChart.addEventListener('mousemove', (event) => {
+    if (rainChartUsesTapTooltip()) {
+      return;
+    }
+
+    const hitArea = event.target.closest('.rain-chart-hit-area');
+    if (!hitArea) {
+      hideRainChartTooltip();
+      return;
+    }
+
+    const bar = getRainChartBarFromClientPosition(event.clientX);
+    if (!bar) {
+      hideRainChartTooltip();
+      return;
+    }
+
+    showRainChartTooltipForBar(bar, {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
+  });
+
+  rainChart.addEventListener('click', (event) => {
+    if (!rainChartUsesTapTooltip()) {
+      return;
+    }
+
+    const hitArea = event.target.closest('.rain-chart-hit-area');
+    if (!hitArea) {
+      return;
+    }
+
+    const bar = getRainChartBarFromClientPosition(event.clientX);
+    if (!bar) {
+      hideRainChartTooltip();
+      return;
+    }
+
+    const nextIndex = bar.getAttribute('data-row-index') || '';
+    if (
+      selectedRainTooltipIndex === nextIndex &&
+      rainChartTooltip?.classList.contains('is-visible')
+    ) {
+      hideRainChartTooltip();
+      return;
+    }
+
+    selectedRainTooltipIndex = nextIndex;
+    showRainChartTooltipForBar(bar, {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    });
+  });
+}
+
+if (rainChartWrap) {
+  rainChartWrap.addEventListener('mouseleave', () => {
+    if (rainChartUsesTapTooltip()) {
+      return;
+    }
+
+    hideRainChartTooltip();
+  });
+}
+
+document.addEventListener('click', (event) => {
+  if (!rainChartUsesTapTooltip() || !rainChartWrap) {
+    return;
+  }
+
+  if (rainChartWrap.contains(event.target)) {
+    return;
+  }
+
+  hideRainChartTooltip();
+});
+
 if (horseSelect) {
   horseSelect.addEventListener('change', async () => {
     setActiveHorseSelection(horseSelect.value);
@@ -5698,6 +7682,21 @@ if (horseGroupMembersHorsesList) {
 
 if (horseGroupStatusBody) {
   horseGroupStatusBody.addEventListener('click', (event) => {
+    const correctCurrentButton = event.target.closest('button[data-group-action="correct-current"]');
+    if (correctCurrentButton) {
+      const groupId = correctCurrentButton.getAttribute('data-group-id');
+      const group = findHorseGroupById(groupId);
+      if (!group) {
+        setActionMessage('That group is no longer available to correct.', true, {
+          card: 'action-card-horse-groups',
+        });
+        return;
+      }
+
+      openHorseGroupCurrentMoveCorrection(group);
+      return;
+    }
+
     const editButton = event.target.closest('button[data-group-action="edit"]');
     if (!editButton) {
       return;
@@ -5712,17 +7711,14 @@ if (horseGroupStatusBody) {
       return;
     }
 
-    setHorseGroupEditState(group, { scroll: false, focusName: false });
-    const moveReady = focusHorseGroupMoveSection(group);
-    setActionMessage(
-      moveReady
-        ? `Ready for ${group.name}. Choose destination paddock and move date, then move it or correct its current paddock history.`
-        : `Editing group: ${group.name}. Activate it first if you want to move it to a paddock.`,
-      false,
-      {
+    withTargetViewVisible('horse-group-save-form', () => {
+      expandPanelForElement(actionHubPanel);
+      expandActionCard(document.getElementById('action-card-horse-groups'));
+      setHorseGroupEditState(group, { scroll: true, focusName: true });
+      setActionMessage(`Editing group: ${group.name}. Update its details and save when ready.`, false, {
         card: 'action-card-horse-groups',
-      }
-    );
+      });
+    });
   });
 }
 
@@ -5742,11 +7738,13 @@ if (paddockStatusBody) {
       return;
     }
 
-    expandPanelForElement(actionHubPanel);
-    expandActionCard(document.getElementById('action-card-paddocks'));
-    setPaddockEditState(paddock, { scroll: true, focusName: true });
-    setActionMessage(`Editing paddock: ${paddock.name}. Update it and save when ready.`, false, {
-      card: 'action-card-paddocks',
+    withTargetViewVisible('paddock-save-form', () => {
+      expandPanelForElement(actionHubPanel);
+      expandActionCard(document.getElementById('action-card-paddocks'));
+      setPaddockEditState(paddock, { scroll: true, focusName: true });
+      setActionMessage(`Editing paddock: ${paddock.name}. Update it and save when ready.`, false, {
+        card: 'action-card-paddocks',
+      });
     });
   });
 }
@@ -5767,16 +7765,18 @@ if (paddockWorkHistoryBody) {
       return;
     }
 
-    expandPanelForElement(actionHubPanel);
-    expandActionCard(document.getElementById('action-card-paddocks'));
-    setPaddockWorkEditState(workRow, { scroll: true, focus: true });
-    setActionMessage(
-      `Editing field work for ${workRow.paddock_name}. Update the scope, dates, or wait days, then save.`,
-      false,
-      {
-        card: 'action-card-paddocks',
-      }
-    );
+    withTargetViewVisible('paddock-work-form', () => {
+      expandPanelForElement(actionHubPanel);
+      expandActionCard(document.getElementById('action-card-paddocks'));
+      setPaddockWorkEditState(workRow, { scroll: true, focus: true });
+      setActionMessage(
+        `Editing field work for ${workRow.paddock_name}. Update the scope, dates, or wait days, then save.`,
+        false,
+        {
+          card: 'action-card-paddocks',
+        }
+      );
+    });
   });
 }
 
@@ -6067,6 +8067,9 @@ if (horseFeedHistoryGroups) {
           feedEventId,
           quantity: nextQuantity,
           eventDate: nextDate || undefined,
+        }, {
+          trigger: button,
+          targetKind: 'horseProfile',
         });
 
         setHorseProfileMessage(
@@ -6096,6 +8099,9 @@ if (horseFeedHistoryGroups) {
           action: 'feed_event_delete',
           horseId: horseSelect.value,
           feedEventId,
+        }, {
+          trigger: button,
+          targetKind: 'horseProfile',
         });
 
         setHorseProfileMessage(
@@ -6279,20 +8285,28 @@ paddockSaveForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   try {
+    const restEstimateValue = paddockRestDaysInput?.value.trim() || '';
+    const restScopeValue = paddockRestScopeSelect?.value || 'single';
     const data = await postJson(DATA_MUTATE_API_URL, {
       action: 'paddock_save',
       paddockName: paddockNameInput.value.trim(),
       zone: paddockZoneInput.value.trim() || undefined,
       sizeHa: paddockSizeInput.value.trim() || undefined,
+      restDaysEstimate: restEstimateValue || undefined,
+      restApplyScope: restScopeValue,
       notes: paddockNotesInput.value.trim() || undefined,
       active: paddockActiveSelect.value,
       parentPaddockId: paddockParentSelect.value || undefined,
     });
 
     clearPaddockEditState();
+    const restScopeLabel =
+      restScopeValue === 'whole_block' ? ' for this paddock and child paddocks' : '';
     setActionMessage(
       `Paddock ${data.mode === 'created' ? 'saved' : 'updated'}: ${data.paddock.name}${
         data.paddock.parent_paddock_name ? ` under ${data.paddock.parent_paddock_name}` : ''
+      }${
+        restEstimateValue ? `. Estimated rest set to ${restEstimateValue} day(s)${restScopeLabel}` : ''
       }`
     );
     await loadDashboard();
@@ -6689,15 +8703,45 @@ rainSaveForm.addEventListener('submit', async (event) => {
   }
 });
 
-if (rainSyncWeatherButton) {
-  rainSyncWeatherButton.addEventListener('click', async () => {
-    const originalLabel = rainSyncWeatherButton.textContent;
-    rainSyncWeatherButton.disabled = true;
-    rainSyncWeatherButton.textContent = 'Syncing...';
+if (frostSaveForm) {
+  frostSaveForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
 
     try {
       const data = await postJson(DATA_MUTATE_API_URL, {
+        action: 'frost_save',
+        eventDate: frostDateInput.value || undefined,
+        intensity: frostIntensitySelect.value || 'light',
+        notes: frostNotesInput.value.trim() || undefined,
+      });
+
+      frostNotesInput.value = '';
+      setActionMessage(
+        `Frost saved for ${formatDate(data.frost.event_date)}: ${formatFrostIntensityLabel(
+          data.frost.intensity
+        )}.`,
+        false,
+        { card: 'action-card-rain' }
+      );
+      await loadDashboard();
+    } catch (error) {
+      if (handleAuthError(error, 'Session expired. Please log in to save frost records.')) {
+        clearDashboardView();
+        return;
+      }
+      setActionMessage(`Save frost failed: ${error.message}`, true, { card: 'action-card-rain' });
+    }
+  });
+}
+
+if (rainSyncWeatherButton) {
+  rainSyncWeatherButton.addEventListener('click', async () => {
+    try {
+      const data = await postJson(DATA_MUTATE_API_URL, {
         action: 'rain_weather_sync',
+      }, {
+        trigger: rainSyncWeatherButton,
+        card: 'action-card-rain',
       });
 
       const sync = data.weather_sync || {};
@@ -6713,9 +8757,6 @@ if (rainSyncWeatherButton) {
         return;
       }
       setActionMessage(`Weather sync failed: ${error.message}`, true, { card: 'action-card-rain' });
-    } finally {
-      rainSyncWeatherButton.disabled = false;
-      rainSyncWeatherButton.textContent = originalLabel;
     }
   });
 }
@@ -6758,10 +8799,15 @@ syncAdminModuleSettings(getDefaultAdminModuleSettings());
 initPanelAccordions();
 initActionCardAccordions();
 initActionCardMessages();
+initActionRequestFeedback();
 initRainRegistryAccordion();
 initHorseFeedHistoryAccordion();
+initDesktopTopNav();
 const todayDate = new Date().toISOString().slice(0, 10);
 rainDateInput.value = todayDate;
+if (frostDateInput) {
+  frostDateInput.value = todayDate;
+}
 feedEntryDateInput.value = todayDate;
 dewormDateInput.value = todayDate;
 if (dewormSecondDoseInput) {
@@ -6807,6 +8853,8 @@ async function initializeAdminApp() {
 
 initializeAdminApp();
 initBackToTopButton();
+initMobileBottomNav();
+initAdminCalendarPanel();
 setInterval(() => {
   if (sessionAuthenticated) {
     if (Date.now() < dashboardAutoRefreshPauseUntil) {
