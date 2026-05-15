@@ -15,6 +15,7 @@ const {
 } = require('../../lib/admin-modules');
 const { ensureFarmSettingsTable, getFarmSettings } = require('../../lib/farm-settings');
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
+const { ensureFrostRegistryTable } = require('../../lib/frost-registry');
 const { toIsoDateString } = require('../../lib/date-helpers');
 const { requireAdminApiAuth } = require('../../lib/admin-auth');
 
@@ -109,6 +110,7 @@ function filterRecentActivityRows(rows, enabledModules) {
     grazing: 'paddocks',
     paddock: 'paddocks',
     rain: 'rain',
+    frost: 'rain',
   };
 
   return rows.filter((row) => {
@@ -132,6 +134,7 @@ module.exports = async (req, res) => {
     await ensurePaddockTables();
     await ensureFarmSettingsTable();
     await ensureRainRegistryTable();
+    await ensureFrostRegistryTable();
     const moduleSettings = await listAdminModuleSettings();
     const farmSettings = await getFarmSettings();
     const enabledModules = buildAdminModuleEnabledMap(moduleSettings);
@@ -157,6 +160,7 @@ module.exports = async (req, res) => {
       rainRecentResult,
       rainDailyResult,
       rainYearlyResult,
+      frostRecentResult,
     ] = await Promise.all([
       pool.query('SELECT COUNT(*)::int AS count FROM horses'),
       pool.query(
@@ -435,6 +439,15 @@ module.exports = async (req, res) => {
               r.rain_mm > 0
               OR COALESCE(NULLIF(TRIM(r.notes), ''), '') <> ''
             )
+
+          UNION ALL
+
+          SELECT
+            f.event_date::timestamp AS sort_at,
+            'frost' AS category,
+            '-' AS horse_name,
+            CONCAT(INITCAP(f.intensity), ' frost', COALESCE(CONCAT(' | ', f.notes), '')) AS detail
+          FROM frost_registry f
         ) activity_rows
         ORDER BY sort_at DESC
         LIMIT 60
@@ -499,6 +512,19 @@ module.exports = async (req, res) => {
         WHERE COALESCE(source, 'manual') <> 'weather_sync'
         GROUP BY EXTRACT(YEAR FROM event_date)
         ORDER BY year DESC
+        `
+      ),
+      pool.query(
+        `
+        SELECT
+          id,
+          event_date,
+          intensity,
+          source,
+          notes
+        FROM frost_registry
+        ORDER BY event_date DESC, id DESC
+        LIMIT 60
         `
       ),
     ]);
@@ -575,6 +601,7 @@ module.exports = async (req, res) => {
     const rainRecentRows = rainModuleEnabled ? rainRecentResult.rows : [];
     const rainDailyRows = rainModuleEnabled ? rainDailyResult.rows : [];
     const rainYearlyRows = rainModuleEnabled ? rainYearlyResult.rows : [];
+    const frostRecentRows = rainModuleEnabled ? frostRecentResult.rows : [];
 
     res.status(200).json({
       ok: true,
@@ -620,12 +647,19 @@ module.exports = async (req, res) => {
         size_ha: row.size_ha,
         notes: row.notes,
         active: row.active,
+        manual_rest_started_on: row.manual_rest_started_on,
+        manual_rest_days: row.manual_rest_days,
+        manual_rest_is_estimated: row.manual_rest_is_estimated,
+        manual_rest_applies_to_descendants: row.manual_rest_applies_to_descendants,
         horse_count: row.horse_count,
         occupied_by: row.occupied_by,
         occupied_since: row.occupied_since,
         grazing_days: row.grazing_days,
         last_exited_at: row.last_exited_at,
         rest_days: row.rest_days,
+        rest_source: row.rest_source,
+        effective_rest_started_on: row.effective_rest_started_on,
+        effective_rest_is_estimated: row.effective_rest_is_estimated,
         effective_rest_paddock_id: row.effective_rest_paddock_id,
         effective_rest_paddock_name: row.effective_rest_paddock_name,
         inherited_rest: row.inherited_rest,
@@ -652,6 +686,8 @@ module.exports = async (req, res) => {
         member_names: row.member_names,
         current_started_at: row.current_started_at,
         current_paddock_names: paddocksModuleEnabled ? row.current_paddock_names : null,
+        current_paddock_ids: paddocksModuleEnabled ? row.current_paddock_ids : [],
+        current_grazing_entered_at: paddocksModuleEnabled ? row.current_grazing_entered_at : null,
         grazing_member_count: row.grazing_member_count,
       })),
       horse_group_history: filteredHorseGroupHistoryRows.map((row) => ({
@@ -752,6 +788,15 @@ module.exports = async (req, res) => {
           rainy_days: Number(row.rainy_days || 0),
           avg_mm_per_event: Number(row.avg_mm_per_event || 0),
           peak_mm: Number(row.peak_mm || 0),
+        })),
+      },
+      frost: {
+        recent: frostRecentRows.map((row) => ({
+          id: row.id,
+          event_date: toIsoDateString(row.event_date),
+          intensity: row.intensity || null,
+          source: row.source || null,
+          notes: row.notes || null,
         })),
       },
     });

@@ -7,13 +7,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Manrope:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans+Condensed:wght@600;700&family=Manrope:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
     <link rel="icon" type="image/svg+xml" href="/admin/favicon.svg?v=3" />
     <link rel="shortcut icon" href="/admin/favicon.svg?v=3" />
     <link rel="apple-touch-icon" href="/admin/farm-bot-logo.png?v=3" />
-    <link rel="stylesheet" href="/admin/styles.css?v=20260508d" />
+    <link rel="stylesheet" href="/admin/styles.css?v=20260515b" />
   </head>
   <body>
     <div id="loading-overlay" class="loading-overlay" aria-live="polite" aria-hidden="false">
@@ -29,11 +29,11 @@
     <div class="background-shape shape-b"></div>
 
     <main class="dashboard">
-      <header class="dashboard-header">
+      <header id="dashboard-top" class="dashboard-header">
         <div class="brand-lockup">
           <img class="brand-logo" src="/admin/farm-bot-logo.png" alt="Farm Bot logo" />
           <div class="brand-copy">
-            <p class="eyebrow">Desktop Control Panel</p>
+            <p class="eyebrow">Field Operations Console</p>
             <h1>Farm Bot Admin</h1>
             <p class="subtext">Live operational view for stock, reminders, and horse activity.</p>
           </div>
@@ -67,6 +67,62 @@
         <p id="last-updated">-</p>
       </section>
 
+      <nav id="desktop-top-nav" class="desktop-top-nav" aria-label="Desktop admin navigation">
+        <div class="desktop-nav-copy">
+          <p class="desktop-nav-eyebrow">Desktop Views</p>
+          <p id="desktop-nav-description" class="desktop-nav-description">
+            Daily overview with alerts, pending work, and the general farm status.
+          </p>
+        </div>
+        <div class="desktop-nav-items">
+          <button
+            type="button"
+            class="desktop-nav-item is-active"
+            data-view-key="home"
+            data-target-id="dashboard-top"
+          >
+            <span class="desktop-nav-item-index">01</span>
+            <span class="desktop-nav-item-label">Home</span>
+          </button>
+          <button
+            type="button"
+            class="desktop-nav-item"
+            data-view-key="potreros"
+            data-target-id="panel-pasture"
+          >
+            <span class="desktop-nav-item-index">02</span>
+            <span class="desktop-nav-item-label">Potreros</span>
+          </button>
+          <button
+            type="button"
+            class="desktop-nav-item"
+            data-view-key="calendar"
+            data-target-id="panel-admin-calendar"
+          >
+            <span class="desktop-nav-item-index">03</span>
+            <span class="desktop-nav-item-label">Calendar</span>
+          </button>
+          <button
+            type="button"
+            class="desktop-nav-item"
+            data-view-key="logs"
+            data-target-id="panel-low-stock"
+          >
+            <span class="desktop-nav-item-index">04</span>
+            <span class="desktop-nav-item-label">Logs</span>
+          </button>
+          <button
+            type="button"
+            class="desktop-nav-item"
+            data-view-key="more"
+            data-target-id="action-hub-panel"
+          >
+            <span class="desktop-nav-item-index">05</span>
+            <span class="desktop-nav-item-label">More</span>
+          </button>
+        </div>
+      </nav>
+
       <section class="summary-toolbar">
         <button id="summary-edit-toggle-btn" type="button">Edit Quick View</button>
         <button id="summary-reset-btn" type="button">Reset Quick View</button>
@@ -79,7 +135,7 @@
 
       <section id="summary-cards" class="summary-grid"></section>
 
-      <section class="panel action-hub-panel">
+      <section id="action-hub-panel" class="panel action-hub-panel">
         <h2>Action Center</h2>
         <p class="action-hub-subtext">
           All write actions live here. The modules below are your read-only operational views.
@@ -237,8 +293,28 @@
                   <option value="">No parent / top-level paddock</option>
                 </select>
 
+                <label for="paddock-rest-days-input">Current Rest Days (estimate)</label>
+                <input
+                  id="paddock-rest-days-input"
+                  name="restDaysEstimate"
+                  type="number"
+                  step="1"
+                  min="0"
+                  placeholder="Leave blank if not estimating current rest"
+                />
+
+                <label for="paddock-rest-scope-select">Rest Estimate Scope</label>
+                <select id="paddock-rest-scope-select" name="restApplyScope">
+                  <option value="single">This paddock only</option>
+                  <option value="whole_block">This paddock and all child paddocks</option>
+                </select>
+
                 <label for="paddock-notes-input">Notes</label>
                 <input id="paddock-notes-input" name="notes" placeholder="water, shade, narrow gate..." />
+
+                <p class="action-form-hint full-span">
+                  Optional. Use this when a paddock is already resting and you only know an approximate current rest day count.
+                </p>
 
                 <div class="full-span action-form-button-row">
                   <button id="paddock-save-btn" type="submit">Save Paddock</button>
@@ -703,7 +779,7 @@
             </article>
 
             <article id="action-card-rain" class="action-card">
-              <h3>Rain Registry</h3>
+              <h3>Rain &amp; Frost Registry</h3>
 
               <form id="rain-save-form" class="action-form compact">
                 <label for="rain-date-input">Save Rain</label>
@@ -730,9 +806,73 @@
                   Backfills recent daily rain plus min/max temperature using the farm weather coordinates.
                 </p>
               </form>
+
+              <form id="frost-save-form" class="action-form compact">
+                <label for="frost-date-input">Save Frost Day</label>
+                <input id="frost-date-input" name="eventDate" type="date" />
+                <select id="frost-intensity-select" name="intensity">
+                  <option value="light">Light Frost</option>
+                  <option value="moderate">Moderate Frost</option>
+                  <option value="heavy">Heavy Frost</option>
+                </select>
+                <input id="frost-notes-input" name="notes" placeholder="Notes (optional)" />
+                <button type="submit">Save Frost</button>
+                <p class="action-form-hint full-span">
+                  Use this for cold mornings that affect pasture recovery, feeding, or paddock timing.
+                </p>
+              </form>
             </article>
           </div>
         </div>
+      </section>
+
+      <section class="panel-grid">
+        <article id="panel-admin-calendar" class="panel panel-span-full">
+          <h2>Calendar</h2>
+          <div class="admin-calendar-shell">
+            <div class="admin-calendar-toolbar">
+              <button id="admin-calendar-prev-btn" class="admin-calendar-nav-btn" type="button" aria-label="Previous month">
+                ‹
+              </button>
+              <div class="admin-calendar-month-copy">
+                <p class="admin-calendar-kicker">Monthly activity view</p>
+                <h3 id="admin-calendar-month-label">-</h3>
+              </div>
+              <div class="admin-calendar-toolbar-actions">
+                <button id="admin-calendar-today-btn" class="admin-calendar-inline-btn" type="button">
+                  Today
+                </button>
+                <button id="admin-calendar-next-btn" class="admin-calendar-nav-btn" type="button" aria-label="Next month">
+                  ›
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-calendar-surface">
+              <div class="admin-calendar-legend">
+                <span><i class="admin-calendar-legend-line is-rain"></i>Rain</span>
+                <span><i class="admin-calendar-legend-line is-frost"></i>Frost</span>
+                <span><i class="admin-calendar-legend-line is-feed"></i>Feed</span>
+                <span><i class="admin-calendar-legend-line is-field"></i>Field</span>
+                <span><i class="admin-calendar-legend-line is-care"></i>Care</span>
+                <span><i class="admin-calendar-legend-line is-movement"></i>Move</span>
+              </div>
+              <div id="admin-calendar-grid" class="admin-calendar-grid" aria-live="polite"></div>
+            </div>
+
+            <section class="admin-calendar-day-panel">
+              <div class="admin-calendar-day-head">
+                <div>
+                  <p class="admin-calendar-day-kicker">Selected day</p>
+                  <h3 id="admin-calendar-selected-label">-</h3>
+                </div>
+                <p id="admin-calendar-selected-meta" class="admin-calendar-selected-meta">-</p>
+              </div>
+              <div id="admin-calendar-filter-bar" class="admin-calendar-filter-bar"></div>
+              <div id="admin-calendar-day-events" class="admin-calendar-day-events"></div>
+            </section>
+          </div>
+        </article>
       </section>
 
       <datalist id="feed-item-options"></datalist>
@@ -1155,7 +1295,7 @@
       </section>
 
       <section id="panel-rain-registry" class="panel">
-        <h2>Rain Registry</h2>
+        <h2>Rain &amp; Frost Registry</h2>
         <div class="rain-insights">
           <div id="rain-window-controls" class="rain-window-controls">
             <button type="button" class="rain-window-btn" data-rain-window="1d">1d</button>
@@ -1170,6 +1310,7 @@
           <p class="rain-section-title">Rainfall</p>
           <div id="rain-chart-wrap" class="rain-chart-wrap">
             <svg id="rain-chart" viewBox="0 0 960 250" preserveAspectRatio="none"></svg>
+            <div id="rain-chart-tooltip" class="rain-chart-tooltip" aria-hidden="true"></div>
           </div>
           <div id="rain-chart-legend" class="rain-chart-legend">
             <span><i class="legend-dot legend-blue"></i>Rain</span>
@@ -1222,6 +1363,20 @@
                 <tbody id="rain-body"></tbody>
               </table>
             </div>
+            <h3 class="timeline-title">Frost Days</h3>
+            <div class="table-wrap frost-entries-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Intensity</th>
+                    <th>Source</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="frost-body"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
@@ -1244,10 +1399,58 @@
       </section>
     </main>
 
+    <nav id="mobile-bottom-nav" class="mobile-bottom-nav" aria-label="Mobile admin navigation">
+      <button
+        type="button"
+        class="mobile-nav-item is-active"
+        data-view-key="home"
+        data-target-id="mobile-page-home"
+      >
+        <span class="mobile-nav-item-index">01</span>
+        <span class="mobile-nav-item-label">Home</span>
+      </button>
+      <button
+        type="button"
+        class="mobile-nav-item"
+        data-view-key="potreros"
+        data-target-id="mobile-page-potreros"
+      >
+        <span class="mobile-nav-item-index">02</span>
+        <span class="mobile-nav-item-label">Potreros</span>
+      </button>
+      <button
+        type="button"
+        class="mobile-nav-item"
+        data-view-key="calendar"
+        data-target-id="mobile-page-calendar"
+      >
+        <span class="mobile-nav-item-index">03</span>
+        <span class="mobile-nav-item-label">Calendar</span>
+      </button>
+      <button
+        type="button"
+        class="mobile-nav-item"
+        data-view-key="logs"
+        data-target-id="mobile-page-logs"
+      >
+        <span class="mobile-nav-item-index">04</span>
+        <span class="mobile-nav-item-label">Logs</span>
+      </button>
+      <button
+        type="button"
+        class="mobile-nav-item"
+        data-view-key="more"
+        data-target-id="mobile-page-more"
+      >
+        <span class="mobile-nav-item-index">05</span>
+        <span class="mobile-nav-item-label">More</span>
+      </button>
+    </nav>
+
     <button id="back-to-top-btn" class="back-to-top-btn" type="button" aria-label="Back to top" title="Back to top">
       ↑
     </button>
 
-    <script src="/admin/app.js?v=20260508c"></script>
+    <script src="/admin/app.js?v=20260515b"></script>
   </body>
 </html>

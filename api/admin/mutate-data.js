@@ -27,6 +27,7 @@ const {
 } = require('../../lib/admin-modules');
 const { ensureFarmSettingsTable, saveFarmSettings } = require('../../lib/farm-settings');
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
+const { ensureFrostRegistryTable } = require('../../lib/frost-registry');
 const { syncWeatherIntoRainRegistry } = require('../../lib/weather-sync');
 const { toIsoDateString } = require('../../lib/date-helpers');
 const { requireAdminApiAuth } = require('../../lib/admin-auth');
@@ -216,7 +217,7 @@ function getModuleKeyForAdminAction(action) {
     return 'training';
   }
 
-  if (action === 'rain_save' || action === 'rain_weather_sync') {
+  if (action === 'rain_save' || action === 'rain_weather_sync' || action === 'frost_save') {
     return 'rain';
   }
 
@@ -296,6 +297,7 @@ const ALLOWED_SEX_VALUES = new Set([
 ]);
 
 const ALLOWED_TRAINING_STATUSES = new Set(['in training', 'breaking in']);
+const ALLOWED_FROST_INTENSITIES = new Set(['light', 'moderate', 'heavy']);
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -313,6 +315,7 @@ module.exports = async (req, res) => {
     await ensureFarmSettingsTable();
     await ensureFeedPlanningTables();
     await ensureRainRegistryTable();
+    await ensureFrostRegistryTable();
 
     const body = await getJsonBody(req);
     const action = String(body.action || '').trim().toLowerCase();
@@ -537,6 +540,13 @@ module.exports = async (req, res) => {
       const notes = String(body.notes || '').trim();
       const active = parseBooleanValue(body.active, true);
       const sizeHa = parseNonNegativeNumber(sizeHaValue);
+      const restDaysEstimateValue =
+        body.restDaysEstimate == null ? '' : String(body.restDaysEstimate).trim();
+      const restDaysEstimate = parseNonNegativeInteger(restDaysEstimateValue);
+      const restApplyScope =
+        String(body.restApplyScope || '')
+          .trim()
+          .toLowerCase() || 'single';
       const rawParentPaddockId = body.parentPaddockId == null ? '' : String(body.parentPaddockId).trim();
       const parentPaddockId = rawParentPaddockId ? parsePositiveInt(rawParentPaddockId) : null;
 
@@ -547,6 +557,16 @@ module.exports = async (req, res) => {
 
       if (sizeHaValue && sizeHa == null) {
         res.status(400).json({ ok: false, error: 'sizeHa must be a number >= 0' });
+        return;
+      }
+
+      if (restDaysEstimateValue && restDaysEstimate == null) {
+        res.status(400).json({ ok: false, error: 'restDaysEstimate must be a whole number >= 0' });
+        return;
+      }
+
+      if (!['single', 'whole_block'].includes(restApplyScope)) {
+        res.status(400).json({ ok: false, error: 'restApplyScope is invalid' });
         return;
       }
 
@@ -562,6 +582,8 @@ module.exports = async (req, res) => {
         notes: notes || null,
         active,
         parentPaddockId,
+        manualRestDays: restDaysEstimate,
+        manualRestAppliesToDescendants: restApplyScope === 'whole_block',
       });
 
       res.status(200).json({
@@ -1721,6 +1743,64 @@ module.exports = async (req, res) => {
       return;
     }
 
+    if (action === 'frost_save') {
+      const intensity = String(body.intensity || '')
+        .trim()
+        .toLowerCase();
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const notes = body.notes ? String(body.notes).trim() : '';
+
+      if (!ALLOWED_FROST_INTENSITIES.has(intensity)) {
+        res.status(400).json({ ok: false, error: 'intensity must be light, moderate, or heavy' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      const saveResult = await pool.query(
+        `
+        INSERT INTO frost_registry (
+          event_date,
+          intensity,
+          source,
+          notes,
+          telegram_user_id
+        )
+        VALUES ($1, $2, 'admin_panel', $3, $4)
+        ON CONFLICT (event_date) DO UPDATE
+        SET intensity = EXCLUDED.intensity,
+            source = EXCLUDED.source,
+            notes = EXCLUDED.notes,
+            telegram_user_id = EXCLUDED.telegram_user_id,
+            updated_at = NOW()
+        RETURNING
+          id,
+          event_date,
+          intensity,
+          source,
+          notes
+        `,
+        [eventDateRaw, intensity, notes || null, 'admin_panel']
+      );
+
+      const row = saveResult.rows[0];
+      res.status(200).json({
+        ok: true,
+        action,
+        frost: {
+          id: row.id,
+          event_date: toIsoDateString(row.event_date),
+          intensity: row.intensity,
+          source: row.source || null,
+          notes: row.notes || null,
+        },
+      });
+      return;
+    }
+
     if (action === 'rain_weather_sync') {
       const data = await syncWeatherIntoRainRegistry();
 
@@ -2210,7 +2290,7 @@ module.exports = async (req, res) => {
       res.status(400).json({
         ok: false,
         error:
-        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, or admin_modules_save.',
+        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, or admin_modules_save.',
       });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);

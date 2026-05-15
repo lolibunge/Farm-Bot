@@ -12,6 +12,23 @@
   --ok: #2f6a44;
   --shadow: 0 18px 40px rgba(45, 42, 31, 0.12);
   --radius: 16px;
+  --garmin-bg: #060b08;
+  --garmin-bg-soft: #0f1613;
+  --garmin-panel: rgba(11, 18, 15, 0.94);
+  --garmin-panel-alt: rgba(16, 25, 21, 0.96);
+  --garmin-panel-soft: rgba(22, 33, 28, 0.94);
+  --garmin-border: rgba(209, 255, 122, 0.2);
+  --garmin-border-strong: rgba(209, 255, 122, 0.42);
+  --garmin-ink: #f2f7ed;
+  --garmin-soft: #99ab9a;
+  --garmin-accent: #d8ff75;
+  --garmin-accent-strong: #96c93d;
+  --garmin-accent-soft: rgba(216, 255, 117, 0.12);
+  --garmin-danger: #ff7c5f;
+  --garmin-warning: #ffd45d;
+  --garmin-ok: #87d95c;
+  --garmin-grid: rgba(216, 255, 117, 0.08);
+  --garmin-shadow: 0 24px 50px rgba(0, 0, 0, 0.38);
 }
 
 * {
@@ -596,6 +613,145 @@ h1 {
   outline-offset: 3px;
 }
 
+.desktop-top-nav {
+  display: none;
+}
+
+.desktop-nav-hidden {
+  display: none !important;
+}
+
+.mobile-bottom-nav {
+  display: none;
+}
+
+.mobile-page-deck,
+.mobile-admin-page {
+  display: none;
+}
+
+@media (min-width: 781px) {
+  .desktop-top-nav {
+    position: sticky;
+    top: 14px;
+    z-index: 22;
+    display: grid;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    border: 1px solid rgba(214, 199, 163, 0.95);
+    border-radius: 20px;
+    background: rgba(255, 251, 242, 0.92);
+    box-shadow: 0 18px 36px rgba(78, 66, 42, 0.14);
+    backdrop-filter: blur(18px);
+  }
+
+  .desktop-nav-copy {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .desktop-nav-eyebrow {
+    margin: 0;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .desktop-nav-description {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+
+  .desktop-nav-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .desktop-nav-item {
+    min-width: 132px;
+    min-height: 54px;
+    border: 1px solid rgba(214, 199, 163, 0.92);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(247, 239, 221, 0.96) 100%);
+    color: #433a27;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 10px 14px;
+    font: inherit;
+    cursor: pointer;
+    transition:
+      transform 140ms ease,
+      border-color 140ms ease,
+      background-color 140ms ease,
+      color 140ms ease,
+      box-shadow 140ms ease;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.72),
+      0 10px 18px rgba(94, 73, 37, 0.08);
+  }
+
+  .desktop-nav-item:hover {
+    transform: translateY(-1px);
+    border-color: rgba(53, 94, 59, 0.22);
+  }
+
+  .desktop-nav-item-index {
+    font-family: "IBM Plex Sans Condensed", "Manrope", sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #7f7151;
+    opacity: 0.9;
+  }
+
+  .desktop-nav-item-label {
+    font-family: "Space Grotesk", "Manrope", sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+
+  .desktop-nav-item.is-active {
+    border-color: rgba(53, 94, 59, 0.3);
+    background: linear-gradient(180deg, #355e3b 0%, #27442d 100%);
+    color: #fffdf8;
+    box-shadow:
+      0 14px 24px rgba(53, 94, 59, 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    transform: translateY(-2px);
+  }
+
+  .desktop-nav-item.is-active .desktop-nav-item-index {
+    color: rgba(255, 253, 248, 0.72);
+    opacity: 1;
+  }
+
+  .desktop-nav-item:focus-visible {
+    outline: 2px solid rgba(53, 94, 59, 0.36);
+    outline-offset: 2px;
+  }
+}
+
+@media (max-width: 780px) {
+  .mobile-nav-hidden {
+    display: none !important;
+  }
+}
+
 .panel-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1015,7 +1171,8 @@ h1 {
 }
 
 .action-message.is-success,
-.action-message.is-error {
+.action-message.is-error,
+.action-message.is-pending {
   border: 1px solid transparent;
   border-radius: 10px;
   padding: 10px 12px;
@@ -1033,6 +1190,12 @@ h1 {
   border-color: #e5b6b4;
 }
 
+.action-message.is-pending {
+  color: #5f4720;
+  background: #f7efd9;
+  border-color: #e5d2a3;
+}
+
 .action-hub-panel > .action-message {
   margin: 0 0 12px;
 }
@@ -1047,6 +1210,41 @@ h1 {
 
 .horse-profile-form {
   margin-bottom: 12px;
+}
+
+.action-form.is-busy,
+.horse-profile-form.is-busy {
+  cursor: progress;
+}
+
+.action-form button.is-busy,
+.horse-profile-form button.is-busy,
+.history-toolbar button.is-busy,
+.summary-toolbar button.is-busy,
+.inline-action-btn.is-busy,
+#logout-btn.is-busy,
+#refresh-btn.is-busy {
+  opacity: 0.78;
+  cursor: progress;
+}
+
+.action-form button.is-busy::after,
+.horse-profile-form button.is-busy::after,
+.history-toolbar button.is-busy::after,
+.summary-toolbar button.is-busy::after,
+.inline-action-btn.is-busy::after,
+#logout-btn.is-busy::after,
+#refresh-btn.is-busy::after {
+  content: '';
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-left: 8px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: loading-spin 820ms linear infinite;
+  vertical-align: -1px;
 }
 
 .horse-profile-form button {
@@ -1263,6 +1461,17 @@ h1 {
 
 .group-management-card-copy {
   min-width: 0;
+}
+
+.group-management-card-actions {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  flex-shrink: 0;
+}
+
+.group-management-card-actions .inline-action-btn + .inline-action-btn {
+  margin-left: 0;
 }
 
 .group-management-card-title-row {
@@ -1525,7 +1734,7 @@ h1 {
 }
 
 .feed-history-filters {
-  margin-bottom: 10px;
+  margin: 10px;
 }
 
 .feed-history-groups {
@@ -1678,6 +1887,443 @@ h1 {
   margin-left: 0;
 }
 
+.admin-calendar-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-calendar-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.admin-calendar-month-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.admin-calendar-kicker,
+.admin-calendar-day-kicker {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-calendar-kicker {
+  color: var(--ink-soft);
+}
+
+.admin-calendar-day-kicker {
+  color: #acb2aa;
+}
+
+.admin-calendar-month-copy h3,
+.admin-calendar-day-head h3 {
+  margin: 0;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.65rem;
+}
+
+.admin-calendar-month-copy h3 {
+  color: var(--ink-strong);
+}
+
+.admin-calendar-day-head h3 {
+  color: #f6f2e8;
+}
+
+.admin-calendar-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-calendar-nav-btn,
+.admin-calendar-inline-btn {
+  height: 42px;
+  border: 1px solid #d7c69d;
+  border-radius: 12px;
+  background: #fffaf0;
+  color: var(--ink-strong);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.admin-calendar-nav-btn {
+  width: 42px;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.admin-calendar-inline-btn {
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+.admin-calendar-nav-btn:focus-visible,
+.admin-calendar-inline-btn:focus-visible,
+.admin-calendar-day:focus-visible,
+.admin-calendar-filter-btn:focus-visible {
+  outline: 2px solid rgba(53, 94, 59, 0.34);
+  outline-offset: 2px;
+}
+
+.admin-calendar-surface,
+.admin-calendar-day-panel {
+  border: 1px solid rgba(39, 48, 43, 0.96);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(13, 16, 15, 0.98) 0%, rgba(26, 29, 28, 0.98) 100%);
+  color: #f6f2e8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 18px 34px rgba(45, 42, 31, 0.18);
+}
+
+.admin-calendar-surface {
+  padding: 16px;
+}
+
+.admin-calendar-legend {
+  margin-bottom: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  color: #b9b8b1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-calendar-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-calendar-legend-line {
+  display: inline-block;
+  width: 18px;
+  height: 4px;
+  border-radius: 999px;
+  background: #8f8f8f;
+}
+
+.admin-calendar-legend-line.is-rain,
+.admin-calendar-day-marker.is-rain,
+.admin-calendar-event-badge.is-rain {
+  background: #59a7ff;
+}
+
+.admin-calendar-legend-line.is-frost,
+.admin-calendar-day-marker.is-frost,
+.admin-calendar-event-badge.is-frost {
+  background: #8fd6ff;
+}
+
+.admin-calendar-legend-line.is-feed,
+.admin-calendar-day-marker.is-feed,
+.admin-calendar-event-badge.is-feed {
+  background: #ffb648;
+}
+
+.admin-calendar-legend-line.is-field,
+.admin-calendar-day-marker.is-field,
+.admin-calendar-event-badge.is-field {
+  background: #7fd972;
+}
+
+.admin-calendar-legend-line.is-care,
+.admin-calendar-day-marker.is-care,
+.admin-calendar-event-badge.is-care {
+  background: #ff6a6a;
+}
+
+.admin-calendar-legend-line.is-movement,
+.admin-calendar-day-marker.is-movement,
+.admin-calendar-event-badge.is-movement {
+  background: #78d7df;
+}
+
+.admin-calendar-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-calendar-weekdays,
+.admin-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-calendar-weekday {
+  text-align: center;
+  color: #8f958d;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-calendar-day {
+  min-width: 0;
+  min-height: 96px;
+  border: 1px solid rgba(88, 98, 91, 0.76);
+  border-radius: 14px;
+  background: #232322;
+  color: #f6f2e8;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.admin-calendar-day:hover {
+  transform: translateY(-1px);
+  border-color: rgba(121, 169, 255, 0.74);
+}
+
+.admin-calendar-day.is-outside-month {
+  opacity: 0.64;
+}
+
+.admin-calendar-day.is-selected {
+  border-color: #5fafff;
+  box-shadow: inset 0 0 0 1px rgba(95, 175, 255, 0.3);
+}
+
+.admin-calendar-day.is-today {
+  border-color: rgba(240, 220, 177, 0.84);
+}
+
+.admin-calendar-day-number {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.admin-calendar-day-markers {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  align-self: stretch;
+}
+
+.admin-calendar-day-marker {
+  height: 4px;
+  border-radius: 999px;
+  background: #8f8f8f;
+}
+
+.admin-calendar-day-marker.is-overflow {
+  height: auto;
+  background: transparent;
+  color: #b9b8b1;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.admin-calendar-day-panel {
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.admin-calendar-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.admin-calendar-selected-meta {
+  margin: 0;
+  color: #b9b8b1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-calendar-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-calendar-filter-btn {
+  min-height: 38px;
+  border: 1px solid rgba(108, 118, 111, 0.74);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #d9d5ca;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-calendar-filter-btn span {
+  color: #a8afa7;
+  font-size: 12px;
+}
+
+.admin-calendar-filter-btn.is-active {
+  border-color: rgba(95, 175, 255, 0.72);
+  background: rgba(95, 175, 255, 0.14);
+  color: #f6f2e8;
+}
+
+.admin-calendar-day-events {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-calendar-event-card,
+.admin-calendar-empty-state,
+.admin-calendar-status-card {
+  border: 1px solid rgba(77, 86, 80, 0.84);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.admin-calendar-event-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+}
+
+.admin-calendar-event-badge {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  color: #08110c;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-calendar-event-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.admin-calendar-event-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.admin-calendar-event-type,
+.admin-calendar-event-subtitle,
+.admin-calendar-event-detail,
+.admin-calendar-event-note,
+.admin-calendar-status-card span,
+.admin-calendar-empty-state span {
+  margin: 0;
+}
+
+.admin-calendar-event-type {
+  color: #aeb4ac;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-calendar-event-metric {
+  margin: 0;
+  color: #f6f2e8;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-calendar-event-card h4 {
+  margin: 0;
+  color: #f6f2e8;
+  font-size: 1.2rem;
+  font-family: "Fraunces", Georgia, serif;
+}
+
+.admin-calendar-event-subtitle {
+  color: #d8d4c9;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.admin-calendar-event-detail {
+  color: #b8b5ab;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.admin-calendar-event-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-calendar-event-tag {
+  border: 1px solid rgba(106, 116, 110, 0.74);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: #c7c3b7;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.admin-calendar-event-note {
+  color: #9da39a;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.admin-calendar-empty-state,
+.admin-calendar-status-card {
+  padding: 16px;
+}
+
+.admin-calendar-empty-state p,
+.admin-calendar-status-card p {
+  margin: 0 0 6px;
+  color: #f6f2e8;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.admin-calendar-empty-state span,
+.admin-calendar-status-card span {
+  color: #acb2aa;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
 .occupancy-count {
   font-weight: 800;
   color: var(--ink-strong);
@@ -1730,6 +2376,7 @@ h1 {
 }
 
 .rain-entries-table-wrap,
+.frost-entries-table-wrap,
 .recent-activity-table-wrap {
   max-height: 520px;
   overflow: auto;
@@ -2188,10 +2835,12 @@ h1 {
 }
 
 .rain-chart-wrap {
+  position: relative;
   border-top: 1px solid #232a36;
   border-bottom: 1px solid #232a36;
   padding: 10px 0 4px;
   margin-bottom: 10px;
+  overflow: visible;
 }
 
 .rain-chart-wrap.is-ring-mode {
@@ -2203,6 +2852,62 @@ h1 {
   width: 100%;
   height: 250px;
   display: block;
+}
+
+.rain-bar {
+  transition: opacity 140ms ease, filter 140ms ease;
+}
+
+.rain-bar.is-active {
+  filter: brightness(1.08) drop-shadow(0 0 10px rgba(45, 139, 255, 0.35));
+}
+
+.rain-bar.is-target-met.is-active {
+  filter: brightness(1.08) drop-shadow(0 0 10px rgba(34, 197, 94, 0.35));
+}
+
+.rain-chart-hit-area {
+  cursor: crosshair;
+}
+
+.rain-chart-tooltip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  min-width: 136px;
+  max-width: min(220px, calc(100% - 16px));
+  padding: 10px 12px;
+  border: 1px solid rgba(134, 151, 177, 0.35);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(14, 19, 29, 0.98) 0%, rgba(20, 27, 40, 0.98) 100%);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.34);
+  color: #f5f8ff;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition: opacity 140ms ease, visibility 140ms ease;
+  z-index: 2;
+}
+
+.rain-chart-tooltip.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.rain-chart-tooltip-date {
+  margin: 0 0 3px;
+  color: #c7d0e0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rain-chart-tooltip-amount {
+  margin: 0;
+  color: #f7fbff;
+  font-size: 1rem;
+  font-weight: 800;
 }
 
 .rain-chart-wrap.is-ring-mode #rain-chart {
@@ -2395,6 +3100,11 @@ tbody tr {
   background: var(--warning);
 }
 
+.badge.growing {
+  color: #4d2d06;
+  background: #f3b343;
+}
+
 .badge.ok {
   color: #fff;
   background: var(--ok);
@@ -2531,6 +3241,10 @@ tbody tr {
     height: 230px;
   }
 
+  .rain-chart-hit-area {
+    cursor: pointer;
+  }
+
   .rain-chart-wrap.is-ring-mode #rain-chart {
     width: min(100%, 360px);
     height: min(84vw, 300px);
@@ -2631,5 +3345,1550 @@ tbody tr {
     width: 48px;
     height: 48px;
     font-size: 22px;
+  }
+}
+
+@media (max-width: 780px) {
+  :root {
+    --panel: var(--garmin-panel);
+    --panel-border: var(--garmin-border);
+    --ink-strong: var(--garmin-ink);
+    --ink-soft: var(--garmin-soft);
+    --accent: var(--garmin-accent-strong);
+    --accent-soft: #d7f988;
+    --danger: var(--garmin-danger);
+    --warning: var(--garmin-warning);
+    --ok: var(--garmin-ok);
+    --shadow: var(--garmin-shadow);
+    --radius: 24px;
+  }
+
+  body {
+    background:
+      radial-gradient(circle at top, rgba(216, 255, 117, 0.07), transparent 28%),
+      linear-gradient(180deg, #0b120f 0%, #050906 100%);
+    color: var(--garmin-ink);
+  }
+
+  body::before,
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  body::before {
+    background:
+      linear-gradient(var(--garmin-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--garmin-grid) 1px, transparent 1px);
+    background-size: 18px 18px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.56), transparent 72%);
+  }
+
+  body::after {
+    background:
+      radial-gradient(circle at 50% 0%, rgba(216, 255, 117, 0.1), transparent 34%),
+      linear-gradient(180deg, transparent 58%, rgba(0, 0, 0, 0.42) 100%);
+  }
+
+  .background-shape {
+    display: none;
+  }
+
+  .loading-overlay {
+    background: rgba(4, 8, 6, 0.82);
+    backdrop-filter: blur(18px);
+  }
+
+  .loading-overlay-card {
+    border-color: var(--garmin-border);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(17, 26, 22, 0.98) 0%, rgba(7, 11, 9, 0.98) 100%);
+    box-shadow:
+      var(--garmin-shadow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .loading-overlay-spinner {
+    border-color: rgba(216, 255, 117, 0.1);
+    border-top-color: var(--garmin-accent);
+  }
+
+  .loading-overlay-eyebrow {
+    color: var(--garmin-accent);
+    font-family: "IBM Plex Sans Condensed", "Manrope", sans-serif;
+    letter-spacing: 0.18em;
+  }
+
+  .loading-overlay-card h2 {
+    color: var(--garmin-ink);
+    font-family: "Space Grotesk", "Manrope", sans-serif;
+    letter-spacing: -0.04em;
+  }
+
+  .loading-overlay-card p:last-child {
+    color: var(--garmin-soft);
+  }
+
+  .dashboard {
+    margin: 0;
+    padding:
+      calc(14px + env(safe-area-inset-top, 0px))
+      14px
+      calc(132px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .dashboard-header {
+    position: relative;
+    overflow: hidden;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 18px 16px 16px;
+    border: 1px solid var(--garmin-border-strong);
+    border-radius: 28px;
+    background: linear-gradient(180deg, rgba(18, 27, 23, 0.94) 0%, rgba(8, 13, 11, 0.98) 100%);
+    box-shadow:
+      0 24px 50px rgba(0, 0, 0, 0.36),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .dashboard-header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(216, 255, 117, 0.08), transparent 44%);
+    pointer-events: none;
+  }
+
+  .brand-lockup,
+  .dashboard-header > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .brand-lockup {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: start;
+    gap: 14px;
+  }
+
+  .brand-logo {
+    width: 68px;
+    height: 68px;
+    padding: 10px;
+    border: 1px solid var(--garmin-border);
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(216, 255, 117, 0.08), rgba(255, 255, 255, 0.03));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 18px 30px rgba(0, 0, 0, 0.28);
+  }
+
+  .brand-copy {
+    display: grid;
+    gap: 7px;
+  }
+
+  .eyebrow,
+  .panel h2::before,
+  .action-card h3::before {
+    font-family: "IBM Plex Sans Condensed", "Manrope", sans-serif;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .eyebrow {
+    color: var(--garmin-accent);
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  h1 {
+    margin: 0;
+    font-family: "Space Grotesk", "Manrope", sans-serif;
+    font-size: clamp(2rem, 10vw, 2.85rem);
+    line-height: 0.98;
+    letter-spacing: -0.06em;
+  }
+
+  .subtext {
+    max-width: 32ch;
+    color: var(--garmin-soft);
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+
+  .toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+    align-items: end;
+    padding: 14px;
+    border-color: var(--garmin-border);
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(18, 28, 23, 0.92) 0%, rgba(10, 16, 13, 0.98) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      0 18px 32px rgba(0, 0, 0, 0.24);
+  }
+
+  .toolbar > label,
+  .toolbar > input {
+    grid-column: 1 / -1;
+  }
+
+  .toolbar label,
+  .history-toolbar label,
+  .action-form label,
+  .feed-plan-mobile-label,
+  .group-management-members h4,
+  .feed-summary-section h4,
+  .feed-calendar-weekday,
+  th {
+    color: #d4e2d0;
+    font-family: "IBM Plex Sans Condensed", "Manrope", sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .toolbar input,
+  .action-form input,
+  .action-form select,
+  .history-toolbar select,
+  .history-toolbar input[type="month"],
+  .summary-editor-row input[type="text"] {
+    min-width: 0;
+    height: 42px;
+    border-color: rgba(217, 255, 138, 0.18);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--garmin-ink);
+    padding: 0 14px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .toolbar input {
+    height: 46px;
+  }
+
+  .toolbar input::placeholder,
+  .action-form input::placeholder,
+  .summary-editor-row input[type="text"]::placeholder {
+    color: rgba(237, 243, 232, 0.4);
+  }
+
+  .toolbar input:focus-visible,
+  .action-form input:focus-visible,
+  .action-form select:focus-visible,
+  .history-toolbar select:focus-visible,
+  .history-toolbar input[type="month"]:focus-visible,
+  .summary-editor-row input[type="text"]:focus-visible,
+  .summary-toolbar button:focus-visible,
+  .action-form button:focus-visible,
+  .history-toolbar button:focus-visible,
+  .inline-action-btn:focus-visible,
+  .subpanel-toggle:focus-visible {
+    outline: 2px solid rgba(216, 255, 117, 0.58);
+    outline-offset: 2px;
+  }
+
+  .toolbar button,
+  .summary-toolbar button,
+  .summary-editor-row button,
+  .action-form button,
+  .history-toolbar button,
+  .inline-action-btn,
+  .rain-window-btn,
+  .rain-range-nav {
+    border-radius: 12px;
+    font-family: "IBM Plex Sans Condensed", "Manrope", sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .toolbar button,
+  .action-form button,
+  .history-toolbar button {
+    height: 42px;
+    box-shadow: 0 12px 22px rgba(0, 0, 0, 0.2);
+  }
+
+  #login-btn,
+  .action-form button,
+  .history-toolbar button,
+  .back-to-top-btn {
+    background: linear-gradient(180deg, #d8ff75 0%, #8dbc38 100%);
+    color: #071008;
+  }
+
+  #login-btn {
+    grid-column: 1 / -1;
+  }
+
+  #logout-btn,
+  #refresh-btn,
+  .summary-toolbar button,
+  .summary-editor-row button,
+  .action-form button.secondary,
+  .inline-action-btn,
+  .rain-window-btn,
+  .rain-range-nav {
+    border: 1px solid rgba(216, 255, 117, 0.14);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--garmin-ink);
+    box-shadow: none;
+  }
+
+  .inline-action-btn.danger {
+    border-color: rgba(255, 124, 95, 0.25);
+    background: rgba(255, 124, 95, 0.08);
+    color: #ffd3c7;
+  }
+
+  .status-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: stretch;
+    margin: 0 0 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--garmin-border);
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(15, 22, 19, 0.94) 0%, rgba(8, 12, 11, 0.98) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      0 16px 30px rgba(0, 0, 0, 0.22);
+  }
+
+  #status-message,
+  #last-updated {
+    margin: 0;
+    align-self: center;
+  }
+
+  #status-message {
+    color: var(--garmin-ink);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.45;
+  }
+
+  #status-message::before,
+  #last-updated::before {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--garmin-accent);
+    font-family: "IBM Plex Sans Condensed", "Manrope", sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  #status-message::before {
+    content: 'System';
+  }
+
+  #last-updated {
+    padding-left: 12px;
+    border-left: 1px solid rgba(216, 255, 117, 0.12);
+    color: #dfe9d8;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: right;
+  }
+
+  #last-updated::before {
+    content: 'Sync';
+  }
+
+  .summary-toolbar {
+    gap: 8px;
+    margin: 0 0 10px;
+  }
+
+  .summary-toolbar button {
+    flex: 1 1 0;
+    min-height: 40px;
+  }
+
+  .summary-editor {
+    border-color: var(--garmin-border);
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(17, 24, 21, 0.95) 0%, rgba(8, 12, 10, 0.98) 100%);
+    padding: 14px;
+  }
+
+  .summary-editor p,
+  .summary-editor-note,
+  .action-card-note,
+  .action-form-hint,
+  .history-focus-line,
+  .history-focus-line.subtle,
+  .feed-summary-copy,
+  .feed-summary-empty,
+  .feed-plan-slot-empty,
+  .module-settings-copy small,
+  .feed-history-day-meta,
+  .feed-history-slot-head p,
+  .activity-row-copy span,
+  .activity-row-meta p,
+  .group-management-card-paddock,
+  .group-management-meta dt,
+  .group-management-meta dd,
+  .paddock-occupancy-card-meta dt,
+  .paddock-occupancy-card-meta dd,
+  .feed-history-ingredient-copy span,
+  .feed-plan-slot-copy p,
+  .pasture-card-copy,
+  .pasture-card-meta dt,
+  .pasture-card-meta dd,
+  .rain-chart-legend,
+  #rain-chart-label,
+  .checkbox-list-empty,
+  .subtext {
+    color: var(--garmin-soft);
+  }
+
+  .summary-editor-row {
+    border-bottom-color: rgba(216, 255, 117, 0.08);
+    padding: 10px 0;
+  }
+
+  .summary-grid {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 2px 0 10px;
+    margin-bottom: 16px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+  }
+
+  .summary-grid > * {
+    flex: 0 0 min(78vw, 248px);
+    width: min(78vw, 248px);
+    min-height: 188px;
+    scroll-snap-align: start;
+  }
+
+  .summary-card {
+    position: relative;
+    overflow: hidden;
+    padding: 16px;
+    border: 1px solid var(--garmin-border-strong);
+    border-radius: 24px;
+    background:
+      radial-gradient(circle at top right, rgba(216, 255, 117, 0.12), transparent 36%),
+      linear-gradient(180deg, rgba(20, 31, 26, 0.96) 0%, rgba(8, 12, 11, 0.98) 100%);
+    box-shadow:
+      0 20px 34px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .summary-card::after {
+    content: '';
+    position: absolute;
+    right: 16px;
+    bottom: 12px;
+    left: 16px;
+    height: 4px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(216, 255, 117, 0.8), transparent);
+    opacity: 0.76;
+  }
+
+  .summary-card h3 {
+    color: #c6d5c4;
+    font-family: "IBM Plex Sans Condensed", "Manrope", sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .summary-card p {
+    margin-top: auto;
+    color: var(--garmin-ink);
+    font-family: "Space Grotesk", "Manrope", sans-serif;
+    font-size: clamp(2.35rem, 14vw, 3.2rem);
+    font-weight: 700;
+    line-height: 0.95;
+  }
+
+  .summary-card p.muted {
+    display: inline-flex;
+    width: fit-content;
+    margin-top: 14px;
+    padding: 6px 10px;
+    border: 1px solid rgba(216, 255, 117, 0.16);
+    border-radius: 999px;
+    background: rgba(216, 255, 117, 0.07);
+    color: var(--garmin-accent);
+    font-family: "IBM Plex Sans Condensed", "Manrope", sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .summary-card-button:hover {
+    transform: translateY(-2px);
+    border-color: var(--garmin-border-strong);
+    box-shadow:
+      0 24px 38px rgba(0, 0, 0, 0.34),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .panel-grid,
+  .action-hub-grid,
+  .action-section-grid,
+  .action-section-stack,
+  .horse-history-grid,
+  .feed-summary-grid {
+    gap: 12px;
+  }
+
+  .panel,
+  .action-card,
+  .action-section-card,
+  .mini-history-card,
+  .subpanel,
+  .action-card-details,
+  .feed-summary-section,
+  .feed-history-day,
+  .feed-history-slot,
+  .feed-plan-slot-card,
+  .feed-calendar-day,
+  .pasture-card,
+  .group-management-card,
+  .paddock-occupancy-card,
+  .farm-setup-checklist-item {
+    border-color: var(--garmin-border);
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(18, 28, 23, 0.95) 0%, rgba(9, 13, 11, 0.98) 100%);
+    box-shadow:
+      0 18px 34px rgba(0, 0, 0, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .panel,
+  .action-card,
+  .mini-history-card,
+  .action-section-card,
+  .feed-plan-slot-card,
+  .group-management-card,
+  .paddock-occupancy-card,
+  .pasture-card {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .panel::before,
+  .action-card::before,
+  .mini-history-card::before,
+  .pasture-card::before,
+  .group-management-card::before,
+  .paddock-occupancy-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 16px;
+    left: 16px;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(216, 255, 117, 0.38), transparent);
+    pointer-events: none;
+  }
+
+  .panel {
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .panel h2,
+  .action-card h3,
+  .mini-history-card h3,
+  .feed-history-slot-head h4,
+  .feed-plan-slot-copy h4,
+  .group-management-card-title-row h3,
+  .paddock-occupancy-card-head h3,
+  .pasture-card-head h3,
+  .rain-section-title {
+    color: var(--garmin-ink);
+    font-family: "Space Grotesk", "Manrope", sans-serif;
+    letter-spacing: -0.04em;
+  }
+
+  .panel h2 {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+    margin-bottom: 12px;
+    font-size: 1.24rem;
+  }
+
+  .panel h2::before {
+    content: 'Module';
+    display: block;
+    margin-bottom: 4px;
+    color: var(--garmin-accent);
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .action-card h3 {
+    font-size: 1.06rem;
+  }
+
+  .action-card h3::before {
+    content: 'Action';
+    display: block;
+    margin-bottom: 4px;
+    color: var(--garmin-accent);
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .panel > h2.panel-toggle,
+  .action-card h3.action-card-toggle {
+    position: relative;
+    display: block;
+    padding-right: 40px;
+  }
+
+  .panel > h2.panel-toggle::after,
+  .action-card h3.action-card-toggle::after,
+  .action-card-details summary::after,
+  .feed-history-day summary::after,
+  .activity-row summary::after,
+  .occupancy-horses-details summary::after,
+  .subpanel-toggle::after {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin-left: 10px;
+    border: 1px solid rgba(216, 255, 117, 0.16);
+    border-radius: 999px;
+    background: rgba(216, 255, 117, 0.08);
+    color: var(--garmin-accent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .panel > h2.panel-toggle::after,
+  .action-card h3.action-card-toggle::after {
+    position: absolute;
+    top: 2px;
+    right: 0;
+    margin-left: 0;
+  }
+
+  .group-management-disclosure summary::before {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    margin-right: 2px;
+    border: 1px solid rgba(216, 255, 117, 0.16);
+    border-radius: 999px;
+    background: rgba(216, 255, 117, 0.08);
+    color: var(--garmin-accent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .action-card-details {
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .action-card-details summary,
+  .feed-history-day summary,
+  .activity-row summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .action-card-details summary::after {
+    float: none;
+  }
+
+  .subpanel-toggle {
+    min-height: 48px;
+    padding: 12px 14px;
+    border-bottom-color: rgba(216, 255, 117, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--garmin-ink);
+    font-family: "Space Grotesk", "Manrope", sans-serif;
+    font-size: 14px;
+  }
+
+  .history-toolbar,
+  .action-form-button-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .action-form-button-row button {
+    width: 100%;
+  }
+
+  .checkbox-list {
+    border-color: rgba(216, 255, 117, 0.16);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .checkbox-list-item:hover {
+    background: rgba(216, 255, 117, 0.08);
+  }
+
+  .checkbox-list-item span,
+  .module-settings-copy strong,
+  .feed-history-ingredient-copy strong,
+  .group-management-card-count,
+  .paddock-occupancy-card-count,
+  .occupancy-count,
+  .activity-row-copy strong,
+  .feed-summary-list strong,
+  .pasture-card-focus,
+  .pasture-card-stat-value,
+  .feed-history-slot-head h4,
+  .feed-calendar-day-head strong {
+    color: var(--garmin-ink);
+  }
+
+  .table-wrap {
+    border: 1px solid rgba(216, 255, 117, 0.1);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.02);
+    padding: 4px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  table {
+    min-width: 520px;
+  }
+
+  th,
+  td {
+    border-bottom-color: rgba(216, 255, 117, 0.08);
+  }
+
+  th {
+    color: #d4e2d0;
+  }
+
+  td {
+    color: var(--garmin-ink);
+    font-size: 13px;
+  }
+
+  tbody tr:hover td {
+    background: rgba(216, 255, 117, 0.04);
+  }
+
+  .horse-row.is-selected td {
+    background: rgba(216, 255, 117, 0.14);
+  }
+
+  .badge {
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .badge.neutral {
+    color: #f1f5eb;
+    background: #52604f;
+  }
+
+  .rain-insights {
+    border-color: rgba(216, 255, 117, 0.16);
+    border-radius: 22px;
+    background: radial-gradient(circle at 18% 0%, #18231d, #070c0a 64%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .rain-window-controls {
+    border-color: rgba(216, 255, 117, 0.12);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .rain-window-btn {
+    color: #8ba387;
+  }
+
+  .rain-window-btn.is-active {
+    background: rgba(216, 255, 117, 0.14);
+    color: var(--garmin-ink);
+  }
+
+  .rain-range-nav {
+    color: var(--garmin-accent);
+  }
+
+  .feed-calendar-day {
+    border-color: rgba(216, 255, 117, 0.12);
+  }
+
+  .feed-calendar-day.is-today {
+    border-color: var(--garmin-border-strong);
+    background:
+      radial-gradient(circle at top right, rgba(216, 255, 117, 0.12), transparent 34%),
+      linear-gradient(180deg, rgba(18, 27, 23, 0.95) 0%, rgba(9, 13, 11, 0.98) 100%);
+    box-shadow: inset 0 0 0 1px rgba(216, 255, 117, 0.2);
+  }
+
+  .feed-calendar-day-head {
+    color: var(--garmin-soft);
+  }
+
+  .feed-calendar-slot {
+    border-color: rgba(216, 255, 117, 0.14);
+    background: rgba(255, 255, 255, 0.03);
+    color: #e2ebdb;
+  }
+
+  .feed-calendar-slot.is-checked {
+    border-color: rgba(216, 255, 117, 0.24);
+    background: rgba(216, 255, 117, 0.15);
+    color: #eff9e8;
+  }
+
+  .feed-calendar-slot.is-disabled {
+    background: rgba(255, 255, 255, 0.02);
+    color: #788679;
+  }
+
+  .pasture-state-ready {
+    background:
+      radial-gradient(circle at top right, rgba(135, 217, 92, 0.14), transparent 38%),
+      linear-gradient(180deg, rgba(18, 28, 23, 0.95) 0%, rgba(9, 13, 11, 0.98) 100%);
+  }
+
+  .pasture-state-growing {
+    background:
+      radial-gradient(circle at top right, rgba(255, 212, 93, 0.14), transparent 38%),
+      linear-gradient(180deg, rgba(18, 28, 23, 0.95) 0%, rgba(9, 13, 11, 0.98) 100%);
+  }
+
+  .pasture-state-occupied {
+    background:
+      radial-gradient(circle at top right, rgba(78, 158, 255, 0.12), transparent 38%),
+      linear-gradient(180deg, rgba(18, 28, 23, 0.95) 0%, rgba(9, 13, 11, 0.98) 100%);
+  }
+
+  input[type="checkbox"] {
+    accent-color: var(--garmin-accent-strong);
+  }
+
+  .back-to-top-btn {
+    right: 14px;
+    bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+    width: 54px;
+    height: 54px;
+    border: 1px solid rgba(216, 255, 117, 0.2);
+    border-radius: 18px;
+    box-shadow: 0 18px 30px rgba(0, 0, 0, 0.34);
+    font-family: "Space Grotesk", "Manrope", sans-serif;
+    font-size: 24px;
+  }
+
+  .back-to-top-btn:focus-visible {
+    outline-color: rgba(216, 255, 117, 0.68);
+  }
+
+  .mobile-bottom-nav {
+    position: fixed;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    left: 10px;
+    z-index: 26;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid rgba(214, 199, 163, 0.92);
+    border-radius: 24px;
+    background:
+      linear-gradient(180deg, rgba(255, 250, 240, 0.96) 0%, rgba(249, 242, 226, 0.98) 100%);
+    box-shadow:
+      0 20px 36px rgba(88, 73, 43, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.66);
+    backdrop-filter: blur(18px);
+  }
+
+  .mobile-bottom-nav::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 18px;
+    left: 18px;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(53, 94, 59, 0.24), transparent);
+    pointer-events: none;
+  }
+
+  .mobile-nav-item {
+    min-width: 0;
+    min-height: 56px;
+    border: 1px solid rgba(214, 199, 163, 0.9);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(247, 239, 221, 0.96) 100%);
+    color: #5f5a4a;
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 4px;
+    padding: 8px 4px;
+    font: inherit;
+    cursor: pointer;
+    transition:
+      transform 140ms ease,
+      border-color 140ms ease,
+      background-color 140ms ease,
+      color 140ms ease,
+      box-shadow 140ms ease;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.72),
+      0 8px 16px rgba(94, 73, 37, 0.08);
+  }
+
+  .mobile-nav-item-index {
+    font-family: "IBM Plex Sans Condensed", "Manrope", sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #7f7151;
+    opacity: 0.88;
+  }
+
+  .mobile-nav-item-label {
+    font-family: "Space Grotesk", "Manrope", sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #433a27;
+    line-height: 1.1;
+  }
+
+  .mobile-nav-item.is-active {
+    border-color: rgba(53, 94, 59, 0.3);
+    background: linear-gradient(180deg, #355e3b 0%, #27442d 100%);
+    color: #fffdf8;
+    box-shadow:
+      0 12px 22px rgba(53, 94, 59, 0.24),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    transform: translateY(-2px);
+  }
+
+  .mobile-nav-item.is-active .mobile-nav-item-index {
+    color: rgba(255, 253, 248, 0.72);
+    opacity: 1;
+  }
+
+  .mobile-nav-item.is-active .mobile-nav-item-label {
+    color: #fffdf8;
+  }
+
+  .mobile-nav-item:focus-visible {
+    outline: 2px solid rgba(53, 94, 59, 0.36);
+    outline-offset: 2px;
+  }
+}
+
+@media (max-width: 780px) {
+  :root {
+    --panel: #fffdf8;
+    --panel-border: #d6c7a3;
+    --ink-strong: #2d2a1f;
+    --ink-soft: #5f5a4a;
+    --accent: #355e3b;
+    --accent-soft: #4f7a52;
+    --danger: #8d3323;
+    --warning: #9b6b1e;
+    --ok: #2f6a44;
+    --shadow: 0 18px 40px rgba(45, 42, 31, 0.12);
+    --radius: 16px;
+  }
+
+  body {
+    background: linear-gradient(150deg, var(--bg-top), var(--bg-bottom));
+    color: var(--ink-strong);
+  }
+
+  body::before,
+  body::after {
+    content: none;
+    display: none;
+  }
+
+  .background-shape {
+    display: block;
+  }
+
+  .loading-overlay {
+    background: rgba(245, 238, 223, 0.7);
+    backdrop-filter: blur(8px);
+  }
+
+  .loading-overlay-card {
+    border: 1px solid rgba(214, 199, 163, 0.95);
+    border-radius: 20px;
+    background: rgba(255, 253, 248, 0.96);
+    box-shadow: 0 20px 48px rgba(45, 42, 31, 0.18);
+  }
+
+  .loading-overlay-spinner {
+    border-color: rgba(79, 122, 82, 0.16);
+    border-top-color: var(--accent);
+  }
+
+  .loading-overlay-eyebrow {
+    color: var(--accent);
+    font-family: "Manrope", "Trebuchet MS", "Segoe UI", sans-serif;
+    letter-spacing: 0.08em;
+  }
+
+  .loading-overlay-card h2 {
+    color: var(--ink-strong);
+    font-family: "Fraunces", Georgia, serif;
+    letter-spacing: 0;
+  }
+
+  .loading-overlay-card p:last-child {
+    color: var(--ink-soft);
+  }
+
+  .dashboard-header {
+    border: 1px solid var(--panel-border);
+    border-radius: 28px;
+    background: linear-gradient(135deg, rgba(255, 251, 242, 0.98) 0%, rgba(238, 229, 197, 0.92) 100%);
+    box-shadow: 0 24px 50px rgba(113, 93, 54, 0.14);
+  }
+
+  .dashboard-header::before {
+    background: radial-gradient(circle at 50% 50%, rgba(157, 175, 123, 0.18), transparent 60%);
+  }
+
+  .brand-logo {
+    border: 0;
+    background: transparent;
+    box-shadow: 0 18px 30px rgba(53, 94, 59, 0.12);
+  }
+
+  .eyebrow {
+    color: var(--accent);
+    font-family: "Manrope", "Trebuchet MS", "Segoe UI", sans-serif;
+    letter-spacing: 0.08em;
+  }
+
+  h1 {
+    color: var(--ink-strong);
+    font-family: "Fraunces", Georgia, serif;
+    letter-spacing: -0.03em;
+  }
+
+  .subtext {
+    color: var(--ink-soft);
+  }
+
+  .toolbar {
+    border-color: var(--panel-border);
+    border-radius: 22px;
+    background: rgba(255, 253, 248, 0.88);
+    box-shadow: var(--shadow);
+  }
+
+  .toolbar label,
+  .history-toolbar label,
+  .action-form label,
+  .feed-plan-mobile-label,
+  .group-management-members h4,
+  .feed-summary-section h4,
+  .feed-calendar-weekday,
+  th {
+    color: var(--ink-soft);
+    font-family: "Manrope", "Trebuchet MS", "Segoe UI", sans-serif;
+    letter-spacing: 0.05em;
+  }
+
+  .toolbar input,
+  .action-form input,
+  .action-form select,
+  .history-toolbar select,
+  .history-toolbar input[type="month"],
+  .summary-editor-row input[type="text"] {
+    border-color: #bcab83;
+    background: #fff;
+    color: var(--ink-strong);
+    box-shadow: none;
+  }
+
+  .toolbar input::placeholder,
+  .action-form input::placeholder,
+  .summary-editor-row input[type="text"]::placeholder {
+    color: rgba(95, 90, 74, 0.58);
+  }
+
+  .toolbar input:focus-visible,
+  .action-form input:focus-visible,
+  .action-form select:focus-visible,
+  .history-toolbar select:focus-visible,
+  .history-toolbar input[type="month"]:focus-visible,
+  .summary-editor-row input[type="text"]:focus-visible,
+  .summary-toolbar button:focus-visible,
+  .action-form button:focus-visible,
+  .history-toolbar button:focus-visible,
+  .inline-action-btn:focus-visible,
+  .subpanel-toggle:focus-visible {
+    outline: 2px solid rgba(53, 94, 59, 0.24);
+  }
+
+  #login-btn,
+  .action-form button,
+  .history-toolbar button,
+  .back-to-top-btn {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  #logout-btn,
+  #refresh-btn,
+  .summary-toolbar button,
+  .summary-editor-row button,
+  .action-form button.secondary,
+  .inline-action-btn,
+  .rain-window-btn,
+  .rain-range-nav {
+    border: 1px solid #bcab83;
+    background: #f0e4c8;
+    color: #3f341f;
+  }
+
+  .status-row {
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  #status-message {
+    color: var(--ink-strong);
+  }
+
+  #status-message::before,
+  #last-updated::before {
+    color: var(--accent);
+  }
+
+  #last-updated {
+    border-left-color: rgba(53, 94, 59, 0.12);
+    color: var(--ink-soft);
+  }
+
+  .summary-editor {
+    border-color: var(--panel-border);
+    border-radius: 20px;
+    background: rgba(255, 253, 248, 0.95);
+    box-shadow: var(--shadow);
+  }
+
+  .summary-editor p,
+  .summary-editor-note,
+  .action-card-note,
+  .action-form-hint,
+  .history-focus-line,
+  .history-focus-line.subtle,
+  .feed-summary-copy,
+  .feed-summary-empty,
+  .feed-plan-slot-empty,
+  .module-settings-copy small,
+  .feed-history-day-meta,
+  .feed-history-slot-head p,
+  .activity-row-copy span,
+  .activity-row-meta p,
+  .group-management-card-paddock,
+  .group-management-meta dt,
+  .group-management-meta dd,
+  .paddock-occupancy-card-meta dt,
+  .paddock-occupancy-card-meta dd,
+  .feed-history-ingredient-copy span,
+  .feed-plan-slot-copy p,
+  .pasture-card-copy,
+  .pasture-card-meta dt,
+  .pasture-card-meta dd,
+  .checkbox-list-empty,
+  .subtext {
+    color: var(--ink-soft);
+  }
+
+  .summary-card {
+    border: 1px solid var(--panel-border);
+    border-radius: 24px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .summary-card::after,
+  .panel::before,
+  .action-card::before,
+  .mini-history-card::before,
+  .pasture-card::before,
+  .group-management-card::before,
+  .paddock-occupancy-card::before {
+    display: none;
+  }
+
+  .summary-card h3 {
+    color: var(--ink-soft);
+    font-family: "Manrope", "Trebuchet MS", "Segoe UI", sans-serif;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
+  .summary-card p {
+    color: var(--ink-strong);
+    font-family: "Fraunces", Georgia, serif;
+  }
+
+  .summary-card p.muted {
+    display: block;
+    margin-top: 10px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink-soft);
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
+  .summary-card-button:hover {
+    border-color: #bfa976;
+    box-shadow: var(--shadow);
+  }
+
+  .panel,
+  .action-card,
+  .action-section-card,
+  .mini-history-card,
+  .subpanel,
+  .action-card-details,
+  .feed-summary-section,
+  .feed-history-day,
+  .feed-history-slot,
+  .feed-plan-slot-card,
+  .feed-calendar-day,
+  .pasture-card,
+  .group-management-card,
+  .paddock-occupancy-card,
+  .farm-setup-checklist-item {
+    border-color: #e7d9b7;
+    border-radius: 22px;
+    background: #fffcf4;
+    box-shadow: 0 18px 34px rgba(94, 73, 37, 0.08);
+  }
+
+  .panel h2,
+  .action-card h3,
+  .mini-history-card h3,
+  .feed-history-slot-head h4,
+  .feed-plan-slot-copy h4,
+  .group-management-card-title-row h3,
+  .paddock-occupancy-card-head h3,
+  .pasture-card-head h3,
+  .rain-section-title {
+    color: var(--ink-strong);
+    font-family: "Fraunces", Georgia, serif;
+    letter-spacing: normal;
+  }
+
+  .panel h2::before,
+  .action-card h3::before {
+    content: none;
+    display: none;
+  }
+
+  .panel > h2.panel-toggle::after,
+  .action-card h3.action-card-toggle::after,
+  .action-card-details summary::after,
+  .feed-history-day summary::after,
+  .activity-row summary::after,
+  .occupancy-horses-details summary::after,
+  .subpanel-toggle::after {
+    width: auto;
+    height: auto;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--accent);
+  }
+
+  .group-management-disclosure summary::before {
+    width: auto;
+    height: auto;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--accent);
+  }
+
+  .action-card-details {
+    background: #fffaf0;
+  }
+
+  .subpanel-toggle {
+    border-bottom-color: #e8dbbd;
+    background: #f7eed8;
+    color: #3a321f;
+    font-family: "Manrope", "Trebuchet MS", "Segoe UI", sans-serif;
+  }
+
+  .checkbox-list {
+    border-color: #bcab83;
+    background: #fff;
+  }
+
+  .checkbox-list-item:hover {
+    background: #f7f1e3;
+  }
+
+  .checkbox-list-item span,
+  .module-settings-copy strong,
+  .feed-history-ingredient-copy strong,
+  .group-management-card-count,
+  .paddock-occupancy-card-count,
+  .occupancy-count,
+  .activity-row-copy strong,
+  .feed-summary-list strong,
+  .pasture-card-focus,
+  .pasture-card-stat-value,
+  .feed-history-slot-head h4,
+  .feed-calendar-day-head strong {
+    color: var(--ink-strong);
+  }
+
+  .table-wrap {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  th,
+  td {
+    border-bottom-color: #ebdfc0;
+  }
+
+  th {
+    color: #433a27;
+  }
+
+  td {
+    color: var(--ink-strong);
+  }
+
+  tbody tr:hover td {
+    background: rgba(239, 224, 187, 0.22);
+  }
+
+  .horse-row.is-selected td {
+    background: #efe0bb;
+  }
+
+  .badge {
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .badge.neutral {
+    color: #fff;
+    background: #7f7151;
+  }
+
+  .dashboard[data-mobile-page-layout='active'] .mobile-page-deck {
+    display: block;
+    padding-bottom: 108px;
+  }
+
+  .dashboard[data-mobile-page-layout='active'] > :not(.mobile-page-deck):not(datalist) {
+    display: none !important;
+  }
+
+  .dashboard[data-mobile-page-layout='inactive'] .mobile-page-deck {
+    display: none;
+  }
+
+  .mobile-admin-page {
+    display: none;
+  }
+
+  .mobile-admin-page.is-active {
+    display: grid;
+    gap: 14px;
+  }
+
+  .mobile-admin-page-content {
+    display: grid;
+  }
+
+  .mobile-page-intro {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 18px;
+    border: 1px solid rgba(214, 199, 163, 0.95);
+    border-radius: 22px;
+    background: linear-gradient(135deg, rgba(255, 251, 242, 0.98) 0%, rgba(238, 229, 197, 0.94) 100%);
+    box-shadow: 0 22px 44px rgba(113, 93, 54, 0.12);
+  }
+
+  .mobile-page-eyebrow {
+    margin: 0;
+    color: var(--accent);
+    font-family: "Manrope", "Trebuchet MS", "Segoe UI", sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .mobile-page-intro h2 {
+    margin: 0;
+    color: var(--ink-strong);
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 1.9rem;
+    line-height: 0.98;
+  }
+
+  .mobile-page-description {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+
+  .mobile-page-shortcuts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .mobile-page-shortcut {
+    min-height: 44px;
+    border: 1px solid rgba(214, 199, 163, 0.95);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(247, 239, 221, 0.98) 100%);
+    color: #433a27;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      0 10px 20px rgba(94, 73, 37, 0.08);
+  }
+
+  .mobile-page-shortcut:focus-visible {
+    outline: 2px solid rgba(53, 94, 59, 0.36);
+    outline-offset: 2px;
+  }
+
+  .admin-calendar-toolbar {
+    align-items: flex-start;
+  }
+
+  .admin-calendar-month-copy {
+    flex: 1 1 auto;
+  }
+
+  .admin-calendar-month-copy h3,
+  .admin-calendar-day-head h3 {
+    font-size: 1.45rem;
+  }
+
+  .admin-calendar-toolbar-actions {
+    width: auto;
+  }
+
+  .admin-calendar-inline-btn {
+    min-width: 72px;
+  }
+
+  .admin-calendar-surface {
+    padding: 14px;
+  }
+
+  .admin-calendar-weekdays,
+  .admin-calendar-days {
+    gap: 6px;
+  }
+
+  .admin-calendar-day {
+    min-height: 78px;
+    padding: 8px;
+    border-radius: 12px;
+  }
+
+  .admin-calendar-day-number {
+    font-size: 18px;
+  }
+
+  .admin-calendar-day-panel {
+    padding: 14px;
+  }
+
+  .admin-calendar-day-head {
+    display: grid;
+    gap: 6px;
+  }
+
+  .admin-calendar-selected-meta {
+    font-size: 12px;
+  }
+
+  .admin-calendar-event-card {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-calendar-event-badge {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+  }
+
+  .admin-calendar-filter-bar {
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+
+  .back-to-top-btn {
+    right: 14px;
+    bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+    width: 52px;
+    height: 52px;
+    border: 0;
+    border-radius: 999px;
+    box-shadow: 0 16px 30px rgba(45, 42, 31, 0.2);
+    font-family: inherit;
+    font-size: 24px;
+  }
+
+  .back-to-top-btn:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
   }
 }
