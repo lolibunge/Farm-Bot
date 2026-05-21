@@ -293,17 +293,17 @@
                   <option value="">No parent / top-level paddock</option>
                 </select>
 
-                <label for="paddock-rest-days-input">Current Rest Days (estimate)</label>
+                <label for="paddock-rest-days-input">Current Rest Days (manual correction)</label>
                 <input
                   id="paddock-rest-days-input"
                   name="restDaysEstimate"
                   type="number"
                   step="1"
                   min="0"
-                  placeholder="Leave blank if not estimating current rest"
+                  placeholder="Leave blank to use grazing history"
                 />
 
-                <label for="paddock-rest-scope-select">Rest Estimate Scope</label>
+                <label for="paddock-rest-scope-select">Rest Correction Scope</label>
                 <select id="paddock-rest-scope-select" name="restApplyScope">
                   <option value="single">This paddock only</option>
                   <option value="whole_block">This paddock and all child paddocks</option>
@@ -313,7 +313,9 @@
                 <input id="paddock-notes-input" name="notes" placeholder="water, shade, narrow gate..." />
 
                 <p class="action-form-hint full-span">
-                  Optional. Use this when a paddock is already resting and you only know an approximate current rest day count.
+                  Optional. Use this to correct the current rest days when the grazing history is
+                  wrong. While this field is filled, it overrides the calculated rest days until
+                  you clear it.
                 </p>
 
                 <div class="full-span action-form-button-row">
@@ -437,7 +439,11 @@
           </article>
 
           <article id="action-card-horse-groups" class="action-card action-card-span-full">
-            <h3>Horse Groups</h3>
+            <h3>Groups & Current State</h3>
+            <p class="action-card-note">
+              Define each group, assign horses, and correct which paddock they are currently in
+              from this same area.
+            </p>
 
             <div class="action-section-grid">
               <div class="action-section-stack">
@@ -482,12 +488,18 @@
                   </p>
                 </section>
 
-                <section class="action-section-card">
+                <section id="horse-group-members-section" class="action-section-card">
                   <h4>Assign Members</h4>
 
                   <form id="horse-group-members-form" class="action-form action-form-stacked">
                     <label for="horse-group-members-select">Assign Group</label>
                     <select id="horse-group-members-select" name="groupId"></select>
+
+                    <p
+                      id="horse-group-members-context"
+                      class="action-form-hint hidden"
+                      aria-live="polite"
+                    ></p>
 
                     <label for="horse-group-members-search-input">Find Horse</label>
                     <input
@@ -515,7 +527,7 @@
 
               <div class="action-section-stack">
                 <section id="horse-group-move-in-section" class="action-section-card">
-                  <h4>Move Group</h4>
+                  <h4>Current State / Move Group</h4>
                   <p id="horse-group-move-context" class="action-form-hint hidden" aria-live="polite"></p>
 
                   <form id="grazing-group-move-in-form" class="action-form action-form-stacked">
@@ -547,8 +559,8 @@
                     </div>
                   </form>
                   <p class="action-form-hint">
-                    This automatically transfers the whole group. Horses already grazing somewhere
-                    else are moved for you in the same step.
+                    This is the source of truth for the group's current paddock. Use it both for
+                    normal whole-group moves and for correcting where the group is right now.
                   </p>
                   <p class="action-form-hint">
                     Use <strong>Correct Current Paddock + Date</strong> only when the group is
@@ -1068,7 +1080,7 @@
 
       <section class="panel-grid">
         <article id="panel-horse-groups-status" class="panel panel-span-full">
-          <h2>Group Management</h2>
+          <h2>Groups & Current State</h2>
           <div id="horse-group-status-body" class="group-management-cards"></div>
         </article>
       </section>
