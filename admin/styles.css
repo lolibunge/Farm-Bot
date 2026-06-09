@@ -1172,6 +1172,7 @@ h1 {
 
 .action-message.is-success,
 .action-message.is-error,
+.action-message.is-warning,
 .action-message.is-pending {
   border: 1px solid transparent;
   border-radius: 10px;
@@ -1188,6 +1189,12 @@ h1 {
   color: #7c2f2c;
   background: #fbeaea;
   border-color: #e5b6b4;
+}
+
+.action-message.is-warning {
+  color: #6d4b16;
+  background: #fbf1dd;
+  border-color: #e6c98e;
 }
 
 .action-message.is-pending {
@@ -1494,6 +1501,14 @@ h1 {
   font-weight: 800;
 }
 
+.group-management-card-location-state {
+  margin: 4px 0 0;
+  color: var(--ink-strong);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .group-management-card-paddock {
   margin: 4px 0 0;
   color: var(--ink-soft);
@@ -1591,6 +1606,32 @@ h1 {
   color: var(--ink-strong);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.group-management-location-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.group-management-location-list li {
+  color: var(--ink-strong);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.group-management-location-list strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.group-management-location-list span {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .history-toolbar {
@@ -2329,6 +2370,14 @@ h1 {
   color: var(--ink-strong);
 }
 
+.occupancy-count-subtitle {
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .occupancy-horses-details {
   margin-top: 6px;
 }
@@ -2411,6 +2460,14 @@ h1 {
   margin: 0;
   font-weight: 800;
   color: var(--ink-strong);
+}
+
+.paddock-occupancy-card-groups {
+  margin: -4px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .paddock-occupancy-card-meta {

@@ -1,11 +1,10 @@
 const API_URL = '/api/admin/overview';
 const HORSE_HISTORY_API_URL = '/api/admin/horse-history';
 const CALENDAR_EVENTS_API_URL = '/api/admin/calendar-events';
-const STOCK_MUTATE_API_URL = '/api/admin/mutate-stock';
 const DATA_MUTATE_API_URL = '/api/admin/mutate-data';
-const LOGIN_API_URL = '/api/admin/login';
-const LOGOUT_API_URL = '/api/admin/logout';
 const SESSION_API_URL = '/api/admin/session';
+const LOGIN_API_URL = SESSION_API_URL;
+const LOGOUT_API_URL = SESSION_API_URL;
 const PANEL_STATE_STORAGE_KEY = 'farm_bot_admin_panel_state';
 const ACTION_CARD_STATE_STORAGE_KEY = 'farm_bot_admin_action_card_state';
 const SUMMARY_PREFS_STORAGE_KEY = 'farm_bot_admin_summary_prefs';
@@ -352,6 +351,7 @@ const horseGroupSaveButton = document.getElementById('horse-group-save-btn');
 const horseGroupCancelEditButton = document.getElementById('horse-group-cancel-edit-btn');
 const horseGroupMembersForm = document.getElementById('horse-group-members-form');
 const horseGroupMembersSelect = document.getElementById('horse-group-members-select');
+const horseGroupMembersContext = document.getElementById('horse-group-members-context');
 const horseGroupMembersSearchInput = document.getElementById('horse-group-members-search-input');
 const horseGroupMembersSummary = document.getElementById('horse-group-members-summary');
 const horseGroupMembersHorsesList = document.getElementById('horse-group-members-horses-list');
@@ -815,6 +815,23 @@ function formatPaddockReadySummary(row) {
   }
 
   return `${workLabel} -> ${row.days_until_ready} day(s) left, ready ${readyDate}`;
+}
+
+function formatPaddockRestDaysLabel(row) {
+  if (row?.rest_days == null) {
+    return '-';
+  }
+
+  const baseLabel = String(row.rest_days);
+  if (row.rest_source === 'manual') {
+    return `${baseLabel} (manual)`;
+  }
+
+  if (row.rest_source === 'baseline') {
+    return `${baseLabel} (baseline)`;
+  }
+
+  return baseLabel;
 }
 
 function formatRainMm(value) {
@@ -1920,6 +1937,8 @@ function applyMessageState(target, message, stateOrError = false) {
     ? 'empty'
     : stateOrError === 'pending'
       ? 'pending'
+      : stateOrError === 'warning'
+        ? 'warning'
       : stateOrError === true || stateOrError === 'error'
         ? 'error'
         : 'success';
@@ -1927,6 +1946,7 @@ function applyMessageState(target, message, stateOrError = false) {
   target.textContent = message;
   target.classList.toggle('is-error', state === 'error');
   target.classList.toggle('is-success', state === 'success');
+  target.classList.toggle('is-warning', state === 'warning');
   target.classList.toggle('is-pending', state === 'pending');
   target.classList.toggle('is-empty', state === 'empty');
 }
@@ -3075,6 +3095,33 @@ function setPaddockEditState(paddock, options = {}) {
   }
 }
 
+function openPaddockRestCorrection(paddock) {
+  if (!paddock) {
+    return;
+  }
+
+  withTargetViewVisible('paddock-save-form', () => {
+    expandPanelForElement(actionHubPanel);
+    expandActionCard(document.getElementById('action-card-paddocks'));
+    setPaddockEditState(paddock, { scroll: true, focusName: false });
+
+    if (paddockRestDaysInput) {
+      paddockRestDaysInput.focus();
+      paddockRestDaysInput.select();
+    }
+
+    setActionMessage(
+      paddock.occupied_by
+        ? `Reviewing rest correction for ${paddock.name}. This paddock is currently occupied, so the corrected rest days will show after it is empty again.`
+        : `Correcting rest for ${paddock.name}. Enter the real current rest days and save. This manual correction overrides grazing history until you clear it.`,
+      false,
+      {
+        card: 'action-card-paddocks',
+      }
+    );
+  });
+}
+
 function clearPaddockWorkEditState(options = {}) {
   const { clearFields = true, focus = false } = options;
 
@@ -3217,7 +3264,7 @@ function syncHorseGroupMoveContext(group) {
   const currentPaddocks = formatHorseGroupCurrentPaddockSummary(group);
   const memberCount = Number(group.member_count || 0);
   const horsesLabel = memberCount === 1 ? '1 horse' : `${memberCount} horses`;
-  horseGroupMoveContext.textContent = `Selected group: ${group.name}. ${horsesLabel}. Current paddocks: ${currentPaddocks}.`;
+  horseGroupMoveContext.textContent = `Selected group: ${group.name}. ${horsesLabel}. Current state: ${currentPaddocks}.`;
   horseGroupMoveContext.classList.remove('hidden');
 }
 
@@ -3225,6 +3272,12 @@ function syncHorseGroupMoveSelectionContext() {
   const selectedGroup = findHorseGroupById(grazingGroupMoveInGroupSelect?.value || '');
   syncHorseGroupMoveContext(selectedGroup);
   return selectedGroup;
+}
+
+function getHorseGroupCurrentLocations(group) {
+  return Array.isArray(group?.current_locations)
+    ? group.current_locations.filter((location) => String(location?.location_name || '').trim())
+    : [];
 }
 
 function getHorseGroupCurrentPaddockIds(group) {
@@ -3235,7 +3288,17 @@ function getHorseGroupCurrentPaddockIds(group) {
     : [];
 }
 
+function getHorseGroupSingleCurrentLocation(group) {
+  const currentLocations = getHorseGroupCurrentLocations(group);
+  return currentLocations.length === 1 ? currentLocations[0] : null;
+}
+
 function resolveHorseGroupCurrentPaddockId(group) {
+  const singleCurrentLocation = getHorseGroupSingleCurrentLocation(group);
+  if (singleCurrentLocation?.location_id) {
+    return String(singleCurrentLocation.location_id);
+  }
+
   const currentPaddockIds = getHorseGroupCurrentPaddockIds(group);
   if (currentPaddockIds.length === 1) {
     return String(currentPaddockIds[0]);
@@ -3247,6 +3310,94 @@ function resolveHorseGroupCurrentPaddockId(group) {
   }
 
   return String(findPaddockByName(singleCurrentPaddockName)?.id || '');
+}
+
+function syncHorseGroupMembersContext(group) {
+  if (!horseGroupMembersContext) {
+    return;
+  }
+
+  if (!group) {
+    horseGroupMembersContext.textContent = '';
+    horseGroupMembersContext.classList.add('hidden');
+    return;
+  }
+
+  const currentPaddocks = formatHorseGroupCurrentPaddockSummary(group);
+  const unassignedCount = Math.max(0, Number(group?.unassigned_member_count || 0));
+  const hasSingleCurrentLocation = Boolean(getHorseGroupSingleCurrentLocation(group));
+  const contextParts = [`Current state: ${currentPaddocks === '-' ? 'no paddock assigned yet' : currentPaddocks}.`];
+
+  if (unassignedCount > 0 && hasSingleCurrentLocation) {
+    contextParts.push(
+      `${formatHorseCountLabel(
+        unassignedCount
+      )} need a paddock. After saving members, use Current State to place them back with the group.`
+    );
+  } else if (unassignedCount > 0) {
+    contextParts.push(
+      `${formatHorseCountLabel(
+        unassignedCount
+      )} need a paddock. After saving members, open Current State to choose where they should be now.`
+    );
+  } else if (hasSingleCurrentLocation) {
+    contextParts.push('Horses returned to this group can be placed back with the group from Current State.');
+  }
+
+  horseGroupMembersContext.textContent = contextParts.join(' ');
+  horseGroupMembersContext.classList.remove('hidden');
+}
+
+function focusHorseGroupMembersSection(group) {
+  const horseGroupsCard = document.getElementById('action-card-horse-groups');
+  const membersSection = document.getElementById('horse-group-members-section');
+  expandPanelForElement(membersSection || horseGroupsCard);
+  expandActionCard(horseGroupsCard);
+
+  let hasSelectedGroupOption = false;
+  if (group && horseGroupMembersSelect) {
+    hasSelectedGroupOption = Array.from(horseGroupMembersSelect.options).some(
+      (option) => String(option.value) === String(group.id)
+    );
+    if (hasSelectedGroupOption) {
+      horseGroupMembersSelect.value = String(group.id);
+      syncHorseGroupMembersSelection();
+    }
+  }
+
+  if (group && !hasSelectedGroupOption) {
+    syncHorseGroupMembersContext(group);
+  }
+
+  if (membersSection) {
+    membersSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  if (horseGroupMembersSearchInput && !horseGroupMembersSearchInput.disabled) {
+    horseGroupMembersSearchInput.focus();
+  }
+
+  return hasSelectedGroupOption;
+}
+
+function openHorseGroupMembersEditor(group) {
+  if (!group) {
+    return;
+  }
+
+  withTargetViewVisible('horse-group-members-section', () => {
+    const membersReady = focusHorseGroupMembersSection(group);
+
+    setActionMessage(
+      membersReady
+        ? `Editing members for ${group.name}. Save Members changes who belongs to the group; use Current State if those horses should also rejoin a paddock today.`
+        : `Open ${group.name} in Assign Members to update who belongs to the group.`,
+      false,
+      {
+        card: 'action-card-horse-groups',
+      }
+    );
+  });
 }
 
 function focusHorseGroupMoveSection(group) {
@@ -3287,21 +3438,27 @@ function openHorseGroupCurrentMoveCorrection(group) {
   }
 
   const preferredPaddockId = resolveHorseGroupCurrentPaddockId(group);
+  const currentLocations = getHorseGroupCurrentLocations(group);
+  const singleCurrentLocation = getHorseGroupSingleCurrentLocation(group);
   const currentPaddockIds = getHorseGroupCurrentPaddockIds(group);
-  const targetDate = normalizeDateForDateInput(group.current_grazing_entered_at);
+  const memberCount = Math.max(0, Number(group?.member_count || 0));
+  const unassignedCount = Math.max(0, Number(group?.unassigned_member_count || 0));
+  const targetDate = normalizeDateForDateInput(
+    singleCurrentLocation?.entered_at || group.current_grazing_entered_at || todayDate
+  );
 
   withTargetViewVisible('horse-group-move-in-section', () => {
     const moveReady = focusHorseGroupMoveSection(group);
 
     if (!moveReady) {
-      setActionMessage(`Activate ${group.name} before correcting its current paddock or move date.`, true, {
+      setActionMessage(`Activate ${group.name} before updating its current state.`, true, {
         card: 'action-card-horse-groups',
       });
       return;
     }
 
     if (grazingGroupMoveInDateInput) {
-      grazingGroupMoveInDateInput.value = targetDate || '';
+      grazingGroupMoveInDateInput.value = targetDate || todayDate;
     }
 
     let prefilledPaddock = false;
@@ -3319,18 +3476,32 @@ function openHorseGroupCurrentMoveCorrection(group) {
       grazingGroupMoveInNotesInput.value = '';
     }
 
-    if (grazingGroupMoveInDateInput) {
+    if (prefilledPaddock && grazingGroupMoveInDateInput) {
       grazingGroupMoveInDateInput.focus();
+    } else if (grazingGroupMoveInPaddockSelect) {
+      grazingGroupMoveInPaddockSelect.focus();
     }
 
+    const currentPaddockSummary = formatHorseGroupCurrentPaddockSummary(group);
+    const isSplit = currentLocations.length > 1;
+    const hasNoCurrentPaddock = currentLocations.length === 0;
+
     setActionMessage(
-      prefilledPaddock
-        ? targetDate
-          ? `Fixing ${group.name}. Review the move date, and use "Correct Current Paddock + Date" to save it.`
-          : `Fixing ${group.name}. Confirm the current move date, then use "Correct Current Paddock + Date" to save it.`
-        : currentPaddockIds.length > 1
-          ? `Fixing ${group.name}. Choose which paddock should stay current, then save with "Correct Current Paddock + Date".`
-          : `Fixing ${group.name}. Confirm the paddock and move date, then save with "Correct Current Paddock + Date".`,
+      unassignedCount > 0 && singleCurrentLocation
+        ? `Resolving current state for ${group.name}. ${formatHorseCountLabel(
+            unassignedCount
+          )} should rejoin ${singleCurrentLocation.location_name}. Review the date, then save with "Correct Current Paddock + Date".`
+        : isSplit
+          ? `Reviewing split state for ${group.name}. It is currently spread across ${currentPaddockSummary}. Choose the paddock that should stay current, then save with "Correct Current Paddock + Date".`
+          : hasNoCurrentPaddock && memberCount > 0
+            ? `Setting current state for ${group.name}. Choose the paddock where this group is now, then save with "Move Group".`
+            : prefilledPaddock
+              ? targetDate
+                ? `Reviewing current state for ${group.name}. Confirm the paddock and move date, then use "Correct Current Paddock + Date" if this is a correction.`
+                : `Reviewing current state for ${group.name}. Confirm the paddock and date, then save the correction.`
+              : currentPaddockIds.length > 1
+                ? `Fixing ${group.name}. Choose which paddock should stay current, then save with "Correct Current Paddock + Date".`
+                : `Reviewing current state for ${group.name}. Choose the paddock and save the action that matches what really happened.`,
       false,
       {
         card: 'action-card-horse-groups',
@@ -6332,9 +6503,17 @@ function renderPaddockStatusRows(rows) {
           <td>${escapeHtml(row.occupied_by || '-')}</td>
           <td>${escapeHtml(row.occupied_since ? formatDate(row.occupied_since) : '-')}</td>
           <td>${escapeHtml(row.grazing_days == null ? '-' : String(row.grazing_days))}</td>
-          <td>${escapeHtml(row.rest_days == null ? '-' : String(row.rest_days))}</td>
+          <td>${escapeHtml(formatPaddockRestDaysLabel(row))}</td>
           <td>${escapeHtml(formatPaddockReadySummary(row))}</td>
           <td>
+            <button
+              type="button"
+              data-paddock-action="correct-rest"
+              class="inline-action-btn"
+              data-paddock-id="${escapeHtml(row.id)}"
+            >
+              Correct Rest
+            </button>
             <button type="button" data-paddock-action="edit" class="inline-action-btn" data-paddock-id="${escapeHtml(row.id)}">
               Edit
             </button>
@@ -6431,6 +6610,26 @@ function renderPaddockOccupancyHorseDetails(horses) {
   `;
 }
 
+function formatPaddockOccupancyGroupSummary(row) {
+  const activeGroupNames = String(row?.active_group_names || '').trim();
+  const ungroupedHorseCount = Math.max(0, Number(row?.ungrouped_horse_count || 0));
+  const summaryParts = [];
+
+  if (activeGroupNames) {
+    summaryParts.push(activeGroupNames);
+  }
+
+  if (ungroupedHorseCount > 0) {
+    summaryParts.push(`${ungroupedHorseCount} ungrouped`);
+  }
+
+  if (!summaryParts.length) {
+    return 'No active group assigned';
+  }
+
+  return summaryParts.join(' + ');
+}
+
 function renderPaddockOccupancyRows(rows) {
   currentPaddockOccupancyRows = rows;
 
@@ -6447,6 +6646,7 @@ function renderPaddockOccupancyRows(rows) {
   paddockOccupancyBody.innerHTML = rows
     .map((row) => {
       const horseCountLabel = formatHorseCountLabel(row.active_horse_count);
+      const groupSummary = formatPaddockOccupancyGroupSummary(row);
       const statusLabel = row.status || 'Active';
       const statusClass = getPaddockOccupancyStatusBadgeClass(statusLabel);
 
@@ -6455,6 +6655,7 @@ function renderPaddockOccupancyRows(rows) {
           <td>${escapeHtml(row.paddock_name)}</td>
           <td>
             <div class="occupancy-count">${escapeHtml(horseCountLabel)}</div>
+            <div class="occupancy-count-subtitle">${escapeHtml(groupSummary)}</div>
             ${renderPaddockOccupancyHorseDetails(row.active_horses)}
           </td>
           <td>${escapeHtml(formatDate(row.entered_at))}</td>
@@ -6469,6 +6670,7 @@ function renderPaddockOccupancyRows(rows) {
     paddockOccupancyCards.innerHTML = rows
       .map((row) => {
         const horseCountLabel = formatHorseCountLabel(row.active_horse_count);
+        const groupSummary = formatPaddockOccupancyGroupSummary(row);
         const statusLabel = row.status || 'Active';
         const statusClass = getPaddockOccupancyStatusBadgeClass(statusLabel);
 
@@ -6479,6 +6681,7 @@ function renderPaddockOccupancyRows(rows) {
               <span class="badge ${statusClass}">${escapeHtml(statusLabel)}</span>
             </div>
             <p class="paddock-occupancy-card-count">${escapeHtml(horseCountLabel)} currently grazing</p>
+            <p class="paddock-occupancy-card-groups">${escapeHtml(groupSummary)}</p>
             <dl class="paddock-occupancy-card-meta">
               <div>
                 <dt>Entered</dt>
@@ -6498,15 +6701,35 @@ function renderPaddockOccupancyRows(rows) {
 }
 
 function formatHorseGroupCurrentPaddockSummary(row) {
-  const currentNames = String(row?.current_paddock_names || '').trim();
-  const memberCount = Number(row?.member_count || 0);
-  const grazingCount = Number(row?.grazing_member_count || 0);
-  const safeGrazingCount = Math.max(0, grazingCount);
-  const unassignedCount = Math.max(0, memberCount - safeGrazingCount);
+  const currentLocations = Array.isArray(row?.current_locations) ? row.current_locations : [];
+  const unassignedCount = Math.max(0, Number(row?.unassigned_member_count || 0));
   const summaryParts = [];
 
-  if (currentNames) {
-    summaryParts.push(currentNames);
+  if (currentLocations.length > 0) {
+    summaryParts.push(
+      currentLocations
+        .map((location) => {
+          const locationName = String(location?.location_name || '').trim();
+          const horseCount = Math.max(0, Number(location?.horse_count || 0));
+
+          if (!locationName) {
+            return '';
+          }
+
+          if (horseCount > 0) {
+            return `${locationName} (${formatHorseCountLabel(horseCount)})`;
+          }
+
+          return locationName;
+        })
+        .filter(Boolean)
+        .join(', ')
+    );
+  } else {
+    const currentNames = String(row?.current_paddock_names || '').trim();
+    if (currentNames) {
+      summaryParts.push(currentNames);
+    }
   }
 
   if (unassignedCount > 0) {
@@ -6523,6 +6746,45 @@ function formatHorseGroupCurrentPaddockSummary(row) {
 function formatHorseGroupMemberCountLabel(count) {
   const safeCount = Math.max(0, Number(count || 0));
   return `${safeCount} horse${safeCount === 1 ? '' : 's'}`;
+}
+
+function formatHorseGroupLocationStateSummary(row) {
+  const memberCount = Math.max(0, Number(row?.member_count || 0));
+  const locatedCount = Math.max(
+    0,
+    Number(row?.located_member_count != null ? row.located_member_count : row?.grazing_member_count || 0)
+  );
+  const unassignedCount = Math.max(0, Number(row?.unassigned_member_count || 0));
+  const currentLocationCount = Math.max(
+    0,
+    Number(
+      row?.current_location_count != null
+        ? row.current_location_count
+        : Array.isArray(row?.current_locations)
+          ? row.current_locations.length
+          : 0
+    )
+  );
+
+  if (memberCount <= 0) {
+    return 'No horses assigned';
+  }
+
+  if (locatedCount <= 0) {
+    return 'No current paddock assigned';
+  }
+
+  if (unassignedCount > 0) {
+    return `${formatHorseCountLabel(locatedCount)} currently located, ${formatHorseCountLabel(
+      unassignedCount
+    )} unassigned`;
+  }
+
+  if (currentLocationCount > 1) {
+    return `${formatHorseCountLabel(locatedCount)} split across ${currentLocationCount} paddocks`;
+  }
+
+  return `${formatHorseCountLabel(locatedCount)} together in 1 paddock`;
 }
 
 function formatHorseGroupStartedSummary(row) {
@@ -6543,10 +6805,103 @@ function formatHorseGroupCurrentMoveDateSummary(row) {
   }
 
   if (row?.current_paddock_names) {
-    return 'Check current move';
+    return Number(row?.current_location_count || 0) > 1 ? 'Multiple move dates' : 'Check current move';
   }
 
   return 'No paddock assigned';
+}
+
+function renderHorseGroupCurrentLocationList(row) {
+  const currentLocations = Array.isArray(row?.current_locations) ? row.current_locations : [];
+
+  if (!currentLocations.length) {
+    return '<p class="group-management-empty-members">No current paddock assigned.</p>';
+  }
+
+  return `
+    <ul class="group-management-location-list">
+      ${currentLocations
+        .map((location) => {
+          const locationName = String(location?.location_name || '').trim() || 'Unknown paddock';
+          const horseCount = Math.max(0, Number(location?.horse_count || 0));
+          const horseNames = Array.isArray(location?.horse_names)
+            ? location.horse_names.map((horseName) => String(horseName || '').trim()).filter(Boolean)
+            : [];
+          const locationSummary = horseNames.length
+            ? horseNames.join(', ')
+            : horseCount > 0
+              ? formatHorseCountLabel(horseCount)
+              : 'No horses';
+
+          return `
+            <li>
+              <strong>${escapeHtml(locationName)}</strong>
+              <span>${escapeHtml(locationSummary)}</span>
+            </li>
+          `;
+        })
+        .join('')}
+    </ul>
+  `;
+}
+
+function renderHorseGroupUnassignedMembers(row) {
+  const unassignedMembers = Array.isArray(row?.unassigned_members) ? row.unassigned_members : [];
+  const unassignedCount = Math.max(0, Number(row?.unassigned_member_count || 0));
+
+  if (unassignedCount <= 0) {
+    return '';
+  }
+
+  return `
+    <div class="group-management-members">
+      <h4>Unassigned Members</h4>
+      ${
+        unassignedMembers.length
+          ? `<ul class="group-management-member-list">
+              ${unassignedMembers
+                .map((member) => `<li>${escapeHtml(member.name || `Horse ${member.id}`)}</li>`)
+                .join('')}
+            </ul>`
+          : `<p class="group-management-empty-members">${escapeHtml(
+              `${unassignedCount} member${unassignedCount === 1 ? '' : 's'} without a current paddock.`
+            )}</p>`
+      }
+    </div>
+  `;
+}
+
+function getHorseGroupCurrentStateActionLabel(row) {
+  const memberCount = Math.max(0, Number(row?.member_count || 0));
+  const unassignedCount = Math.max(0, Number(row?.unassigned_member_count || 0));
+  const currentLocationCount = Math.max(
+    0,
+    Number(
+      row?.current_location_count != null
+        ? row.current_location_count
+        : Array.isArray(row?.current_locations)
+          ? row.current_locations.length
+          : 0
+    )
+  );
+
+  if (memberCount <= 0) {
+    return '';
+  }
+
+  if (unassignedCount > 0) {
+    return 'Resolve Location';
+  }
+
+  if (currentLocationCount > 1) {
+    return 'Review Split';
+  }
+
+  if (currentLocationCount <= 0) {
+    return 'Set Paddock';
+  }
+
+  return 'Current State';
 }
 
 function renderHorseGroupRows(rows) {
@@ -6562,12 +6917,13 @@ function renderHorseGroupRows(rows) {
   horseGroupStatusBody.innerHTML = rows
     .map((row) => {
       const memberCountLabel = formatHorseGroupMemberCountLabel(row.member_count);
+      const locationStateSummary = formatHorseGroupLocationStateSummary(row);
       const currentPaddocks = formatHorseGroupCurrentPaddockSummary(row);
       const members = Array.isArray(row.members) ? row.members : [];
       const startedSummary = formatHorseGroupStartedSummary(row);
       const currentMoveDateSummary = formatHorseGroupCurrentMoveDateSummary(row);
       const paddockSummary = currentPaddocks === '-' ? 'No paddock assigned' : currentPaddocks;
-      const canCorrectCurrentMove = Boolean(row.current_paddock_names);
+      const currentStateActionLabel = getHorseGroupCurrentStateActionLabel(row);
       const membersDisclosureLabel = members.length
         ? `View members (${members.length})`
         : row.notes || row.current_started_at
@@ -6598,9 +6954,32 @@ function renderHorseGroupRows(rows) {
                 )}</span>
               </div>
               <p class="group-management-card-count">${escapeHtml(memberCountLabel)}</p>
+              <p class="group-management-card-location-state">${escapeHtml(locationStateSummary)}</p>
               <p class="group-management-card-paddock">${escapeHtml(paddockSummary)}</p>
             </div>
             <div class="group-management-card-actions">
+              ${
+                currentStateActionLabel
+                  ? `
+                <button
+                  type="button"
+                  class="inline-action-btn"
+                  data-group-action="current-state"
+                  data-group-id="${escapeHtml(row.id)}"
+                >
+                  ${escapeHtml(currentStateActionLabel)}
+                </button>
+              `
+                  : ''
+              }
+              <button
+                type="button"
+                class="inline-action-btn"
+                data-group-action="members"
+                data-group-id="${escapeHtml(row.id)}"
+              >
+                ${escapeHtml(members.length > 0 ? 'Members' : 'Add Members')}
+              </button>
               <button
                 type="button"
                 class="inline-action-btn"
@@ -6609,20 +6988,6 @@ function renderHorseGroupRows(rows) {
               >
                 Edit
               </button>
-              ${
-                canCorrectCurrentMove
-                  ? `
-                <button
-                  type="button"
-                  class="inline-action-btn"
-                  data-group-action="correct-current"
-                  data-group-id="${escapeHtml(row.id)}"
-                >
-                  Fix Move Date
-                </button>
-              `
-                  : ''
-              }
             </div>
           </div>
 
@@ -6635,6 +7000,10 @@ function renderHorseGroupRows(rows) {
                   <dd>${escapeHtml(startedSummary)}</dd>
                 </div>
                 <div>
+                  <dt>Location Status</dt>
+                  <dd>${escapeHtml(locationStateSummary)}</dd>
+                </div>
+                <div>
                   <dt>Current Move Date</dt>
                   <dd>${escapeHtml(currentMoveDateSummary)}</dd>
                 </div>
@@ -6644,6 +7013,13 @@ function renderHorseGroupRows(rows) {
                 </div>
                 ${notesMarkup}
               </dl>
+
+              <div class="group-management-members">
+                <h4>Current Locations</h4>
+                ${renderHorseGroupCurrentLocationList(row)}
+              </div>
+
+              ${renderHorseGroupUnassignedMembers(row)}
 
               <div class="group-management-members">
                 <h4>Members</h4>
@@ -6857,6 +7233,7 @@ function syncHorseGroupMembersSelection() {
   }
 
   renderHorseGroupMembersChecklist(currentHorseRows);
+  syncHorseGroupMembersContext(group);
 }
 
 function populateHorseActionSelects(rows) {
@@ -7028,6 +7405,10 @@ function handleAuthError(error, fallbackMessage) {
   setSessionAuthState(false);
   setStatus(fallbackMessage || 'Session expired. Please log in again.', true);
   return true;
+}
+
+function getActionErrorState(error) {
+  return Number(error?.status) === 409 ? 'warning' : true;
 }
 
 function initActionRequestFeedback() {
@@ -7408,7 +7789,7 @@ authForm.addEventListener('submit', async (event) => {
 logoutButton.addEventListener('click', async () => {
   try {
     beginLoadingOverlay('Signing out...', 'Closing the current admin session.');
-    await postJson(LOGOUT_API_URL, {}, { skipFeedback: true });
+    await postJson(LOGOUT_API_URL, { action: 'logout' }, { skipFeedback: true });
   } catch (_error) {
     // Clear local UI even if logout API fails.
   } finally {
@@ -7682,18 +8063,33 @@ if (horseGroupMembersHorsesList) {
 
 if (horseGroupStatusBody) {
   horseGroupStatusBody.addEventListener('click', (event) => {
-    const correctCurrentButton = event.target.closest('button[data-group-action="correct-current"]');
-    if (correctCurrentButton) {
-      const groupId = correctCurrentButton.getAttribute('data-group-id');
+    const currentStateButton = event.target.closest('button[data-group-action="current-state"]');
+    if (currentStateButton) {
+      const groupId = currentStateButton.getAttribute('data-group-id');
       const group = findHorseGroupById(groupId);
       if (!group) {
-        setActionMessage('That group is no longer available to correct.', true, {
+        setActionMessage('That group is no longer available to update.', true, {
           card: 'action-card-horse-groups',
         });
         return;
       }
 
       openHorseGroupCurrentMoveCorrection(group);
+      return;
+    }
+
+    const membersButton = event.target.closest('button[data-group-action="members"]');
+    if (membersButton) {
+      const groupId = membersButton.getAttribute('data-group-id');
+      const group = findHorseGroupById(groupId);
+      if (!group) {
+        setActionMessage('That group is no longer available to update.', true, {
+          card: 'action-card-horse-groups',
+        });
+        return;
+      }
+
+      openHorseGroupMembersEditor(group);
       return;
     }
 
@@ -7724,6 +8120,21 @@ if (horseGroupStatusBody) {
 
 if (paddockStatusBody) {
   paddockStatusBody.addEventListener('click', (event) => {
+    const correctRestButton = event.target.closest('button[data-paddock-action="correct-rest"]');
+    if (correctRestButton) {
+      const paddockId = correctRestButton.getAttribute('data-paddock-id');
+      const paddock = findPaddockById(paddockId);
+      if (!paddock) {
+        setActionMessage('That paddock is no longer available to update.', true, {
+          card: 'action-card-paddocks',
+        });
+        return;
+      }
+
+      openPaddockRestCorrection(paddock);
+      return;
+    }
+
     const editButton = event.target.closest('button[data-paddock-action="edit"]');
     if (!editButton) {
       return;
@@ -8136,7 +8547,7 @@ stockActionForm.addEventListener('submit', async (event) => {
       notes: stockNotesInput.value.trim() || undefined,
     };
 
-    const data = await postJson(STOCK_MUTATE_API_URL, payload);
+    const data = await postJson(DATA_MUTATE_API_URL, payload);
 
     setActionMessage(
       `Stock ${data.action} applied to ${data.item.name}. New stock: ${data.item.current_stock} ${data.item.unit}`
@@ -8262,8 +8673,21 @@ horseGroupMembersForm.addEventListener('submit', async (event) => {
               : ''
           }.`
         : '';
+    const singleCurrentLocation = getHorseGroupSingleCurrentLocation(data.group);
+    const unassignedCount = Math.max(0, Number(data.group?.unassigned_member_count || 0));
+    const locationFollowUp =
+      unassignedCount > 0
+        ? singleCurrentLocation?.location_name
+          ? ` ${formatHorseCountLabel(
+              unassignedCount
+            )} now need a paddock. Use Current State to place them back into ${singleCurrentLocation.location_name}.`
+          : ` ${formatHorseCountLabel(
+              unassignedCount
+            )} now need a paddock. Open Current State to choose where they should be now.`
+        : '';
     setActionMessage(
-      `Saved ${data.members.length} horse(s) in ${data.group.name}.${reassignedMessage}${removedMessage}`
+      `Saved ${data.members.length} horse(s) in ${data.group.name}.${reassignedMessage}${removedMessage}${locationFollowUp}`,
+      unassignedCount > 0 ? 'warning' : false
     );
     await loadDashboard();
   } catch (error) {
@@ -8306,7 +8730,7 @@ paddockSaveForm.addEventListener('submit', async (event) => {
       `Paddock ${data.mode === 'created' ? 'saved' : 'updated'}: ${data.paddock.name}${
         data.paddock.parent_paddock_name ? ` under ${data.paddock.parent_paddock_name}` : ''
       }${
-        restEstimateValue ? `. Estimated rest set to ${restEstimateValue} day(s)${restScopeLabel}` : ''
+        restEstimateValue ? `. Manual rest correction set to ${restEstimateValue} day(s)${restScopeLabel}` : ''
       }`
     );
     await loadDashboard();
@@ -8428,6 +8852,8 @@ if (grazingGroupMoveInForm) {
       });
 
       grazingGroupMoveInNotesInput.value = '';
+      let successMessage = '';
+
       if (moveMode === 'correct_current') {
         const correctedCount = Number(data.corrected_count || 0);
         const insertedCount = Number(data.inserted_count || 0);
@@ -8444,11 +8870,9 @@ if (grazingGroupMoveInForm) {
           correctionParts.push(`${unchangedCount} already matched`);
         }
 
-        setActionMessage(
-          `${data.group.name} corrected to ${data.paddock.name} from ${formatDate(
-            data.entered_at || data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
-          )}. ${correctionParts.join(', ') || 'Current paddock history updated.'}`
-        );
+        successMessage = `${data.group.name} corrected to ${data.paddock.name} from ${formatDate(
+          data.entered_at || data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
+        )}. ${correctionParts.join(', ') || 'Current paddock history updated.'}`;
       } else {
         const movedCount = Number(data.moved_count || 0);
         const groupMemberCount = Number(data.group_member_count || movedCount);
@@ -8458,13 +8882,24 @@ if (grazingGroupMoveInForm) {
             ? `${movedCount} moved, ${alreadyThereCount} already there`
             : `${groupMemberCount} horse(s) moved`;
 
+        successMessage = `${data.group.name} moved to ${data.paddock.name} on ${formatDate(
+          data.entered_at || data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
+        )}. ${movementSummary}.`;
+      }
+      setActionMessage(successMessage);
+
+      try {
+        await loadDashboard();
+      } catch (refreshError) {
+        if (handleAuthError(refreshError, 'Session expired. Please log in to refresh the dashboard.')) {
+          clearDashboardView();
+          return;
+        }
         setActionMessage(
-          `${data.group.name} moved to ${data.paddock.name} on ${formatDate(
-            data.entered_at || data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
-          )}. ${movementSummary}.`
+          `${successMessage} Movement saved, but dashboard refresh failed: ${refreshError.message}`,
+          'warning'
         );
       }
-      await loadDashboard();
     } catch (error) {
       if (handleAuthError(error, 'Session expired. Please log in to record group grazing moves.')) {
         clearDashboardView();
@@ -8473,11 +8908,16 @@ if (grazingGroupMoveInForm) {
       const moveMode = event.submitter?.getAttribute('data-move-mode') === 'correct_current'
         ? 'correct_current'
         : 'move';
+      const messageState = getActionErrorState(error);
+      const conflictPrefix =
+        moveMode === 'correct_current' ? 'Current paddock unchanged' : 'No changes made';
       setActionMessage(
-        moveMode === 'correct_current'
-          ? `Correct current paddock failed: ${error.message}`
-          : `Move group failed: ${error.message}`,
-        true
+        Number(error?.status) === 409
+          ? `${conflictPrefix}: ${error.message}`
+          : moveMode === 'correct_current'
+            ? `Correct current paddock failed: ${error.message}`
+            : `Move group failed: ${error.message}`,
+        messageState
       );
     }
   });

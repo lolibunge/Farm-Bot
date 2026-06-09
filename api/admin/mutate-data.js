@@ -31,6 +31,7 @@ const { ensureFrostRegistryTable } = require('../../lib/frost-registry');
 const { syncWeatherIntoRainRegistry } = require('../../lib/weather-sync');
 const { toIsoDateString } = require('../../lib/date-helpers');
 const { requireAdminApiAuth } = require('../../lib/admin-auth');
+const { ensureTableColumns } = require('../../lib/schema');
 
 async function getJsonBody(req) {
   if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
@@ -191,6 +192,10 @@ function getModuleKeyForAdminAction(action) {
   if (
     [
       'feed_item_save',
+      'stock_purchase_save',
+      'set',
+      'add',
+      'use',
       'feed_event_add',
       'horse_feed_plan_save',
       'horse_feed_slot_toggle',
@@ -298,6 +303,186 @@ const ALLOWED_SEX_VALUES = new Set([
 
 const ALLOWED_TRAINING_STATUSES = new Set(['in training', 'breaking in']);
 const ALLOWED_FROST_INTENSITIES = new Set(['light', 'moderate', 'heavy']);
+const FEED_ITEM_DETAIL_COLUMNS = [
+  { name: 'supplier_name', definition: 'TEXT' },
+  { name: 'unit_cost', definition: 'NUMERIC(12, 2)' },
+  { name: 'minimum_stock', definition: 'NUMERIC(12, 2)' },
+  { name: 'last_purchase_date', definition: 'DATE' },
+  { name: 'purchase_unit_label', definition: 'TEXT' },
+  { name: 'purchase_unit_size', definition: 'NUMERIC(12, 2)' },
+];
+const STOCK_EVENT_DETAIL_COLUMNS = [
+  { name: 'supplier_name', definition: 'TEXT' },
+  { name: 'unit_cost', definition: 'NUMERIC(12, 2)' },
+  { name: 'total_cost', definition: 'NUMERIC(12, 2)' },
+  { name: 'purchase_unit_count', definition: 'NUMERIC(12, 2)' },
+  { name: 'purchase_unit_label', definition: 'TEXT' },
+  { name: 'purchase_unit_size', definition: 'NUMERIC(12, 2)' },
+];
+
+function normalizeOptionalText(value) {
+  const normalized = String(value || '').trim();
+  return normalized || null;
+}
+
+function hasProvidedValue(value) {
+  return value != null && String(value).trim() !== '';
+}
+
+function formatCurrencyValue(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return `$${new Intl.NumberFormat('es-UY', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(parsed)}`;
+}
+
+function buildStockPurchaseNotes({
+  notes,
+  supplier,
+  unitCost,
+  totalCost,
+  purchaseUnitCount,
+  purchaseUnitLabel,
+}) {
+  const parts = [];
+  const normalizedNotes = normalizeOptionalText(notes);
+  const normalizedSupplier = normalizeOptionalText(supplier);
+  const formattedUnitCost = formatCurrencyValue(unitCost);
+  const formattedTotalCost = formatCurrencyValue(totalCost);
+  const normalizedPurchaseUnitLabel = normalizeOptionalText(purchaseUnitLabel);
+  const normalizedPurchaseUnitCount = parseNonNegativeNumber(purchaseUnitCount);
+
+  if (normalizedNotes) {
+    parts.push(normalizedNotes);
+  }
+
+  if (normalizedSupplier) {
+    parts.push(`Proveedor: ${normalizedSupplier}`);
+  }
+
+  if (normalizedPurchaseUnitCount != null && normalizedPurchaseUnitLabel) {
+    parts.push(`Cantidad comprada: ${normalizedPurchaseUnitCount} ${normalizedPurchaseUnitLabel}`);
+  }
+
+  if (formattedUnitCost) {
+    parts.push(
+      `Costo por ${normalizedPurchaseUnitLabel || 'unidad'}: ${formattedUnitCost}`
+    );
+  }
+
+  if (formattedTotalCost) {
+    parts.push(`Total: ${formattedTotalCost}`);
+  }
+
+  return parts.length ? parts.join(' - ') : null;
+}
+
+function classifyFeedItemCategory(name) {
+  const normalizedName = String(name || '')
+    .trim()
+    .toLowerCase();
+
+  if (
+    normalizedName.includes('oats') ||
+    normalizedName.includes('avena') ||
+    normalizedName.includes('corn') ||
+    normalizedName.includes('maiz') ||
+    normalizedName.includes('maíz') ||
+    normalizedName.includes('semitin') ||
+    normalizedName.includes('cebada') ||
+    normalizedName.includes('barley') ||
+    normalizedName.includes('sorgo')
+  ) {
+    return { key: 'grano', label: 'Grano' };
+  }
+
+  if (
+    normalizedName.includes('heno') ||
+    normalizedName.includes('alfalfa') ||
+    normalizedName.includes('balanceado') ||
+    normalizedName.includes('alimento')
+  ) {
+    return { key: 'alimento', label: 'Alimento' };
+  }
+
+  if (
+    normalizedName.includes('fertiliz') ||
+    normalizedName.includes('urea') ||
+    normalizedName.includes('npk')
+  ) {
+    return { key: 'fertilizante', label: 'Fertilizante' };
+  }
+
+  if (normalizedName.includes('herbic') || normalizedName.includes('glifosato')) {
+    return { key: 'herbicida', label: 'Herbicida' };
+  }
+
+  if (normalizedName.includes('medic') || normalizedName.includes('vacuna')) {
+    return { key: 'salud', label: 'Salud' };
+  }
+
+  return { key: 'general', label: 'General' };
+}
+
+function resolveFeedItemPurchaseProfile({ name, unit, purchaseUnitLabel, purchaseUnitSize }) {
+  const category = classifyFeedItemCategory(name);
+  const normalizedUnit = String(unit || '')
+    .trim()
+    .toLowerCase();
+  const explicitLabel = normalizeOptionalText(purchaseUnitLabel);
+  const explicitSize = parseNonNegativeNumber(purchaseUnitSize);
+  const isGrain = category.key === 'grano' && normalizedUnit === 'kg';
+
+  if (explicitLabel || (explicitSize != null && explicitSize > 0)) {
+    return {
+      label: explicitLabel || (isGrain ? 'bolsa' : null),
+      size: explicitSize != null && explicitSize > 0 ? explicitSize : null,
+      derived: false,
+      category,
+    };
+  }
+
+  if (isGrain) {
+    return {
+      label: 'bolsa',
+      size: 25,
+      derived: true,
+      category,
+    };
+  }
+
+  return {
+    label: null,
+    size: null,
+    derived: false,
+    category,
+  };
+}
+
+async function ensureStockInventoryTables(client) {
+  await ensureTableColumns(client, 'feed_items', FEED_ITEM_DETAIL_COLUMNS);
+
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS stock_events (
+      id BIGSERIAL PRIMARY KEY,
+      feed_item_id INTEGER NOT NULL REFERENCES feed_items(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      quantity NUMERIC(12, 2) NOT NULL,
+      unit TEXT NOT NULL,
+      event_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      notes TEXT,
+      telegram_user_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await ensureTableColumns(client, 'stock_events', STOCK_EVENT_DETAIL_COLUMNS);
+}
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -387,6 +572,170 @@ module.exports = async (req, res) => {
     const moduleSettings = await listAdminModuleSettings();
     const enabledModules = buildAdminModuleEnabledMap(moduleSettings);
     assertAdminModuleEnabled(getModuleKeyForAdminAction(action), enabledModules);
+
+    if (['set', 'add', 'use'].includes(action)) {
+      const itemName = String(body.itemName || '').trim().toLowerCase();
+      const unit = String(body.unit || '').trim().toLowerCase();
+      const quantity = Number(body.quantity);
+      const notes = body.notes ? String(body.notes).trim() : '';
+      let eventDate = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+
+      if (!itemName) {
+        res.status(400).json({ ok: false, error: 'itemName is required' });
+        return;
+      }
+
+      if (!unit) {
+        res.status(400).json({ ok: false, error: 'unit is required' });
+        return;
+      }
+
+      if (!Number.isFinite(quantity) || (action === 'set' ? quantity < 0 : quantity <= 0)) {
+        res.status(400).json({ ok: false, error: 'quantity is invalid' });
+        return;
+      }
+
+      if (looksLikeDateString(eventDate) && !isValidDateString(eventDate)) {
+        res.status(400).json({ ok: false, error: 'eventDate is not a valid calendar date' });
+        return;
+      }
+
+      if (!isValidDateString(eventDate)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await ensureStockInventoryTables(client);
+
+        const feedItemResult = await client.query(
+          `
+          SELECT id, name, unit, current_stock
+          FROM feed_items
+          WHERE LOWER(name) = LOWER($1)
+          LIMIT 1
+          FOR UPDATE
+          `,
+          [itemName]
+        );
+
+        if (feedItemResult.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ ok: false, error: `Feed item not found: ${itemName}` });
+          return;
+        }
+
+        const feedItem = feedItemResult.rows[0];
+        let updated;
+
+        if (action === 'set') {
+          const updateResult = await client.query(
+            `
+            UPDATE feed_items
+            SET current_stock = $1,
+                unit = $2
+            WHERE id = $3
+            RETURNING id, name, unit, current_stock
+            `,
+            [quantity, unit, feedItem.id]
+          );
+
+          updated = updateResult.rows[0];
+        } else if (String(feedItem.unit || '').toLowerCase() !== unit) {
+          await client.query('ROLLBACK');
+          res.status(400).json({
+            ok: false,
+            error: `Unit mismatch. Expected ${feedItem.unit}`,
+          });
+          return;
+        } else if (action === 'add') {
+          const updateResult = await client.query(
+            `
+            UPDATE feed_items
+            SET current_stock = current_stock + $1
+            WHERE id = $2
+            RETURNING id, name, unit, current_stock
+            `,
+            [quantity, feedItem.id]
+          );
+
+          updated = updateResult.rows[0];
+
+          await client.query(
+            `
+            INSERT INTO stock_events (
+              feed_item_id,
+              event_type,
+              quantity,
+              unit,
+              event_date,
+              notes,
+              telegram_user_id
+            )
+            VALUES ($1, 'add', $2, $3, $4, $5, $6)
+            `,
+            [feedItem.id, quantity, unit, eventDate, notes || null, 'admin_panel']
+          );
+        } else {
+          if (Number(feedItem.current_stock) < quantity) {
+            await client.query('ROLLBACK');
+            res.status(400).json({
+              ok: false,
+              error: `Not enough stock. ${feedItem.name} has ${feedItem.current_stock} ${feedItem.unit}`,
+            });
+            return;
+          }
+
+          const updateResult = await client.query(
+            `
+            UPDATE feed_items
+            SET current_stock = current_stock - $1
+            WHERE id = $2
+            RETURNING id, name, unit, current_stock
+            `,
+            [quantity, feedItem.id]
+          );
+
+          updated = updateResult.rows[0];
+
+          await client.query(
+            `
+            INSERT INTO stock_events (
+              feed_item_id,
+              event_type,
+              quantity,
+              unit,
+              event_date,
+              notes,
+              telegram_user_id
+            )
+            VALUES ($1, 'use', $2, $3, $4, $5, $6)
+            `,
+            [feedItem.id, quantity, unit, eventDate, notes || null, 'admin_panel']
+          );
+        }
+
+        await client.query('COMMIT');
+        res.status(200).json({
+          ok: true,
+          action,
+          item: {
+            id: updated.id,
+            name: updated.name,
+            unit: updated.unit,
+            current_stock: Number(updated.current_stock),
+          },
+        });
+        return;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
 
     if (action === 'horse_add') {
       const horseName = String(body.horseName || '').trim();
@@ -534,6 +883,8 @@ module.exports = async (req, res) => {
     }
 
     if (action === 'paddock_save') {
+      const rawPaddockId = body.paddockId == null ? '' : String(body.paddockId).trim();
+      const paddockId = rawPaddockId ? parsePositiveInt(rawPaddockId) : null;
       const paddockName = String(body.paddockName || '').trim();
       const zone = String(body.zone || '').trim();
       const sizeHaValue = body.sizeHa == null ? '' : String(body.sizeHa).trim();
@@ -552,6 +903,11 @@ module.exports = async (req, res) => {
 
       if (!paddockName) {
         res.status(400).json({ ok: false, error: 'paddockName is required' });
+        return;
+      }
+
+      if (rawPaddockId && !paddockId) {
+        res.status(400).json({ ok: false, error: 'paddockId is invalid' });
         return;
       }
 
@@ -576,6 +932,7 @@ module.exports = async (req, res) => {
       }
 
       const data = await savePaddock({
+        paddockId,
         name: paddockName,
         zone: zone || null,
         sizeHa,
@@ -601,6 +958,8 @@ module.exports = async (req, res) => {
       const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
       const readyAfterDaysRaw = body.readyAfterDays == null ? '' : String(body.readyAfterDays).trim();
       const readyAfterDays = parseNonNegativeInteger(readyAfterDaysRaw);
+      const performedBy = body.performedBy ? String(body.performedBy).trim() : '';
+      const performedByKind = body.performedByKind ? String(body.performedByKind).trim() : '';
       const notes = String(body.notes || '').trim();
       const applyScope = String(body.applyScope || '').trim().toLowerCase();
       const applyToDescendants = ['whole_block', 'children', 'descendants', 'true', '1', 'yes'].includes(
@@ -633,6 +992,8 @@ module.exports = async (req, res) => {
         eventDate: eventDateRaw,
         readyAfterDays,
         applyToDescendants,
+        performedBy: performedBy || null,
+        performedByKind: performedByKind || null,
         notes: notes || null,
       });
 
@@ -653,6 +1014,8 @@ module.exports = async (req, res) => {
       const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
       const readyAfterDaysRaw = body.readyAfterDays == null ? '' : String(body.readyAfterDays).trim();
       const readyAfterDays = parseNonNegativeInteger(readyAfterDaysRaw);
+      const performedBy = body.performedBy ? String(body.performedBy).trim() : '';
+      const performedByKind = body.performedByKind ? String(body.performedByKind).trim() : '';
       const notes = String(body.notes || '').trim();
       const applyScope = String(body.applyScope || '').trim().toLowerCase();
       const applyToDescendants = ['whole_block', 'children', 'descendants', 'true', '1', 'yes'].includes(
@@ -691,6 +1054,8 @@ module.exports = async (req, res) => {
         eventDate: eventDateRaw,
         readyAfterDays,
         applyToDescendants,
+        performedBy: performedBy || null,
+        performedByKind: performedByKind || null,
         notes: notes || null,
       });
 
@@ -974,9 +1339,18 @@ module.exports = async (req, res) => {
     }
 
     if (action === 'feed_item_save') {
+      const itemId = parsePositiveInt(body.itemId);
       const itemName = String(body.itemName || '').trim().toLowerCase();
       const unit = String(body.unit || '').trim().toLowerCase();
-      const currentStock = Number(body.currentStock);
+      const currentStock = parseNonNegativeNumber(body.currentStock);
+      const minimumStock = parseNonNegativeNumber(body.minimumStock);
+      const supplier = normalizeOptionalText(body.supplier);
+      const unitCost = parseNonNegativeNumber(body.unitCost);
+      const purchaseUnitLabel = normalizeOptionalText(body.purchaseUnitLabel);
+      const purchaseUnitSize = parseNonNegativeNumber(body.purchaseUnitSize);
+      const lastPurchaseDate = body.lastPurchaseDate
+        ? String(body.lastPurchaseDate).trim()
+        : '';
 
       if (!itemName) {
         res.status(400).json({ ok: false, error: 'itemName is required' });
@@ -988,64 +1362,561 @@ module.exports = async (req, res) => {
         return;
       }
 
-      if (!Number.isFinite(currentStock) || currentStock < 0) {
+      if (currentStock == null) {
         res.status(400).json({ ok: false, error: 'currentStock is invalid' });
         return;
       }
 
-      const existingItem = await pool.query(
-        `
-        SELECT id, name
-        FROM feed_items
-        WHERE LOWER(name) = LOWER($1)
-        LIMIT 1
-        `,
-        [itemName]
-      );
+      if (hasProvidedValue(body.minimumStock) && minimumStock == null) {
+        res.status(400).json({ ok: false, error: 'minimumStock is invalid' });
+        return;
+      }
 
-      if (existingItem.rows.length > 0) {
-        const updateResult = await pool.query(
+      if (hasProvidedValue(body.unitCost) && unitCost == null) {
+        res.status(400).json({ ok: false, error: 'unitCost is invalid' });
+        return;
+      }
+
+      if (hasProvidedValue(body.purchaseUnitSize) && (purchaseUnitSize == null || purchaseUnitSize <= 0)) {
+        res.status(400).json({ ok: false, error: 'purchaseUnitSize is invalid' });
+        return;
+      }
+
+      if (purchaseUnitLabel && purchaseUnitSize == null) {
+        res.status(400).json({ ok: false, error: 'purchaseUnitSize is required when purchaseUnitLabel is present' });
+        return;
+      }
+
+      if (lastPurchaseDate && !isValidDateString(lastPurchaseDate)) {
+        res.status(400).json({ ok: false, error: 'lastPurchaseDate is invalid' });
+        return;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await ensureStockInventoryTables(client);
+
+        if (itemId) {
+          const duplicateItemResult = await client.query(
+            `
+            SELECT id
+            FROM feed_items
+            WHERE LOWER(name) = LOWER($1)
+              AND id <> $2
+            LIMIT 1
+            `,
+            [itemName, itemId]
+          );
+
+          if (duplicateItemResult.rows.length > 0) {
+            await client.query('ROLLBACK');
+            res.status(409).json({ ok: false, error: 'A feed item with that name already exists' });
+            return;
+          }
+        }
+
+        const existingItem = itemId
+          ? await client.query(
+              `
+              SELECT id, name
+              FROM feed_items
+              WHERE id = $1
+              LIMIT 1
+              `,
+              [itemId]
+            )
+          : await client.query(
+              `
+              SELECT id, name
+              FROM feed_items
+              WHERE LOWER(name) = LOWER($1)
+              LIMIT 1
+              `,
+              [itemName]
+            );
+
+        if (itemId && existingItem.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ ok: false, error: 'Feed item not found' });
+          return;
+        }
+
+        if (existingItem.rows.length > 0) {
+          const updateResult = await client.query(
+            `
+            UPDATE feed_items
+            SET name = $1,
+                current_stock = $2,
+                unit = $3,
+                supplier_name = $4,
+                unit_cost = $5,
+                minimum_stock = $6,
+                last_purchase_date = $7,
+                purchase_unit_label = $8,
+                purchase_unit_size = $9
+            WHERE id = $10
+            RETURNING id, name, unit, current_stock, supplier_name, unit_cost, minimum_stock, last_purchase_date, purchase_unit_label, purchase_unit_size
+            `,
+            [
+              itemName,
+              currentStock,
+              unit,
+              supplier,
+              unitCost,
+              minimumStock,
+              lastPurchaseDate || null,
+              purchaseUnitLabel,
+              purchaseUnitSize,
+              existingItem.rows[0].id,
+            ]
+          );
+
+          await client.query('COMMIT');
+          res.status(200).json({
+            ok: true,
+            action,
+            mode: 'updated',
+            feed_item: {
+              ...updateResult.rows[0],
+              current_stock: Number(updateResult.rows[0].current_stock),
+              unit_cost:
+                updateResult.rows[0].unit_cost == null
+                  ? null
+                  : Number(updateResult.rows[0].unit_cost),
+              minimum_stock:
+                updateResult.rows[0].minimum_stock == null
+                  ? null
+                  : Number(updateResult.rows[0].minimum_stock),
+              last_purchase_date: toIsoDateString(updateResult.rows[0].last_purchase_date),
+              purchase_unit_label: normalizeOptionalText(updateResult.rows[0].purchase_unit_label),
+              purchase_unit_size:
+                updateResult.rows[0].purchase_unit_size == null
+                  ? null
+                  : Number(updateResult.rows[0].purchase_unit_size),
+            },
+          });
+          return;
+        }
+
+        const insertResult = await client.query(
+          `
+          INSERT INTO feed_items (
+            name,
+            unit,
+            current_stock,
+            supplier_name,
+            unit_cost,
+            minimum_stock,
+            last_purchase_date,
+            purchase_unit_label,
+            purchase_unit_size
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          RETURNING id, name, unit, current_stock, supplier_name, unit_cost, minimum_stock, last_purchase_date, purchase_unit_label, purchase_unit_size
+          `,
+          [
+            itemName,
+            unit,
+            currentStock,
+            supplier,
+            unitCost,
+            minimumStock,
+            lastPurchaseDate || null,
+            purchaseUnitLabel,
+            purchaseUnitSize,
+          ]
+        );
+
+        await client.query('COMMIT');
+        res.status(200).json({
+          ok: true,
+          action,
+          mode: 'created',
+          feed_item: {
+            ...insertResult.rows[0],
+            current_stock: Number(insertResult.rows[0].current_stock),
+            unit_cost:
+              insertResult.rows[0].unit_cost == null ? null : Number(insertResult.rows[0].unit_cost),
+            minimum_stock:
+              insertResult.rows[0].minimum_stock == null
+                ? null
+                : Number(insertResult.rows[0].minimum_stock),
+            last_purchase_date: toIsoDateString(insertResult.rows[0].last_purchase_date),
+            purchase_unit_label: normalizeOptionalText(insertResult.rows[0].purchase_unit_label),
+            purchase_unit_size:
+              insertResult.rows[0].purchase_unit_size == null
+                ? null
+                : Number(insertResult.rows[0].purchase_unit_size),
+          },
+        });
+        return;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    if (action === 'stock_purchase_save') {
+      const itemId = parsePositiveInt(body.itemId);
+      const itemName = String(body.itemName || '').trim().toLowerCase();
+      const quantity = parseNonNegativeNumber(body.quantity);
+      const purchaseUnitCount = parseNonNegativeNumber(body.purchaseUnitCount);
+      const supplier = normalizeOptionalText(body.supplier);
+      const unitCost = parseNonNegativeNumber(body.unitCost);
+      const notes = normalizeOptionalText(body.notes);
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+
+      if (!itemId && !itemName) {
+        res.status(400).json({ ok: false, error: 'itemId or itemName is required' });
+        return;
+      }
+
+      if (quantity == null || quantity <= 0) {
+        res.status(400).json({ ok: false, error: 'quantity must be greater than 0' });
+        return;
+      }
+
+      if (hasProvidedValue(body.unitCost) && unitCost == null) {
+        res.status(400).json({ ok: false, error: 'unitCost is invalid' });
+        return;
+      }
+
+      if (hasProvidedValue(body.purchaseUnitCount) && (purchaseUnitCount == null || purchaseUnitCount <= 0)) {
+        res.status(400).json({ ok: false, error: 'purchaseUnitCount is invalid' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await ensureStockInventoryTables(client);
+
+        const feedItemResult = itemId
+          ? await client.query(
+              `
+              SELECT id, name, unit, current_stock, supplier_name, unit_cost, purchase_unit_label, purchase_unit_size
+              FROM feed_items
+              WHERE id = $1
+              LIMIT 1
+              FOR UPDATE
+              `,
+              [itemId]
+            )
+          : await client.query(
+              `
+              SELECT id, name, unit, current_stock, supplier_name, unit_cost, purchase_unit_label, purchase_unit_size
+              FROM feed_items
+              WHERE LOWER(name) = LOWER($1)
+              LIMIT 1
+              FOR UPDATE
+              `,
+              [itemName]
+            );
+
+        if (feedItemResult.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ ok: false, error: 'Feed item not found' });
+          return;
+        }
+
+        const feedItem = feedItemResult.rows[0];
+        const purchaseProfile = resolveFeedItemPurchaseProfile({
+          name: feedItem.name,
+          unit: feedItem.unit,
+          purchaseUnitLabel: feedItem.purchase_unit_label,
+          purchaseUnitSize: feedItem.purchase_unit_size,
+        });
+        const purchaseUnitSize = purchaseProfile.size || 1;
+        const normalizedPurchaseUnitCount =
+          purchaseUnitCount != null
+            ? purchaseUnitCount
+            : quantity == null
+              ? null
+              : Number((quantity / purchaseUnitSize).toFixed(4));
+        const stockQuantity =
+          purchaseUnitCount != null
+            ? Number((purchaseUnitCount * purchaseUnitSize).toFixed(4))
+            : quantity;
+        const effectiveUnitCost =
+          unitCost != null
+            ? unitCost
+            : feedItem.unit_cost == null
+              ? null
+              : Number(feedItem.unit_cost);
+        const totalCost =
+          effectiveUnitCost != null && normalizedPurchaseUnitCount != null
+            ? Number((effectiveUnitCost * normalizedPurchaseUnitCount).toFixed(2))
+            : null;
+        const stockNotes = buildStockPurchaseNotes({
+          notes,
+          supplier,
+          unitCost: effectiveUnitCost,
+          totalCost,
+          purchaseUnitCount: normalizedPurchaseUnitCount,
+          purchaseUnitLabel: purchaseProfile.label,
+        });
+
+        const updateResult = await client.query(
+          `
+          UPDATE feed_items
+            SET current_stock = COALESCE(current_stock, 0) + $1,
+                supplier_name = COALESCE($2, supplier_name),
+                unit_cost = COALESCE($3, unit_cost),
+                last_purchase_date = $4
+          WHERE id = $5
+          RETURNING id, name, unit, current_stock, supplier_name, unit_cost, minimum_stock, last_purchase_date, purchase_unit_label, purchase_unit_size
+          `,
+          [stockQuantity, supplier, unitCost, eventDateRaw, feedItem.id]
+        );
+
+        const stockEventResult = await client.query(
+          `
+          INSERT INTO stock_events (
+            feed_item_id,
+            event_type,
+            quantity,
+            unit,
+            event_date,
+            notes,
+            telegram_user_id,
+            supplier_name,
+            unit_cost,
+            total_cost,
+            purchase_unit_count,
+            purchase_unit_label,
+            purchase_unit_size
+          )
+          VALUES ($1, 'add', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          RETURNING id, feed_item_id, event_type, quantity, unit, event_date, notes, telegram_user_id
+          `,
+          [
+            feedItem.id,
+            stockQuantity,
+            feedItem.unit,
+            eventDateRaw,
+            stockNotes,
+            'admin_panel',
+            supplier,
+            effectiveUnitCost,
+            totalCost,
+            normalizedPurchaseUnitCount,
+            purchaseProfile.label,
+            purchaseProfile.size,
+          ]
+        );
+
+        await client.query('COMMIT');
+        res.status(200).json({
+          ok: true,
+          action,
+          feed_item: {
+            ...updateResult.rows[0],
+            current_stock: Number(updateResult.rows[0].current_stock),
+            unit_cost:
+              updateResult.rows[0].unit_cost == null
+                ? null
+                : Number(updateResult.rows[0].unit_cost),
+            minimum_stock:
+              updateResult.rows[0].minimum_stock == null
+                ? null
+                : Number(updateResult.rows[0].minimum_stock),
+            last_purchase_date: toIsoDateString(updateResult.rows[0].last_purchase_date),
+            purchase_unit_label: normalizeOptionalText(updateResult.rows[0].purchase_unit_label),
+            purchase_unit_size:
+              updateResult.rows[0].purchase_unit_size == null
+                ? null
+                : Number(updateResult.rows[0].purchase_unit_size),
+          },
+          stock_event: {
+            ...stockEventResult.rows[0],
+            quantity: Number(stockEventResult.rows[0].quantity),
+            event_date: toIsoDateString(stockEventResult.rows[0].event_date),
+            total_cost: totalCost,
+            purchase_unit_count: normalizedPurchaseUnitCount,
+          },
+        });
+        return;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    if (action === 'stock_event_delete') {
+      const stockEventId = parsePositiveInt(body.stockEventId);
+
+      if (!stockEventId) {
+        res.status(400).json({ ok: false, error: 'stockEventId is required' });
+        return;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await ensureStockInventoryTables(client);
+
+        const stockEventResult = await client.query(
+          `
+          SELECT
+            s.id,
+            s.feed_item_id,
+            s.event_type,
+            s.quantity,
+            s.unit,
+            s.event_date,
+            s.supplier_name,
+            s.unit_cost,
+            s.total_cost,
+            s.purchase_unit_count,
+            s.purchase_unit_label,
+            s.purchase_unit_size,
+            i.name AS feed_item_name,
+            i.current_stock,
+            i.supplier_name AS current_supplier_name,
+            i.unit_cost AS current_unit_cost,
+            i.last_purchase_date AS current_last_purchase_date,
+            i.purchase_unit_label AS current_purchase_unit_label,
+            i.purchase_unit_size AS current_purchase_unit_size
+          FROM stock_events s
+          JOIN feed_items i ON i.id = s.feed_item_id
+          WHERE s.id = $1
+          FOR UPDATE OF s, i
+          `,
+          [stockEventId]
+        );
+
+        if (stockEventResult.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ ok: false, error: 'Stock event not found' });
+          return;
+        }
+
+        const stockEvent = stockEventResult.rows[0];
+        const eventQuantity = Number(stockEvent.quantity);
+        const currentStock = Number(stockEvent.current_stock);
+        let nextStock = currentStock;
+
+        if (stockEvent.event_type === 'add') {
+          nextStock = Number((currentStock - eventQuantity).toFixed(2));
+          if (nextStock < 0) {
+            await client.query('ROLLBACK');
+            res.status(409).json({
+              ok: false,
+              error:
+                'No podemos borrar este ingreso automáticamente porque el stock actual ya quedó por debajo de esa cantidad.',
+            });
+            return;
+          }
+        } else {
+          await client.query('ROLLBACK');
+          res.status(409).json({
+            ok: false,
+            error: `Todavía no soportamos borrar movimientos del tipo ${stockEvent.event_type}.`,
+          });
+          return;
+        }
+
+        await client.query('DELETE FROM stock_events WHERE id = $1', [stockEventId]);
+
+        const previousPurchaseResult = await client.query(
+          `
+          SELECT
+            event_date,
+            supplier_name,
+            unit_cost,
+            purchase_unit_label,
+            purchase_unit_size
+          FROM stock_events
+          WHERE feed_item_id = $1
+            AND event_type = 'add'
+          ORDER BY event_date DESC, id DESC
+          LIMIT 1
+          `,
+          [stockEvent.feed_item_id]
+        );
+
+        const previousPurchase = previousPurchaseResult.rows[0] || null;
+        const nextSupplier =
+          previousPurchase && previousPurchase.supplier_name != null
+            ? previousPurchase.supplier_name
+            : stockEvent.current_supplier_name;
+        const nextUnitCost =
+          previousPurchase && previousPurchase.unit_cost != null
+            ? Number(previousPurchase.unit_cost)
+            : stockEvent.current_unit_cost == null
+              ? null
+              : Number(stockEvent.current_unit_cost);
+        const nextLastPurchaseDate = previousPurchase
+          ? previousPurchase.event_date
+          : null;
+        const nextPurchaseUnitLabel =
+          previousPurchase && previousPurchase.purchase_unit_label != null
+            ? previousPurchase.purchase_unit_label
+            : stockEvent.current_purchase_unit_label;
+        const nextPurchaseUnitSize =
+          previousPurchase && previousPurchase.purchase_unit_size != null
+            ? Number(previousPurchase.purchase_unit_size)
+            : stockEvent.current_purchase_unit_size == null
+              ? null
+              : Number(stockEvent.current_purchase_unit_size);
+
+        await client.query(
           `
           UPDATE feed_items
           SET current_stock = $1,
-              unit = $2
-          WHERE id = $3
-          RETURNING id, name, unit, current_stock
+              supplier_name = $2,
+              unit_cost = $3,
+              last_purchase_date = $4,
+              purchase_unit_label = $5,
+              purchase_unit_size = $6
+          WHERE id = $7
           `,
-          [currentStock, unit, existingItem.rows[0].id]
+          [
+            nextStock,
+            nextSupplier,
+            nextUnitCost,
+            nextLastPurchaseDate,
+            nextPurchaseUnitLabel,
+            nextPurchaseUnitSize,
+            stockEvent.feed_item_id,
+          ]
         );
+
+        await client.query('COMMIT');
 
         res.status(200).json({
           ok: true,
           action,
-          mode: 'updated',
-          feed_item: {
-            ...updateResult.rows[0],
-            current_stock: Number(updateResult.rows[0].current_stock),
+          deleted_stock_event_id: stockEventId,
+          stock: {
+            feed_item_id: Number(stockEvent.feed_item_id),
+            feed_item_name: stockEvent.feed_item_name,
+            current_stock: nextStock,
+            unit: stockEvent.unit,
+            last_purchase_date: toIsoDateString(nextLastPurchaseDate),
           },
         });
         return;
+      } catch (error) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (_rollbackError) {
+          // no-op
+        }
+        throw error;
+      } finally {
+        client.release();
       }
-
-      const insertResult = await pool.query(
-        `
-        INSERT INTO feed_items (name, unit, current_stock)
-        VALUES ($1, $2, $3)
-        RETURNING id, name, unit, current_stock
-        `,
-        [itemName, unit, currentStock]
-      );
-
-      res.status(200).json({
-        ok: true,
-        action,
-        mode: 'created',
-        feed_item: {
-          ...insertResult.rows[0],
-          current_stock: Number(insertResult.rows[0].current_stock),
-        },
-      });
-      return;
     }
 
     if (action === 'feed_event_add') {
@@ -2290,7 +3161,7 @@ module.exports = async (req, res) => {
       res.status(400).json({
         ok: false,
         error:
-        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, or admin_modules_save.',
+        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, or admin_modules_save.',
       });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);
