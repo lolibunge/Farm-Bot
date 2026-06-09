@@ -1,6 +1,6 @@
 export const SESSION_API_URL = '/api/admin/session';
-export const LOGIN_API_URL = '/api/admin/login';
-export const LOGOUT_API_URL = '/api/admin/logout';
+export const LOGIN_API_URL = SESSION_API_URL;
+export const LOGOUT_API_URL = SESSION_API_URL;
 export const DASHBOARD_API_URL = '/api/admin-v2/stock-dashboard';
 
 export const DEFAULT_ACTIVE_NAV = 'stock';

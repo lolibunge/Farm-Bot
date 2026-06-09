@@ -193,6 +193,9 @@ function getModuleKeyForAdminAction(action) {
     [
       'feed_item_save',
       'stock_purchase_save',
+      'set',
+      'add',
+      'use',
       'feed_event_add',
       'horse_feed_plan_save',
       'horse_feed_slot_toggle',
@@ -569,6 +572,170 @@ module.exports = async (req, res) => {
     const moduleSettings = await listAdminModuleSettings();
     const enabledModules = buildAdminModuleEnabledMap(moduleSettings);
     assertAdminModuleEnabled(getModuleKeyForAdminAction(action), enabledModules);
+
+    if (['set', 'add', 'use'].includes(action)) {
+      const itemName = String(body.itemName || '').trim().toLowerCase();
+      const unit = String(body.unit || '').trim().toLowerCase();
+      const quantity = Number(body.quantity);
+      const notes = body.notes ? String(body.notes).trim() : '';
+      let eventDate = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+
+      if (!itemName) {
+        res.status(400).json({ ok: false, error: 'itemName is required' });
+        return;
+      }
+
+      if (!unit) {
+        res.status(400).json({ ok: false, error: 'unit is required' });
+        return;
+      }
+
+      if (!Number.isFinite(quantity) || (action === 'set' ? quantity < 0 : quantity <= 0)) {
+        res.status(400).json({ ok: false, error: 'quantity is invalid' });
+        return;
+      }
+
+      if (looksLikeDateString(eventDate) && !isValidDateString(eventDate)) {
+        res.status(400).json({ ok: false, error: 'eventDate is not a valid calendar date' });
+        return;
+      }
+
+      if (!isValidDateString(eventDate)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await ensureStockInventoryTables(client);
+
+        const feedItemResult = await client.query(
+          `
+          SELECT id, name, unit, current_stock
+          FROM feed_items
+          WHERE LOWER(name) = LOWER($1)
+          LIMIT 1
+          FOR UPDATE
+          `,
+          [itemName]
+        );
+
+        if (feedItemResult.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ ok: false, error: `Feed item not found: ${itemName}` });
+          return;
+        }
+
+        const feedItem = feedItemResult.rows[0];
+        let updated;
+
+        if (action === 'set') {
+          const updateResult = await client.query(
+            `
+            UPDATE feed_items
+            SET current_stock = $1,
+                unit = $2
+            WHERE id = $3
+            RETURNING id, name, unit, current_stock
+            `,
+            [quantity, unit, feedItem.id]
+          );
+
+          updated = updateResult.rows[0];
+        } else if (String(feedItem.unit || '').toLowerCase() !== unit) {
+          await client.query('ROLLBACK');
+          res.status(400).json({
+            ok: false,
+            error: `Unit mismatch. Expected ${feedItem.unit}`,
+          });
+          return;
+        } else if (action === 'add') {
+          const updateResult = await client.query(
+            `
+            UPDATE feed_items
+            SET current_stock = current_stock + $1
+            WHERE id = $2
+            RETURNING id, name, unit, current_stock
+            `,
+            [quantity, feedItem.id]
+          );
+
+          updated = updateResult.rows[0];
+
+          await client.query(
+            `
+            INSERT INTO stock_events (
+              feed_item_id,
+              event_type,
+              quantity,
+              unit,
+              event_date,
+              notes,
+              telegram_user_id
+            )
+            VALUES ($1, 'add', $2, $3, $4, $5, $6)
+            `,
+            [feedItem.id, quantity, unit, eventDate, notes || null, 'admin_panel']
+          );
+        } else {
+          if (Number(feedItem.current_stock) < quantity) {
+            await client.query('ROLLBACK');
+            res.status(400).json({
+              ok: false,
+              error: `Not enough stock. ${feedItem.name} has ${feedItem.current_stock} ${feedItem.unit}`,
+            });
+            return;
+          }
+
+          const updateResult = await client.query(
+            `
+            UPDATE feed_items
+            SET current_stock = current_stock - $1
+            WHERE id = $2
+            RETURNING id, name, unit, current_stock
+            `,
+            [quantity, feedItem.id]
+          );
+
+          updated = updateResult.rows[0];
+
+          await client.query(
+            `
+            INSERT INTO stock_events (
+              feed_item_id,
+              event_type,
+              quantity,
+              unit,
+              event_date,
+              notes,
+              telegram_user_id
+            )
+            VALUES ($1, 'use', $2, $3, $4, $5, $6)
+            `,
+            [feedItem.id, quantity, unit, eventDate, notes || null, 'admin_panel']
+          );
+        }
+
+        await client.query('COMMIT');
+        res.status(200).json({
+          ok: true,
+          action,
+          item: {
+            id: updated.id,
+            name: updated.name,
+            unit: updated.unit,
+            current_stock: Number(updated.current_stock),
+          },
+        });
+        return;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
 
     if (action === 'horse_add') {
       const horseName = String(body.horseName || '').trim();
@@ -2994,7 +3161,7 @@ module.exports = async (req, res) => {
       res.status(400).json({
         ok: false,
         error:
-        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, stock_purchase_save, stock_event_delete, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, or admin_modules_save.',
+        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, or admin_modules_save.',
       });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);

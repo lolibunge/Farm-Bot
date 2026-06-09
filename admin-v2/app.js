@@ -1,7 +1,7 @@
 (function initAdminV2() {
   const SESSION_API_URL = '/api/admin/session';
-  const LOGIN_API_URL = '/api/admin/login';
-  const LOGOUT_API_URL = '/api/admin/logout';
+  const LOGIN_API_URL = SESSION_API_URL;
+  const LOGOUT_API_URL = SESSION_API_URL;
   const HORSES_API_URL = '/api/admin-v2/horses';
   const PADDOCKS_API_URL = '/api/admin-v2/paddocks';
   const STOCK_DASHBOARD_API_URL = '/api/admin-v2/stock-dashboard';
@@ -13246,7 +13246,10 @@
 
     if (!(currentState.session && currentState.session.demo)) {
       try {
-        await requestJson(LOGOUT_API_URL, { method: 'POST' });
+        await requestJson(LOGOUT_API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'logout' }),
+        });
       } catch (_error) {
         // Keep local logout behavior even if the request fails.
       }

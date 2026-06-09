@@ -1,11 +1,10 @@
 const API_URL = '/api/admin/overview';
 const HORSE_HISTORY_API_URL = '/api/admin/horse-history';
 const CALENDAR_EVENTS_API_URL = '/api/admin/calendar-events';
-const STOCK_MUTATE_API_URL = '/api/admin/mutate-stock';
 const DATA_MUTATE_API_URL = '/api/admin/mutate-data';
-const LOGIN_API_URL = '/api/admin/login';
-const LOGOUT_API_URL = '/api/admin/logout';
 const SESSION_API_URL = '/api/admin/session';
+const LOGIN_API_URL = SESSION_API_URL;
+const LOGOUT_API_URL = SESSION_API_URL;
 const PANEL_STATE_STORAGE_KEY = 'farm_bot_admin_panel_state';
 const ACTION_CARD_STATE_STORAGE_KEY = 'farm_bot_admin_action_card_state';
 const SUMMARY_PREFS_STORAGE_KEY = 'farm_bot_admin_summary_prefs';
@@ -7790,7 +7789,7 @@ authForm.addEventListener('submit', async (event) => {
 logoutButton.addEventListener('click', async () => {
   try {
     beginLoadingOverlay('Signing out...', 'Closing the current admin session.');
-    await postJson(LOGOUT_API_URL, {}, { skipFeedback: true });
+    await postJson(LOGOUT_API_URL, { action: 'logout' }, { skipFeedback: true });
   } catch (_error) {
     // Clear local UI even if logout API fails.
   } finally {
@@ -8548,7 +8547,7 @@ stockActionForm.addEventListener('submit', async (event) => {
       notes: stockNotesInput.value.trim() || undefined,
     };
 
-    const data = await postJson(STOCK_MUTATE_API_URL, payload);
+    const data = await postJson(DATA_MUTATE_API_URL, payload);
 
     setActionMessage(
       `Stock ${data.action} applied to ${data.item.name}. New stock: ${data.item.current_stock} ${data.item.unit}`
