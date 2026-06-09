@@ -8853,6 +8853,8 @@ if (grazingGroupMoveInForm) {
       });
 
       grazingGroupMoveInNotesInput.value = '';
+      let successMessage = '';
+
       if (moveMode === 'correct_current') {
         const correctedCount = Number(data.corrected_count || 0);
         const insertedCount = Number(data.inserted_count || 0);
@@ -8869,11 +8871,9 @@ if (grazingGroupMoveInForm) {
           correctionParts.push(`${unchangedCount} already matched`);
         }
 
-        setActionMessage(
-          `${data.group.name} corrected to ${data.paddock.name} from ${formatDate(
-            data.entered_at || data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
-          )}. ${correctionParts.join(', ') || 'Current paddock history updated.'}`
-        );
+        successMessage = `${data.group.name} corrected to ${data.paddock.name} from ${formatDate(
+          data.entered_at || data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
+        )}. ${correctionParts.join(', ') || 'Current paddock history updated.'}`;
       } else {
         const movedCount = Number(data.moved_count || 0);
         const groupMemberCount = Number(data.group_member_count || movedCount);
@@ -8883,13 +8883,24 @@ if (grazingGroupMoveInForm) {
             ? `${movedCount} moved, ${alreadyThereCount} already there`
             : `${groupMemberCount} horse(s) moved`;
 
+        successMessage = `${data.group.name} moved to ${data.paddock.name} on ${formatDate(
+          data.entered_at || data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
+        )}. ${movementSummary}.`;
+      }
+      setActionMessage(successMessage);
+
+      try {
+        await loadDashboard();
+      } catch (refreshError) {
+        if (handleAuthError(refreshError, 'Session expired. Please log in to refresh the dashboard.')) {
+          clearDashboardView();
+          return;
+        }
         setActionMessage(
-          `${data.group.name} moved to ${data.paddock.name} on ${formatDate(
-            data.entered_at || data.grazing_events?.[0]?.entered_at || grazingGroupMoveInDateInput.value
-          )}. ${movementSummary}.`
+          `${successMessage} Movement saved, but dashboard refresh failed: ${refreshError.message}`,
+          'warning'
         );
       }
-      await loadDashboard();
     } catch (error) {
       if (handleAuthError(error, 'Session expired. Please log in to record group grazing moves.')) {
         clearDashboardView();
