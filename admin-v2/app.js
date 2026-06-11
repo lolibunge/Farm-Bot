@@ -82,6 +82,21 @@
     { value: 'external', label: 'Externo / contratista' },
   ];
 
+  const FARRIER_SERVICE_OPTIONS = [
+    { value: 'desvasado', label: 'Desvasado' },
+    { value: 'herrado', label: 'Herrado' },
+  ];
+
+  const HORSE_HEALTH_EVENT_OPTIONS = [
+    { value: 'veterinaria', label: 'Veterinaria' },
+    { value: 'control', label: 'Control' },
+    { value: 'vacuna', label: 'Vacuna' },
+    { value: 'tratamiento', label: 'Tratamiento' },
+    { value: 'medicacion', label: 'Medicación' },
+    { value: 'lesion', label: 'Lesión' },
+    { value: 'otro', label: 'Otro' },
+  ];
+
   const FEED_SLOT_META = [
     { key: 'morning', title: 'Mañana', label: 'AM' },
     { key: 'afternoon', title: 'Tarde', label: 'PM' },
@@ -1498,6 +1513,46 @@
     return `${value} ${String(unit || '').trim()}`.trim();
   }
 
+  function getStockUnitLabel(unit) {
+    return String(unit || '').trim() || 'unidad';
+  }
+
+  function getStockConsumeQuantityPlaceholder(item) {
+    const unit = getStockUnitLabel(item?.unit);
+    const normalizedUnit = unit.toLowerCase();
+    const exampleValue =
+      normalizedUnit === 'kg'
+        ? '3'
+        : normalizedUnit === 'ml'
+          ? '30'
+          : normalizedUnit === 'l'
+            ? '1'
+            : '1';
+    return `Ej. ${exampleValue} ${unit}`;
+  }
+
+  function getStockConsumeCalloutDetail(item) {
+    if (!item) {
+      return 'Elegí un insumo para ver el stock disponible y la unidad de consumo.';
+    }
+
+    const unit = getStockUnitLabel(item.unit);
+    return `${item.name} · Stock actual ${formatStockValueLabel(
+      item.current_stock,
+      unit
+    )}. Este consumo se registra en ${unit}. Si consumiste 1 ${unit}, cargá 1.`;
+  }
+
+  function getStockConsumeHint(item) {
+    const unit = getStockUnitLabel(item?.unit);
+    return `Esto descuenta stock ahora mismo usando la unidad base del producto: ${unit}. Para raciones diarias por caballo seguí usando el plan o el calendario de alimentación.`;
+  }
+
+  function getStockConsumeNotesPlaceholder(item) {
+    const itemName = String(item?.name || 'este insumo').trim();
+    return `Ej. consumo manual de ${itemName} para el lote de esta semana.`;
+  }
+
   function isStockGrainItem(item) {
     const categoryKey =
       item?.category?.key != null ? item.category.key : item?.category_key != null ? item.category_key : '';
@@ -1776,6 +1831,198 @@
     return state.paddockDetailById[String(paddockId)] || null;
   }
 
+  function normalizeHorseFeedHistoryRowForModal(row) {
+    if (!row) {
+      return null;
+    }
+
+    const eventDate =
+      row.event_date && isValidDateString(row.event_date)
+        ? row.event_date
+        : String(row.at || row.created_at || row.updated_at || '').slice(0, 10);
+    const feedSlot = getFeedSlotMeta(row.feed_slot)?.key || null;
+    const timestamp = String(
+      row.at || row.created_at || row.updated_at || `${eventDate || todayDateString()}T00:00:00.000Z`
+    );
+
+    return {
+      id: Number(row.id),
+      at: timestamp,
+      event_date: eventDate || todayDateString(),
+      feed_item: row.feed_item || row.feed_item_name || null,
+      quantity: Number(row.quantity),
+      unit: row.unit || null,
+      feed_slot: feedSlot,
+      calendar_slot_entry_id:
+        row.calendar_slot_entry_id == null ? null : Number(row.calendar_slot_entry_id),
+      stock_deducted: Boolean(row.stock_deducted),
+      source: row.source || (row.calendar_slot_entry_id != null ? 'plan' : 'manual'),
+    };
+  }
+
+  function sortHorseFeedHistoryRows(rows) {
+    return rows
+      .slice()
+      .sort((left, right) => {
+        const rightTime = Date.parse(String(right?.at || right?.event_date || ''));
+        const leftTime = Date.parse(String(left?.at || left?.event_date || ''));
+        if (Number.isFinite(rightTime) && Number.isFinite(leftTime) && rightTime !== leftTime) {
+          return rightTime - leftTime;
+        }
+
+        const rightDate = String(right?.event_date || '');
+        const leftDate = String(left?.event_date || '');
+        if (rightDate !== leftDate) {
+          return rightDate.localeCompare(leftDate);
+        }
+
+        return Number(right?.id || 0) - Number(left?.id || 0);
+      });
+  }
+
+  function applyHorseFeedStockChangesToState(currentState, stockChanges) {
+    if (!Array.isArray(stockChanges) || !stockChanges.length || !currentState?.stockDashboard?.stock_dashboard) {
+      return currentState?.stockDashboard || null;
+    }
+
+    const nextInventoryItems = getRealStockItems(currentState).map((item) => {
+      const changedRow = stockChanges.find(
+        (row) => Number(row.feed_item_id) === Number(item.id)
+      );
+      if (!changedRow) {
+        return item;
+      }
+
+      return {
+        ...item,
+        current_stock:
+          changedRow.current_stock == null ? item.current_stock : Number(changedRow.current_stock),
+      };
+    });
+
+    return {
+      ...currentState.stockDashboard,
+      stock_dashboard: {
+        ...currentState.stockDashboard.stock_dashboard,
+        inventory: {
+          ...(currentState.stockDashboard.stock_dashboard.inventory || {}),
+          items: nextInventoryItems,
+        },
+      },
+    };
+  }
+
+  function applyHorseFeedCalendarToggleToState(currentState, horseId, mutationPayload) {
+    const historyEntry = getRealHorseHistoryState(currentState, horseId);
+    const historyData = historyEntry?.data;
+    if (!historyEntry || !historyData) {
+      return {};
+    }
+
+    const normalizedHorseId = parsePositiveInt(horseId);
+    const currentCalendar = historyData.feed_calendar || {};
+    const currentEntries = Array.isArray(currentCalendar.entries) ? currentCalendar.entries : [];
+    const normalizedEntry = mutationPayload?.entry || null;
+    const normalizedFeedEvents = Array.isArray(mutationPayload?.feed_events)
+      ? mutationPayload.feed_events
+          .map((row) => normalizeHorseFeedHistoryRowForModal(row))
+          .filter(Boolean)
+      : [];
+    const checked = Boolean(mutationPayload?.checked);
+
+    let nextEntries = currentEntries.slice();
+    if (checked && normalizedEntry) {
+      nextEntries = nextEntries.filter(
+        (row) =>
+          !(
+            String(row.event_date || '') === String(normalizedEntry.event_date || '') &&
+            String(row.feed_slot || '') === String(normalizedEntry.feed_slot || '')
+          )
+      );
+      nextEntries.push(normalizedEntry);
+    } else {
+      const removedEventIds = new Set(
+        normalizedFeedEvents
+          .map((row) => Number(row.calendar_slot_entry_id))
+          .filter((value) => Number.isFinite(value) && value > 0)
+      );
+      nextEntries = nextEntries.filter((row) => {
+        if (removedEventIds.size && removedEventIds.has(Number(row.id))) {
+          return false;
+        }
+
+        return !(
+          normalizedEntry &&
+          String(row.event_date || '') === String(normalizedEntry.event_date || '') &&
+          String(row.feed_slot || '') === String(normalizedEntry.feed_slot || '')
+        );
+      });
+    }
+
+    const currentFeedHistory = Array.isArray(historyData.feed_history) ? historyData.feed_history : [];
+    let nextFeedHistory = currentFeedHistory.slice();
+
+    if (checked) {
+      const nextIds = new Set(normalizedFeedEvents.map((row) => Number(row.id)));
+      nextFeedHistory = sortHorseFeedHistoryRows([
+        ...normalizedFeedEvents,
+        ...nextFeedHistory.filter((row) => !nextIds.has(Number(row.id))),
+      ]);
+    } else {
+      const removedIds = new Set(normalizedFeedEvents.map((row) => Number(row.id)));
+      const removedCalendarIds = new Set(
+        normalizedFeedEvents
+          .map((row) => Number(row.calendar_slot_entry_id))
+          .filter((value) => Number.isFinite(value) && value > 0)
+      );
+      nextFeedHistory = sortHorseFeedHistoryRows(
+        nextFeedHistory.filter((row) => {
+          const rowId = Number(row.id);
+          const rowCalendarSlotEntryId = Number(row.calendar_slot_entry_id);
+          if (removedIds.has(rowId)) {
+            return false;
+          }
+
+          if (
+            Number.isFinite(rowCalendarSlotEntryId) &&
+            rowCalendarSlotEntryId > 0 &&
+            removedCalendarIds.has(rowCalendarSlotEntryId)
+          ) {
+            return false;
+          }
+
+          return true;
+        })
+      );
+    }
+
+    const nextPatch = {
+      horseHistoryById: {
+        ...(currentState.horseHistoryById || {}),
+        [String(normalizedHorseId)]: {
+          ...historyEntry,
+          loading: false,
+          error: '',
+          data: {
+            ...historyData,
+            feed_calendar: {
+              ...currentCalendar,
+              entries: nextEntries,
+            },
+            feed_history: nextFeedHistory,
+          },
+        },
+      },
+    };
+
+    const nextStockDashboard = applyHorseFeedStockChangesToState(currentState, mutationPayload?.stock_changes);
+    if (nextStockDashboard) {
+      nextPatch.stockDashboard = nextStockDashboard;
+    }
+
+    return nextPatch;
+  }
+
   function getRealPaddockCatalogRows(state) {
     const catalog = getRealHorseCatalog(state);
     if (Array.isArray(catalog?.paddocks) && catalog.paddocks.length) {
@@ -1990,6 +2237,44 @@
       }));
   }
 
+  function buildHorseFeedPlanComparableItems(rows) {
+    return sortHorseFeedPlanRows(rows).map((row) => {
+      const quantity = String(row?.quantity ?? '').trim();
+      return {
+        feed_slot: getFeedSlotMeta(row.feed_slot)?.key || '',
+        feed_item_name: String(row.feed_item_name || '').trim().toLowerCase(),
+        quantity: quantity ? Number(Number(quantity).toFixed(2)) : '',
+        unit: String(row.unit || '').trim().toLowerCase(),
+        auto_deduct_stock: Boolean(row.auto_deduct_stock),
+      };
+    });
+  }
+
+  function buildHorseFeedPlanDraftDiff(payload, historyPayload) {
+    const baseItems = buildHorseFeedPlanComparableItems(
+      buildHorseFeedPlanDraftRowsFromHistory(historyPayload)
+    );
+    const draftItems = buildHorseFeedPlanComparableItems(
+      getHorseFeedPlanDraftRowsForModal(payload, historyPayload)
+    );
+    const baseSnapshots = baseItems.map((row) => JSON.stringify(row));
+    const draftSnapshots = draftItems.map((row) => JSON.stringify(row));
+    let changeCount = 0;
+
+    for (let index = 0; index < Math.max(baseSnapshots.length, draftSnapshots.length); index += 1) {
+      if (baseSnapshots[index] !== draftSnapshots[index]) {
+        changeCount += 1;
+      }
+    }
+
+    return {
+      baseItems,
+      draftItems,
+      hasChanges: changeCount > 0,
+      changeCount,
+    };
+  }
+
   function updateHorseFeedPlanDraftRows(state, payload, rowKey, field, rawValue) {
     const historyPayload = getRealHorseHistoryState(state, payload?.horseId)?.data || null;
     const rows = getHorseFeedPlanDraftRowsForModal(payload, historyPayload);
@@ -2039,6 +2324,86 @@
     return Array.isArray(historyPayload?.feed_calendar?.entries) ? historyPayload.feed_calendar.entries : [];
   }
 
+  function buildHorseFeedCalendarEntryKey(entry) {
+    const eventDate = String(entry?.event_date || '').trim();
+    const feedSlot = getFeedSlotMeta(entry?.feed_slot)?.key || '';
+    return eventDate && feedSlot ? `${eventDate}:${feedSlot}` : '';
+  }
+
+  function normalizeHorseFeedCalendarDraftEntries(entries) {
+    const byKey = new Map();
+    (Array.isArray(entries) ? entries : []).forEach((entry) => {
+      const key = buildHorseFeedCalendarEntryKey(entry);
+      if (!key) {
+        return;
+      }
+
+      byKey.set(key, {
+        id: entry?.id == null ? null : Number(entry.id),
+        horse_id: entry?.horse_id == null ? null : Number(entry.horse_id),
+        feed_slot: getFeedSlotMeta(entry.feed_slot)?.key || '',
+        event_date: String(entry.event_date || '').trim(),
+      });
+    });
+
+    return Array.from(byKey.values()).sort((left, right) => {
+      const leftDate = String(left.event_date || '');
+      const rightDate = String(right.event_date || '');
+      if (leftDate !== rightDate) {
+        return leftDate.localeCompare(rightDate);
+      }
+
+      return getFeedSlotSortValue(left.feed_slot) - getFeedSlotSortValue(right.feed_slot);
+    });
+  }
+
+  function getHorseFeedCalendarDraftEntriesForModal(payload, historyPayload, selectedMonth) {
+    const draftMonth = normalizeYearMonth(payload?.feedCalendarDraftMonth);
+    if (draftMonth && draftMonth === selectedMonth) {
+      return normalizeHorseFeedCalendarDraftEntries(payload?.feedCalendarDraftEntries);
+    }
+
+    return normalizeHorseFeedCalendarDraftEntries(
+      getHorseFeedCalendarEntriesForMonth(historyPayload, selectedMonth)
+    );
+  }
+
+  function buildHorseFeedCalendarDraftDiff(payload, historyPayload, selectedMonth) {
+    const baseEntries = normalizeHorseFeedCalendarDraftEntries(
+      getHorseFeedCalendarEntriesForMonth(historyPayload, selectedMonth)
+    );
+    const draftEntries = getHorseFeedCalendarDraftEntriesForModal(
+      payload,
+      historyPayload,
+      selectedMonth
+    );
+    const baseByKey = new Map(baseEntries.map((entry) => [buildHorseFeedCalendarEntryKey(entry), entry]));
+    const draftByKey = new Map(draftEntries.map((entry) => [buildHorseFeedCalendarEntryKey(entry), entry]));
+    const additions = draftEntries.filter((entry) => !baseByKey.has(buildHorseFeedCalendarEntryKey(entry)));
+    const removals = baseEntries.filter((entry) => !draftByKey.has(buildHorseFeedCalendarEntryKey(entry)));
+
+    return {
+      baseEntries,
+      draftEntries,
+      additions,
+      removals,
+      hasChanges: additions.length > 0 || removals.length > 0,
+      changeCount: additions.length + removals.length,
+    };
+  }
+
+  function sanitizeHorseFeedCalendarDraftEntries(entries, historyPayload) {
+    const allowedSlots = new Set(
+      (Array.isArray(historyPayload?.feed_plan?.items) ? historyPayload.feed_plan.items : [])
+        .map((row) => getFeedSlotMeta(row?.feed_slot)?.key || '')
+        .filter(Boolean)
+    );
+
+    return normalizeHorseFeedCalendarDraftEntries(entries).filter((entry) =>
+      allowedSlots.has(getFeedSlotMeta(entry.feed_slot)?.key || '')
+    );
+  }
+
   function buildHorseFeedPlanSummary(draftRows, calendarEntries) {
     const ingredientCount = draftRows.filter((row) => String(row.feed_item_name || '').trim()).length;
     const plannedSlots = new Set(
@@ -2080,6 +2445,12 @@
     }
 
     return [
+      {
+        label: 'Registrar consumo',
+        tone: 'secondary',
+        icon: 'arrow',
+        trigger: { action: 'open-modal', value: 'stock-consume' },
+      },
       {
         label: 'Ingresar stock',
         tone: 'primary',
@@ -3693,6 +4064,133 @@
     return `${prefix}: ${formatDateLabel(careItem.next_due_date)}`;
   }
 
+  function parseBooleanFlag(value, fallbackValue = false) {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase();
+
+    if (!normalized) {
+      return fallbackValue;
+    }
+
+    if (['true', '1', 'yes', 'si', 'sí', 'on'].includes(normalized)) {
+      return true;
+    }
+
+    if (['false', '0', 'no', 'off'].includes(normalized)) {
+      return false;
+    }
+
+    return fallbackValue;
+  }
+
+  function isShoeingServiceType(serviceType) {
+    const normalized = String(serviceType || '')
+      .trim()
+      .toLowerCase();
+
+    return (
+      normalized.includes('herrad') ||
+      normalized.includes('herraje') ||
+      normalized.includes('shoe') ||
+      normalized.includes('shoes') ||
+      normalized.includes('shoeing')
+    );
+  }
+
+  function formatFarrierServiceTypeLabel(serviceType) {
+    const normalized = String(serviceType || '')
+      .trim()
+      .toLowerCase();
+
+    if (!normalized) {
+      return 'Sin tipo';
+    }
+
+    if (isShoeingServiceType(normalized)) {
+      return 'Herrado';
+    }
+
+    if (
+      normalized.includes('desvas') ||
+      normalized.includes('trim') ||
+      normalized.includes('trimming')
+    ) {
+      return 'Desvasado';
+    }
+
+    return String(serviceType || 'Sin tipo');
+  }
+
+  function normalizeFarrierServiceTypeValue(serviceType) {
+    const normalized = String(serviceType || '')
+      .trim()
+      .toLowerCase();
+
+    if (!normalized) {
+      return 'desvasado';
+    }
+
+    if (isShoeingServiceType(normalized)) {
+      return 'herrado';
+    }
+
+    if (
+      normalized.includes('desvas') ||
+      normalized.includes('trim') ||
+      normalized.includes('trimming')
+    ) {
+      return 'desvasado';
+    }
+
+    return normalized;
+  }
+
+  function formatHorseHealthEventTypeLabel(eventType) {
+    const normalized = String(eventType || '')
+      .trim()
+      .toLowerCase();
+
+    if (!normalized) {
+      return 'Sin tipo';
+    }
+
+    return formatValueLabel(
+      normalized,
+      HORSE_HEALTH_EVENT_OPTIONS.map((option) => ({
+        ...option,
+        value: String(option.value || '').trim().toLowerCase(),
+      }))
+    );
+  }
+
+  function getHistoryEventDate(row) {
+    if (!row) {
+      return '';
+    }
+
+    const eventDate = String(row.event_date || '').trim();
+    if (eventDate && isValidDateString(eventDate)) {
+      return eventDate;
+    }
+
+    const fallbackDate = String(row.at || row.created_at || row.updated_at || '').slice(0, 10);
+    return isValidDateString(fallbackDate) ? fallbackDate : '';
+  }
+
+  function buildHorseHistoryReturnMeta(payload, historyPayload, horseId) {
+    return {
+      horseId,
+      returnMonth: getHorseFeedCalendarMonth(payload, historyPayload),
+      returnFeedPlanOpen: Boolean(payload?.feedPlanOpen),
+      returnFeedHistoryOpen: Boolean(payload?.feedHistoryOpen),
+    };
+  }
+
   function getHorseNextCareDate(horse) {
     const dates = [horse?.care?.deworming?.next_due_date, horse?.care?.farrier?.next_due_date]
       .filter(Boolean)
@@ -4501,12 +4999,25 @@
     const readonly = field.readonly ? ' readonly' : '';
     const disabled = field.disabled ? ' disabled' : '';
     const required = field.required ? ' required' : '';
+    const extraAttributes = Object.entries(field.attributes || {})
+      .map(([key, attrValue]) => {
+        if (attrValue == null || attrValue === false) {
+          return '';
+        }
+
+        if (attrValue === true) {
+          return ` ${escapeHtml(key)}`;
+        }
+
+        return ` ${escapeHtml(key)}="${escapeHtml(attrValue)}"`;
+      })
+      .join('');
 
     let control = '';
 
     if (field.type === 'select') {
       control = `
-        <select name="${escapeHtml(field.name)}"${disabled}${required}>
+        <select name="${escapeHtml(field.name)}"${disabled}${required}${extraAttributes}>
           ${(field.options || [])
             .map((option) => {
               const optionValue = typeof option === 'string' ? option : option.value;
@@ -4519,7 +5030,7 @@
       `;
     } else if (field.type === 'textarea') {
       control = `
-        <textarea name="${escapeHtml(field.name)}" rows="${escapeHtml(field.rows || 3)}" placeholder="${escapeHtml(field.placeholder || '')}"${readonly}${required}>${escapeHtml(value)}</textarea>
+        <textarea name="${escapeHtml(field.name)}" rows="${escapeHtml(field.rows || 3)}" placeholder="${escapeHtml(field.placeholder || '')}"${readonly}${required}${extraAttributes}>${escapeHtml(value)}</textarea>
       `;
     } else {
       control = `
@@ -4531,7 +5042,7 @@
           ${field.min != null ? `min="${escapeHtml(field.min)}"` : ''}
           ${field.max != null ? `max="${escapeHtml(field.max)}"` : ''}
           ${field.step != null ? `step="${escapeHtml(field.step)}"` : ''}
-          ${readonly}${disabled}${required}
+          ${readonly}${disabled}${required}${extraAttributes}
         />
       `;
     }
@@ -5801,6 +6312,7 @@
             placeholder="Buscar por nombre, grupo o potrero..."
             value="${escapeHtml(state?.horseFilters?.query || '')}"
             data-horse-filter="query"
+            data-focus-key="horse-search"
           />
         </label>
         <label class="select-field">
@@ -6570,6 +7082,18 @@
                 </div>
 
                 <div class="split-actions">
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-grow"
+                    ${renderActionAttributes({
+                      action: 'open-modal',
+                      value: 'stock-consume',
+                      meta: { itemId: item.id },
+                    })}
+                  >
+                    ${renderIcon('arrow')}
+                    <span>Consumir</span>
+                  </button>
                   <button
                     type="button"
                     class="btn btn-secondary btn-grow"
@@ -8294,6 +8818,16 @@
     return parsed.toISOString().slice(0, 10);
   }
 
+  function addMonthsToIsoDateString(dateString, monthOffset) {
+    const parsed = parseIsoDateValue(dateString);
+    if (!parsed) {
+      return null;
+    }
+
+    parsed.setUTCMonth(parsed.getUTCMonth() + Number(monthOffset || 0));
+    return parsed.toISOString().slice(0, 10);
+  }
+
   function getIsoSortValue(dateString) {
     const parsed = parseIsoDateValue(dateString);
     return parsed ? parsed.getTime() : 0;
@@ -8999,6 +9533,71 @@
     `;
   }
 
+  function renderHorseFeedSaveBar(state, horse, payload, historyPayload, historyState) {
+    if (!state?.stockDashboard?.meta?.feed_module_enabled) {
+      return '';
+    }
+
+    const selectedMonth = getHorseFeedCalendarMonth(payload, historyPayload);
+    const planDiff = buildHorseFeedPlanDraftDiff(payload, historyPayload);
+    const calendarDiff = buildHorseFeedCalendarDraftDiff(payload, historyPayload, selectedMonth);
+    const hasChanges = planDiff.hasChanges || calendarDiff.hasChanges;
+    const isSaving = Boolean(payload?.feedPlanSaving || payload?.feedCalendarSaving);
+    const isRefreshing = Boolean(historyState?.loading);
+    const controlsDisabled = isSaving || isRefreshing;
+    const detailBits = [];
+
+    if (planDiff.hasChanges) {
+      detailBits.push(`${planDiff.changeCount} ajuste(s) en el plan`);
+    }
+
+    if (calendarDiff.hasChanges) {
+      detailBits.push(
+        `${calendarDiff.changeCount} marca(s) pendiente(s) en ${formatMonthLabel(selectedMonth)}`
+      );
+    }
+
+    const summaryText = hasChanges
+      ? `Hay cambios pendientes para ${horse.name}: ${detailBits.join(' · ')}.`
+      : 'Sin cambios pendientes. El stock de granos se recalcula desde el ingreso y los días realmente marcados en el calendario.';
+
+    return `
+      <section class="horse-history-block horse-feed-save-block">
+        <div class="horse-feed-save-bar${hasChanges ? ' is-dirty' : ''}">
+          <div class="horse-feed-save-copy">
+            <strong>Guardar alimentación</strong>
+            <span>${escapeHtml(summaryText)}</span>
+          </div>
+          <div class="horse-feed-save-actions">
+            <button
+              type="button"
+              class="btn btn-secondary horse-feed-inline-btn"
+              ${renderActionAttributes({
+                action: 'discard-horse-feed-changes',
+                meta: { horseId: horse.id },
+              })}
+              ${hasChanges && !controlsDisabled ? '' : ' disabled'}
+            >
+              <span>Descartar</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary horse-feed-inline-btn"
+              ${renderActionAttributes({
+                action: 'save-horse-feed-changes',
+                meta: { horseId: horse.id },
+              })}
+              ${hasChanges && !controlsDisabled ? '' : ' disabled'}
+            >
+              ${renderIcon('check')}
+              <span>${escapeHtml(isSaving ? 'Guardando...' : 'Guardar todo')}</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
   function renderHorseFeedPlanEditor(state, horse, payload, historyPayload, historyState) {
     if (!state?.stockDashboard?.meta?.feed_module_enabled) {
       return `
@@ -9016,14 +9615,20 @@
 
     const selectedMonth = getHorseFeedCalendarMonth(payload, historyPayload);
     const draftRows = getHorseFeedPlanDraftRowsForModal(payload, historyPayload);
-    const calendarEntries = getHorseFeedCalendarEntriesForMonth(historyPayload, selectedMonth);
+    const calendarDraftState = buildHorseFeedCalendarDraftDiff(payload, historyPayload, selectedMonth);
+    const calendarEntries = calendarDraftState.draftEntries;
     const summary = buildHorseFeedPlanSummary(draftRows, calendarEntries);
     const feedItems = getRealStockItems(state);
     const datalistId = `horse-feed-item-options-${horse.id}`;
     const isSaving = Boolean(payload?.feedPlanSaving);
+    const isCalendarSaving = Boolean(payload?.feedCalendarSaving);
     const isRefreshing = Boolean(historyState?.loading);
-    const controlsDisabled = isSaving || Boolean(payload?.feedCalendarBusyKey) || isRefreshing;
+    const controlsDisabled = isSaving || isCalendarSaving || isRefreshing;
     const disabledAttr = controlsDisabled ? ' disabled' : '';
+    const isOpen = Boolean(payload?.feedPlanOpen);
+    const accordionSummary = draftRows.length
+      ? `${summary.ingredients} ingrediente(s) en ${summary.slots} slot(s). ${summary.completions} marca(s) en ${formatMonthLabel(selectedMonth)}.`
+      : `Sin ingredientes cargados todavía para ${horse.name}.`;
 
     const rowsMarkup = FEED_SLOT_META.map((slot) => {
       const slotRows = draftRows.filter((row) => row.feed_slot === slot.key);
@@ -9141,57 +9746,67 @@
 
     return `
       <section class="horse-history-block horse-feed-block">
-        <div class="horse-history-block-head horse-feed-block-head">
-          <div>
+        <button
+          type="button"
+          class="horse-feed-history-toggle"
+          ${renderActionAttributes({
+            action: 'toggle-horse-feed-plan',
+            meta: { horseId: horse.id },
+          })}
+        >
+          <div class="horse-feed-history-toggle-copy">
             <strong>Plan de Alimentación</strong>
-            <span>Armá mezclas por mañana, tarde y noche. Al marcar el calendario, se registran juntos todos los ingredientes del slot.</span>
+            <span>${escapeHtml(accordionSummary)}</span>
           </div>
-          <button
-            type="button"
-            class="btn btn-primary"
-            ${renderActionAttributes({
-              action: 'save-horse-feed-plan',
-              meta: { horseId: horse.id },
-            })}
-            ${disabledAttr}
-          >
-            ${renderIcon('check')}
-            <span>${escapeHtml(isSaving ? 'Guardando...' : 'Guardar plan')}</span>
-          </button>
-        </div>
+          <span class="horse-feed-history-toggle-action">${escapeHtml(isOpen ? 'Ocultar' : 'Abrir')}</span>
+        </button>
+        ${
+          isOpen
+            ? `
+              <div class="horse-feed-section-panel">
+                <div class="horse-history-block-head horse-feed-block-head">
+                  <div>
+                    <strong>Editar plan diario</strong>
+                    <span>Armá mezclas por mañana, tarde y noche. Todo se guarda junto con las marcas del calendario.</span>
+                  </div>
+                </div>
 
-        <div class="modal-summary-grid horse-feed-summary-grid">
-          <article class="modal-stat-card">
-            <span>Slots activos</span>
-            <strong>${escapeHtml(String(summary.slots))}</strong>
-            <small>sobre ${escapeHtml(String(FEED_SLOT_META.length))} slots posibles</small>
-          </article>
-          <article class="modal-stat-card">
-            <span>Ingredientes cargados</span>
-            <strong>${escapeHtml(String(summary.ingredients))}</strong>
-            <small>guardados para ${escapeHtml(horse.name)}</small>
-          </article>
-          <article class="modal-stat-card">
-            <span>Marcas del mes</span>
-            <strong>${escapeHtml(String(summary.completions))}</strong>
-            <small>en ${escapeHtml(formatMonthLabel(selectedMonth))}</small>
-          </article>
-        </div>
+                <div class="modal-summary-grid horse-feed-summary-grid">
+                  <article class="modal-stat-card">
+                    <span>Slots activos</span>
+                    <strong>${escapeHtml(String(summary.slots))}</strong>
+                    <small>sobre ${escapeHtml(String(FEED_SLOT_META.length))} slots posibles</small>
+                  </article>
+                  <article class="modal-stat-card">
+                    <span>Ingredientes cargados</span>
+                    <strong>${escapeHtml(String(summary.ingredients))}</strong>
+                    <small>guardados para ${escapeHtml(horse.name)}</small>
+                  </article>
+                  <article class="modal-stat-card">
+                    <span>Marcas del mes</span>
+                    <strong>${escapeHtml(String(summary.completions))}</strong>
+                    <small>en ${escapeHtml(formatMonthLabel(selectedMonth))}</small>
+                  </article>
+                </div>
 
-        ${renderHorseFeedStatusBanner(payload, historyState)}
+                ${renderHorseFeedStatusBanner(payload, historyState)}
 
-        <div class="modal-callout horse-feed-callout">
-          <strong>Tip para granos y fardos</strong>
-          <span>Usá el plan diario para consumo en kg o unidades chicas. Si terminás un fardo entero, registralo desde Stock para no mezclarlo con la ración diaria.</span>
-        </div>
+                <div class="modal-callout horse-feed-callout">
+                  <strong>Tip para granos y fardos</strong>
+                  <span>Usá el plan diario para consumo en kg o unidades chicas. Si terminás un fardo entero, registralo desde Stock para no mezclarlo con la ración diaria.</span>
+                </div>
 
-        <datalist id="${escapeHtml(datalistId)}">
-          ${feedItems.map((item) => `<option value="${escapeHtml(item.name)}"></option>`).join('')}
-        </datalist>
+                <datalist id="${escapeHtml(datalistId)}">
+                  ${feedItems.map((item) => `<option value="${escapeHtml(item.name)}"></option>`).join('')}
+                </datalist>
 
-        <div class="horse-feed-slot-list">
-          ${rowsMarkup}
-        </div>
+                <div class="horse-feed-slot-list">
+                  ${rowsMarkup}
+                </div>
+              </div>
+            `
+            : ''
+        }
       </section>
     `;
   }
@@ -9203,7 +9818,9 @@
 
     const selectedMonth = getHorseFeedCalendarMonth(payload, historyPayload);
     const draftRows = getHorseFeedPlanDraftRowsForModal(payload, historyPayload);
-    const calendarEntries = getHorseFeedCalendarEntriesForMonth(historyPayload, selectedMonth);
+    const planDiff = buildHorseFeedPlanDraftDiff(payload, historyPayload);
+    const calendarDraftState = buildHorseFeedCalendarDraftDiff(payload, historyPayload, selectedMonth);
+    const calendarEntries = calendarDraftState.draftEntries;
     const entryMap = new Map(
       calendarEntries.map((row) => [`${row.event_date}:${row.feed_slot}`, row])
     );
@@ -9231,11 +9848,14 @@
       () => '<div class="horse-feed-calendar-spacer"></div>'
     ).join('');
     const todayIso = todayDateString();
-    const pendingKey = String(payload?.feedCalendarBusyKey || '').trim();
     const controlsDisabled =
       Boolean(payload?.feedPlanSaving) ||
-      Boolean(payload?.feedCalendarBusyKey) ||
+      Boolean(payload?.feedCalendarSaving) ||
       Boolean(historyState?.loading);
+    const pendingChangesLabel =
+      planDiff.hasChanges || calendarDraftState.hasChanges
+        ? `${planDiff.hasChanges ? `${planDiff.changeCount} ajuste(s) del plan` : 'plan sin cambios'}${calendarDraftState.hasChanges ? ` · ${calendarDraftState.changeCount} marca(s) pendiente(s)` : ''}`
+        : 'Sin cambios pendientes';
 
     const dayCards = [];
     for (let day = 1; day <= monthInfo.total_days; day += 1) {
@@ -9265,7 +9885,7 @@
               data-feed-calendar-slot="${escapeHtml(slot.key)}"
               data-feed-calendar-date="${escapeHtml(isoDate)}"
               ${checked ? 'checked' : ''}
-              ${hasPlan && pendingKey !== key && !controlsDisabled ? '' : 'disabled'}
+              ${hasPlan && !controlsDisabled ? '' : 'disabled'}
             />
             <span>${escapeHtml(slot.label)}</span>
           </label>
@@ -9288,7 +9908,7 @@
         <div class="horse-history-block-head horse-feed-block-head">
           <div>
             <strong>Calendario de Alimentación</strong>
-            <span>Marcá cada comida cuando realmente la das. Eso genera el consumo para este caballo.</span>
+            <span>Marcá mañana, tarde o noche en borrador y guardá todo junto cuando termines.</span>
           </div>
           <div class="horse-feed-calendar-controls">
             <button
@@ -9348,7 +9968,11 @@
         <div class="horse-feed-calendar-shell">
           <div class="horse-feed-calendar-header">
             <strong>${escapeHtml(formatMonthLabel(selectedMonth))}</strong>
-            <span>${escapeHtml(validPlanRows.length ? 'Solo se activan los slots con mezcla guardada.' : 'Todavía no hay slots disponibles para marcar.')}</span>
+            <span>${escapeHtml(
+              validPlanRows.length
+                ? `${pendingChangesLabel}. Solo se activan los slots con mezcla guardada.`
+                : 'Todavía no hay slots disponibles para marcar.'
+            )}</span>
           </div>
           <div class="horse-feed-calendar-grid">
             <div class="horse-feed-calendar-weekdays">${weekdayHeaders}</div>
@@ -9359,49 +9983,368 @@
     `;
   }
 
-  function renderHorseFeedRecentHistory(state, historyPayload) {
+  function renderHorseFeedRecentHistory(state, payload, historyPayload) {
     if (!state?.stockDashboard?.meta?.feed_module_enabled) {
       return '';
     }
 
     const feedRows = Array.isArray(historyPayload?.feed_history)
-      ? historyPayload.feed_history.slice(0, 8)
+      ? historyPayload.feed_history
       : [];
+    const isOpen = Boolean(payload?.feedHistoryOpen);
+    const summaryText = feedRows.length
+      ? `${feedRows.length} consumo(s) recientes cargados para este caballo.`
+      : 'Este caballo todavía no tiene consumos registrados.';
 
     return `
       <section class="horse-history-block">
-        <div class="horse-history-block-head">
-          <strong>Últimos Consumos</strong>
-        </div>
+        <button
+          type="button"
+          class="horse-feed-history-toggle"
+          ${renderActionAttributes({
+            action: 'toggle-horse-feed-history',
+            meta: { horseId: historyPayload?.horse?.id || '' },
+          })}
+        >
+          <div class="horse-feed-history-toggle-copy">
+            <strong>Últimos Consumos</strong>
+            <span>${escapeHtml(summaryText)}</span>
+          </div>
+          <span class="horse-feed-history-toggle-action">${escapeHtml(isOpen ? 'Ocultar' : 'Ver historial')}</span>
+        </button>
         ${
-          feedRows.length
-            ? `
-              <div class="horse-feed-log-list">
-                ${feedRows
-                  .map((row) => `
-                    <article class="horse-feed-log-row">
-                      <div class="horse-feed-log-copy">
-                        <strong>${escapeHtml(row.feed_item || 'Sin producto')}</strong>
-                        <span>${escapeHtml(`${formatStockValueLabel(row.quantity, row.unit)} · ${formatDateLabel(row.event_date || String(row.at || '').slice(0, 10))}`)}</span>
-                      </div>
-                      <div class="horse-feed-log-meta">
-                        ${row.feed_slot ? renderBadge(getFeedSlotLabel(row.feed_slot), 'blue') : renderBadge('Manual', 'gray')}
-                        ${renderBadge(getHorseFeedHistorySourceLabel(row), row.calendar_slot_entry_id != null ? 'green' : 'gray')}
-                      </div>
-                    </article>
-                  `)
-                  .join('')}
-              </div>
-            `
-            : `
-              <div class="group-manage-empty">
-                <strong>Este caballo todavía no tiene consumos registrados.</strong>
-                <span>Cuando marques el calendario o cargues una ración manual, el historial va a aparecer acá.</span>
-              </div>
-            `
+          isOpen
+            ? feedRows.length
+              ? `
+                <div class="horse-feed-log-panel">
+                  <div class="horse-feed-log-list">
+                    ${feedRows
+                      .map((row) => `
+                        <article class="horse-feed-log-row">
+                          <div class="horse-feed-log-copy">
+                            <strong>${escapeHtml(row.feed_item || 'Sin producto')}</strong>
+                            <span>${escapeHtml(`${formatStockValueLabel(row.quantity, row.unit)} · ${formatDateLabel(row.event_date || String(row.at || '').slice(0, 10))}`)}</span>
+                          </div>
+                          <div class="horse-feed-log-meta">
+                            ${row.feed_slot ? renderBadge(getFeedSlotLabel(row.feed_slot), 'blue') : renderBadge('Manual', 'gray')}
+                            ${renderBadge(getHorseFeedHistorySourceLabel(row), row.calendar_slot_entry_id != null ? 'green' : 'gray')}
+                          </div>
+                        </article>
+                      `)
+                      .join('')}
+                  </div>
+                </div>
+              `
+              : `
+                <div class="group-manage-empty">
+                  <strong>Este caballo todavía no tiene consumos registrados.</strong>
+                  <span>Cuando marques el calendario o cargues una ración manual, el historial va a aparecer acá.</span>
+                </div>
+              `
+            : ''
         }
       </section>
     `;
+  }
+
+  function renderHorseDewormModal(state, payload) {
+    const horseId = parsePositiveInt(payload?.horseId);
+    const horse = horseId ? getRealHorseById(state, horseId) : null;
+    if (!horse) {
+      return '';
+    }
+
+    const latestHistory = getRealHorseHistoryState(state, horseId)?.data || null;
+    const latestDeworm = Array.isArray(latestHistory?.deworming_history)
+      ? latestHistory.deworming_history[0] || null
+      : null;
+    const eventDate = String(payload?.eventDate || todayDateString()).trim() || todayDateString();
+    const followUpDate = shiftIsoDateString(eventDate, 20) || '';
+
+    return renderFormModal({
+      key: 'horse-deworm-event',
+      title: `Desparasitar ${horse.name}`,
+      subtitle: 'Guardamos la primera dosis y dejamos programado el repaso automático a 20 días.',
+      submitLabel: 'Guardar desparasitación',
+      submitIcon: 'shield',
+      columns: 2,
+      callout: {
+        title: 'Así quedan las alertas',
+        detail: followUpDate
+          ? `Al guardar hoy, el repaso queda previsto para ${formatDateLabel(followUpDate)}. Cuando registres ese repaso, el próximo ciclo saltará 3 meses después.`
+          : 'Al guardar hoy, dejamos listo el recordatorio del repaso a 20 días.',
+      },
+      fields: [
+        {
+          label: 'Producto',
+          name: 'productName',
+          type: 'text',
+          value: payload?.productName || latestDeworm?.product_name || '',
+          placeholder: 'Ej. Eqvalan, ivermectina...',
+          required: true,
+          layout: 'wide',
+          attributes: {
+            'data-care-form-field': 'productName',
+          },
+        },
+        {
+          label: 'Fecha de primera dosis',
+          name: 'eventDate',
+          type: 'date',
+          value: eventDate,
+          required: true,
+          attributes: {
+            'data-care-form-field': 'eventDate',
+          },
+        },
+        {
+          label: 'Repaso estimado',
+          name: 'secondDosePreview',
+          type: 'text',
+          value: followUpDate ? formatDateLabel(followUpDate) : 'Sin fecha',
+          readonly: true,
+          disabled: true,
+          hint: 'Este repaso se registra después, cuando realmente lo des.',
+        },
+      ],
+      extraBody: `
+        <input type="hidden" name="horseId" value="${escapeHtml(String(horseId))}" />
+        <input type="hidden" name="returnMonth" value="${escapeHtml(String(payload?.returnMonth || ''))}" />
+        <input type="hidden" name="returnFeedPlanOpen" value="${escapeHtml(String(payload?.returnFeedPlanOpen || false))}" />
+        <input type="hidden" name="returnFeedHistoryOpen" value="${escapeHtml(String(payload?.returnFeedHistoryOpen || false))}" />
+      `,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Guardar desparasitación', tone: 'primary', icon: 'shield', submit: true },
+      ],
+    });
+  }
+
+  function renderHorseDewormSecondDoseModal(state, payload) {
+    const horseId = parsePositiveInt(payload?.horseId);
+    const horse = horseId ? getRealHorseById(state, horseId) : null;
+    if (!horse) {
+      return '';
+    }
+
+    const eventDate = String(payload?.eventDate || '').trim();
+    const secondDoseDate = String(
+      payload?.secondDoseDate || todayDateString()
+    ).trim();
+    const nextCycleDate = addMonthsToIsoDateString(secondDoseDate, 3) || '';
+
+    return renderFormModal({
+      key: 'horse-deworm-second-dose',
+      title: `Registrar repaso de ${horse.name}`,
+      subtitle: 'Usá esta acción cuando des la segunda dosis de la desparasitación.',
+      submitLabel: 'Guardar repaso',
+      submitIcon: 'check',
+      columns: 2,
+      callout: {
+        title: 'Próximo ciclo automático',
+        detail: nextCycleDate
+          ? `Después de guardar este repaso, la próxima alerta de desparasitación quedará para ${formatDateLabel(nextCycleDate)}.`
+          : 'Después de guardar el repaso, el próximo ciclo quedará programado a 3 meses.',
+      },
+      fields: [
+        {
+          label: 'Producto',
+          name: 'productName',
+          type: 'text',
+          value: payload?.productName || '',
+          readonly: true,
+          required: true,
+        },
+        {
+          label: 'Primera dosis',
+          name: 'eventDatePreview',
+          type: 'text',
+          value: eventDate ? formatDateLabel(eventDate) : 'Sin fecha',
+          readonly: true,
+          disabled: true,
+        },
+        {
+          label: 'Fecha de repaso',
+          name: 'secondDoseDate',
+          type: 'date',
+          value: isValidDateString(secondDoseDate) ? secondDoseDate : todayDateString(),
+          required: true,
+          attributes: {
+            'data-care-form-field': 'secondDoseDate',
+          },
+        },
+        {
+          label: 'Próxima desparasitación',
+          name: 'nextCyclePreview',
+          type: 'text',
+          value: nextCycleDate ? formatDateLabel(nextCycleDate) : 'Sin fecha',
+          readonly: true,
+          disabled: true,
+        },
+      ],
+      extraBody: `
+        <input type="hidden" name="horseId" value="${escapeHtml(String(horseId))}" />
+        <input type="hidden" name="eventDate" value="${escapeHtml(eventDate)}" />
+        <input type="hidden" name="returnMonth" value="${escapeHtml(String(payload?.returnMonth || ''))}" />
+        <input type="hidden" name="returnFeedPlanOpen" value="${escapeHtml(String(payload?.returnFeedPlanOpen || false))}" />
+        <input type="hidden" name="returnFeedHistoryOpen" value="${escapeHtml(String(payload?.returnFeedHistoryOpen || false))}" />
+      `,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Guardar repaso', tone: 'primary', icon: 'check', submit: true },
+      ],
+    });
+  }
+
+  function renderHorseFarrierEventModal(state, payload) {
+    const horseId = parsePositiveInt(payload?.horseId);
+    const horse = horseId ? getRealHorseById(state, horseId) : null;
+    if (!horse) {
+      return '';
+    }
+
+    const eventDate = String(payload?.eventDate || todayDateString()).trim() || todayDateString();
+    const serviceType = normalizeFarrierServiceTypeValue(payload?.serviceType || 'desvasado');
+    const autoNextDueDate =
+      shiftIsoDateString(eventDate, isShoeingServiceType(serviceType) ? 45 : 60) || '';
+
+    return renderFormModal({
+      key: 'horse-farrier-event',
+      title: `Registrar herrero para ${horse.name}`,
+      subtitle: 'Podés cargar desvasado o herrado desde el historial del caballo.',
+      submitLabel: 'Guardar herrero',
+      submitIcon: 'work',
+      columns: 2,
+      callout: {
+        title: 'Próximo control sugerido',
+        detail: autoNextDueDate
+          ? `${formatFarrierServiceTypeLabel(serviceType)} registrado el ${formatDateLabel(
+              eventDate
+            )} vence aprox. el ${formatDateLabel(autoNextDueDate)}. Podés corregirlo si querés.`
+          : 'Si dejás la próxima fecha vacía, la calculamos automático según el servicio.',
+      },
+      fields: [
+        {
+          label: 'Servicio',
+          name: 'serviceType',
+          type: 'select',
+          value: serviceType,
+          options: FARRIER_SERVICE_OPTIONS,
+          required: true,
+          attributes: {
+            'data-care-form-field': 'serviceType',
+          },
+        },
+        {
+          label: 'Fecha del servicio',
+          name: 'eventDate',
+          type: 'date',
+          value: eventDate,
+          required: true,
+          attributes: {
+            'data-care-form-field': 'eventDate',
+          },
+        },
+        {
+          label: 'Próximo control (opcional)',
+          name: 'nextDueDate',
+          type: 'date',
+          value: payload?.nextDueDate || '',
+          hint: 'Si la dejás vacía, usamos 45 días para herrado y 60 para desvasado.',
+          attributes: {
+            'data-care-form-field': 'nextDueDate',
+          },
+        },
+      ],
+      extraBody: `
+        <input type="hidden" name="horseId" value="${escapeHtml(String(horseId))}" />
+        <input type="hidden" name="returnMonth" value="${escapeHtml(String(payload?.returnMonth || ''))}" />
+        <input type="hidden" name="returnFeedPlanOpen" value="${escapeHtml(String(payload?.returnFeedPlanOpen || false))}" />
+        <input type="hidden" name="returnFeedHistoryOpen" value="${escapeHtml(String(payload?.returnFeedHistoryOpen || false))}" />
+      `,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Guardar herrero', tone: 'primary', icon: 'work', submit: true },
+      ],
+    });
+  }
+
+  function renderHorseHealthEventModal(state, payload) {
+    const horseId = parsePositiveInt(payload?.horseId);
+    const horse = horseId ? getRealHorseById(state, horseId) : null;
+    if (!horse) {
+      return '';
+    }
+
+    return renderFormModal({
+      key: 'horse-health-event',
+      title: `Registrar veterinaria para ${horse.name}`,
+      subtitle: 'Guardá visitas, tratamientos, vacunas o cualquier observación sanitaria del caballo.',
+      submitLabel: 'Guardar registro',
+      submitIcon: 'health',
+      columns: 2,
+      callout: {
+        title: 'Registro sanitario manual',
+        detail: 'Este bloque sirve para anotar controles veterinarios, lesiones, medicamentos, vacunas y observaciones. No genera recordatorio automático salvo desparasitación.',
+      },
+      fields: [
+        {
+          label: 'Tipo',
+          name: 'eventType',
+          type: 'select',
+          value: payload?.eventType || 'veterinaria',
+          options: HORSE_HEALTH_EVENT_OPTIONS,
+          required: true,
+          attributes: {
+            'data-care-form-field': 'eventType',
+          },
+        },
+        {
+          label: 'Fecha',
+          name: 'eventDate',
+          type: 'date',
+          value: payload?.eventDate || todayDateString(),
+          required: true,
+          attributes: {
+            'data-care-form-field': 'eventDate',
+          },
+        },
+        {
+          label: 'Descripción',
+          name: 'description',
+          type: 'text',
+          value: payload?.description || '',
+          placeholder: 'Ej. control veterinario, vacuna gripe, cólico leve...',
+          required: true,
+          layout: 'wide',
+          attributes: {
+            'data-care-form-field': 'description',
+          },
+        },
+        {
+          label: 'Notas',
+          name: 'notes',
+          type: 'textarea',
+          rows: 3,
+          value: payload?.notes || '',
+          placeholder: 'Dosis, observaciones, indicaciones o seguimiento...',
+          layout: 'wide',
+          attributes: {
+            'data-care-form-field': 'notes',
+          },
+        },
+      ],
+      extraBody: `
+        <input type="hidden" name="horseId" value="${escapeHtml(String(horseId))}" />
+        <input type="hidden" name="returnMonth" value="${escapeHtml(String(payload?.returnMonth || ''))}" />
+        <input type="hidden" name="returnFeedPlanOpen" value="${escapeHtml(String(payload?.returnFeedPlanOpen || false))}" />
+        <input type="hidden" name="returnFeedHistoryOpen" value="${escapeHtml(String(payload?.returnFeedHistoryOpen || false))}" />
+      `,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Guardar registro', tone: 'primary', icon: 'health', submit: true },
+      ],
+    });
   }
 
   function renderRealHorseHistoryModal(state, payload) {
@@ -9460,9 +10403,24 @@
     const farrierRow = Array.isArray(historyPayload?.farrier_history)
       ? historyPayload.farrier_history[0] || null
       : null;
+    const healthRow = Array.isArray(historyPayload?.health_history)
+      ? historyPayload.health_history[0] || null
+      : null;
     const movementRows = Array.isArray(historyPayload?.grazing_history)
       ? historyPayload.grazing_history.slice(0, 6)
       : [];
+    const returnMeta = buildHorseHistoryReturnMeta(payload, historyPayload, horse.id);
+    const hasPendingSecondDose = Boolean(
+      dewormRow?.product_name && dewormRow?.event_date && !dewormRow?.second_dose_date
+    );
+    const dewormFollowUpDate =
+      dewormRow?.second_dose_date ||
+      dewormRow?.next_due_date ||
+      shiftIsoDateString(dewormRow?.event_date, 20);
+    const nextDewormCycleDate =
+      dewormRow?.second_dose_date && dewormRow?.next_due_date ? dewormRow.next_due_date : '';
+    const farrierEventDate = getHistoryEventDate(farrierRow);
+    const healthEventDate = getHistoryEventDate(healthRow);
 
     return renderInfoModal({
       size: 'wide',
@@ -9485,49 +10443,174 @@
 
         <section class="horse-history-block">
           <div class="horse-history-block-head">
-            <strong>Registros de Salud</strong>
+            <div>
+              <strong>Registros de Salud</strong>
+              <span>Herrero, desparasitación y veterinaria quedan guardados por caballo y alimentan las alertas del admin.</span>
+            </div>
           </div>
           <div class="horse-history-health-list">
             <article class="horse-history-health-card horse-history-health-card--purple">
               <div class="horse-history-health-icon">${renderIcon('shield')}</div>
               <div class="horse-history-health-copy">
                 <strong>Desparasitación</strong>
-                <span>Control veterinario</span>
+                <span>Ciclo con repaso a 20 días y próximo aviso a 3 meses.</span>
                 <dl>
                   <div>
-                    <dt>Ultima aplicación:</dt>
+                    <dt>Última dosis:</dt>
                     <dd>${escapeHtml(dewormRow?.event_date ? formatDateLabel(dewormRow.event_date) : 'Sin registro')}</dd>
                   </div>
                   <div>
-                    <dt>Próxima programada:</dt>
-                    <dd>${escapeHtml(dewormRow?.next_due_date ? formatDateLabel(dewormRow.next_due_date) : 'Sin fecha')}</dd>
+                    <dt>Repaso:</dt>
+                    <dd>${escapeHtml(
+                      dewormFollowUpDate
+                        ? dewormRow?.second_dose_date
+                          ? formatDateLabel(dewormFollowUpDate)
+                          : `Pendiente ${formatDateLabel(dewormFollowUpDate)}`
+                        : 'Sin fecha'
+                    )}</dd>
+                  </div>
+                  <div>
+                    <dt>Próximo ciclo:</dt>
+                    <dd>${escapeHtml(
+                      nextDewormCycleDate
+                        ? formatDateLabel(nextDewormCycleDate)
+                        : 'Se calcula al registrar el repaso'
+                    )}</dd>
                   </div>
                 </dl>
+                <div class="horse-history-health-actions">
+                  <button
+                    type="button"
+                    class="btn btn-primary horse-history-health-btn"
+                    ${renderActionAttributes({
+                      action: 'open-modal',
+                      value: 'horse-deworm-event',
+                      meta: {
+                        ...returnMeta,
+                        productName: dewormRow?.product_name || '',
+                        eventDate: todayDateString(),
+                      },
+                    })}
+                  >
+                    ${renderIcon('shield')}
+                    <span>Nueva dosis</span>
+                  </button>
+                  ${
+                    hasPendingSecondDose
+                      ? `
+                        <button
+                          type="button"
+                          class="btn btn-secondary horse-history-health-btn"
+                          ${renderActionAttributes({
+                            action: 'open-modal',
+                            value: 'horse-deworm-second-dose',
+                            meta: {
+                              ...returnMeta,
+                              productName: dewormRow.product_name,
+                              eventDate: dewormRow.event_date,
+                              secondDoseDate:
+                                dewormRow.next_due_date ||
+                                shiftIsoDateString(dewormRow.event_date, 20) ||
+                                todayDateString(),
+                            },
+                          })}
+                        >
+                          ${renderIcon('check')}
+                          <span>Registrar repaso</span>
+                        </button>
+                      `
+                      : ''
+                  }
+                </div>
               </div>
             </article>
             <article class="horse-history-health-card horse-history-health-card--orange">
               <div class="horse-history-health-icon">${renderIcon('work')}</div>
               <div class="horse-history-health-copy">
-                <strong>Herraje</strong>
-                <span>Mantenimiento de cascos</span>
+                <strong>Herrero</strong>
+                <span>Herrado aprox. 45 días, desvasado aprox. 60 días.</span>
                 <dl>
                   <div>
-                    <dt>Ultimo herraje:</dt>
-                    <dd>${escapeHtml(farrierRow?.at ? formatDateLabel(String(farrierRow.at).slice(0, 10)) : 'Sin registro')}</dd>
+                    <dt>Último servicio:</dt>
+                    <dd>${escapeHtml(
+                      farrierRow
+                        ? `${formatFarrierServiceTypeLabel(farrierRow.service_type)}${farrierEventDate ? ` · ${formatDateLabel(farrierEventDate)}` : ''}`
+                        : 'Sin registro'
+                    )}</dd>
                   </div>
                   <div>
-                    <dt>Próximo programado:</dt>
+                    <dt>Próximo control:</dt>
                     <dd>${escapeHtml(farrierRow?.next_due_date ? formatDateLabel(farrierRow.next_due_date) : 'Sin fecha')}</dd>
                   </div>
                 </dl>
+                <div class="horse-history-health-actions">
+                  <button
+                    type="button"
+                    class="btn btn-secondary horse-history-health-btn"
+                    ${renderActionAttributes({
+                      action: 'open-modal',
+                      value: 'horse-farrier-event',
+                      meta: {
+                        ...returnMeta,
+                        serviceType: normalizeFarrierServiceTypeValue(
+                          farrierRow?.service_type || 'desvasado'
+                        ),
+                        eventDate: todayDateString(),
+                      },
+                    })}
+                  >
+                    ${renderIcon('work')}
+                    <span>Registrar herrero</span>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="horse-history-health-card horse-history-health-card--blue">
+              <div class="horse-history-health-icon">${renderIcon('health')}</div>
+              <div class="horse-history-health-copy">
+                <strong>Veterinaria</strong>
+                <span>Controles, vacunas, tratamientos o cualquier observación sanitaria.</span>
+                <dl>
+                  <div>
+                    <dt>Último registro:</dt>
+                    <dd>${escapeHtml(healthEventDate ? formatDateLabel(healthEventDate) : 'Sin registro')}</dd>
+                  </div>
+                  <div>
+                    <dt>Detalle:</dt>
+                    <dd>${escapeHtml(
+                      healthRow
+                        ? `${formatHorseHealthEventTypeLabel(healthRow.event_type)}${healthRow.description ? ` · ${healthRow.description}` : ''}`
+                        : 'Sin observaciones'
+                    )}</dd>
+                  </div>
+                </dl>
+                <div class="horse-history-health-actions">
+                  <button
+                    type="button"
+                    class="btn btn-secondary horse-history-health-btn"
+                    ${renderActionAttributes({
+                      action: 'open-modal',
+                      value: 'horse-health-event',
+                      meta: {
+                        ...returnMeta,
+                        eventType: 'veterinaria',
+                        eventDate: todayDateString(),
+                      },
+                    })}
+                  >
+                    ${renderIcon('health')}
+                    <span>Registrar veterinaria</span>
+                  </button>
+                </div>
               </div>
             </article>
           </div>
         </section>
 
+        ${renderHorseFeedSaveBar(state, horse, payload, historyPayload, historyState)}
         ${renderHorseFeedPlanEditor(state, horse, payload, historyPayload, historyState)}
         ${renderHorseFeedCalendar(state, horse, payload, historyPayload, historyState)}
-        ${renderHorseFeedRecentHistory(state, historyPayload)}
+        ${renderHorseFeedRecentHistory(state, payload, historyPayload)}
 
         <section class="horse-history-block">
           <div class="horse-history-block-head">
@@ -10270,6 +11353,108 @@
     });
   }
 
+  function renderRealStockConsumeModal(state, payload) {
+    const items = getRealStockItems(state);
+    if (!items.length) {
+      return renderInfoModal({
+        title: 'Primero cargá un inventario',
+        subtitle: 'Necesitamos al menos un producto para registrar un consumo real.',
+        body: `
+          <div class="empty-state-card">
+            <strong>No hay productos activos para descontar stock.</strong>
+            <span>Creá el item de inventario primero y después registramos el consumo manual.</span>
+          </div>
+        `,
+        footerButtons: [
+          { label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } },
+          {
+            label: 'Nuevo inventario',
+            tone: 'primary',
+            icon: 'plus',
+            trigger: { action: 'open-modal', value: 'product-form' },
+          },
+        ],
+      });
+    }
+
+    const requestedItemId = parsePositiveInt(payload?.itemId);
+    const selectedItem =
+      getRealStockItemById(state, requestedItemId) ||
+      getRealStockItemByName(state, payload?.name) ||
+      items[0];
+
+    return renderFormModal({
+      key: 'stock-consume',
+      title: 'Registrar consumo',
+      subtitle:
+        'Descontá stock manualmente cuando abrís un fardo, usás una bolsa o consumís producto fuera de Telegram.',
+      submitLabel: 'Guardar consumo',
+      submitIcon: 'arrow',
+      columns: 2,
+      callout: {
+        title: 'Resumen del insumo',
+        detail: getStockConsumeCalloutDetail(selectedItem),
+      },
+      fields: [
+        {
+          label: 'Producto',
+          name: 'itemId',
+          type: 'select',
+          value: String(selectedItem.id),
+          options: items.map((item) => ({
+            value: String(item.id),
+            label: item.name,
+          })),
+          required: true,
+          layout: 'wide',
+          attributes: {
+            'data-stock-consume-field': 'itemId',
+          },
+        },
+        {
+          label: `Cantidad consumida (${getStockUnitLabel(selectedItem.unit)})`,
+          name: 'quantity',
+          type: 'number',
+          value: payload?.quantity || '',
+          min: '0.01',
+          step: '0.01',
+          placeholder: getStockConsumeQuantityPlaceholder(selectedItem),
+          required: true,
+          hint: getStockConsumeHint(selectedItem),
+          attributes: {
+            'data-stock-consume-field': 'quantity',
+          },
+        },
+        {
+          label: 'Fecha de consumo',
+          name: 'eventDate',
+          type: 'date',
+          value: payload?.eventDate || todayDateString(),
+          required: true,
+          attributes: {
+            'data-stock-consume-field': 'eventDate',
+          },
+        },
+        {
+          label: 'Notas',
+          name: 'notes',
+          type: 'textarea',
+          rows: 3,
+          value: payload?.notes || '',
+          placeholder: getStockConsumeNotesPlaceholder(selectedItem),
+          layout: 'wide',
+          attributes: {
+            'data-stock-consume-field': 'notes',
+          },
+        },
+      ],
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Guardar consumo', tone: 'primary', icon: 'arrow', submit: true },
+      ],
+    });
+  }
+
   function renderRealStockPurchaseModal(state, payload) {
     const items = getRealStockItems(state);
     if (!items.length) {
@@ -10942,6 +12127,26 @@
         });
       }
 
+      case 'stock-consume': {
+        if (isRealSession(state)) {
+          return renderRealStockConsumeModal(state, payload);
+        }
+
+        return renderFormModal({
+          key: 'stock-consume',
+          title: 'Registrar consumo',
+          subtitle: 'Descuenta stock manualmente en esta demo visual.',
+          submitLabel: 'Guardar consumo',
+          submitIcon: 'arrow',
+          fields: [
+            { label: 'Producto', name: 'product', type: 'select', value: productOptions[0], options: productOptions },
+            { label: 'Cantidad', name: 'quantity', type: 'text', value: '1 bale' },
+            { label: 'Fecha', name: 'date', type: 'date', value: '2026-06-09' },
+            { label: 'Notas', name: 'notes', type: 'textarea', rows: 3, placeholder: 'Ej. abrí un bale nuevo.' },
+          ],
+        });
+      }
+
       case 'advanced-filters':
         return renderFormModal({
           key: 'advanced-filters',
@@ -11071,6 +12276,30 @@
         });
       }
 
+      case 'horse-deworm-event':
+        if (isRealSession(state)) {
+          return renderHorseDewormModal(state, payload);
+        }
+        return '';
+
+      case 'horse-deworm-second-dose':
+        if (isRealSession(state)) {
+          return renderHorseDewormSecondDoseModal(state, payload);
+        }
+        return '';
+
+      case 'horse-farrier-event':
+        if (isRealSession(state)) {
+          return renderHorseFarrierEventModal(state, payload);
+        }
+        return '';
+
+      case 'horse-health-event':
+        if (isRealSession(state)) {
+          return renderHorseHealthEventModal(state, payload);
+        }
+        return '';
+
       case 'commands':
         return renderInfoModal({
           size: 'wide',
@@ -11153,6 +12382,20 @@
     }
   }
 
+  function renderProcessingOverlay(state) {
+    return `
+      <div class="processing-overlay" aria-live="polite" aria-busy="true">
+        <div class="processing-overlay__scrim"></div>
+        <div class="processing-overlay__card" role="status">
+          <div class="processing-overlay__spinner" aria-hidden="true"></div>
+          <p class="processing-overlay__eyebrow">Farm Bot Admin</p>
+          <h2>${escapeHtml(state.loadingMessage || 'Procesando cambios...')}</h2>
+          <p>${escapeHtml(state.loadingDetail || 'Esto suele demorar solo unos segundos.')}</p>
+        </div>
+      </div>
+    `;
+  }
+
   function renderAuthenticatedShell(state) {
     return `
       <div class="screen-shell">
@@ -11178,6 +12421,7 @@
               : ''
           }
         </div>
+        ${state.loading ? renderProcessingOverlay(state) : ''}
         ${state.loading ? '<div class="loading-bar" aria-hidden="true"></div>' : ''}
       </div>
     `;
@@ -11252,6 +12496,8 @@
   const store = createStore({
     booting: true,
     loading: false,
+    loadingMessage: '',
+    loadingDetail: '',
     mobileMenuOpen: false,
     modal: null,
     toast: null,
@@ -11286,13 +12532,100 @@
     refreshedAt: new Date().toISOString(),
   });
 
+  function getDefaultLoadingCopy(state) {
+    const modalKey = String(state?.modal?.key || '').trim();
+
+    switch (modalKey) {
+      case 'product-form':
+      case 'purchase-create':
+      case 'stock-consume':
+        return {
+          message: 'Actualizando inventario...',
+          detail: 'Guardamos el cambio y refrescamos stock, movimientos y contabilidad.',
+        };
+      case 'move-group':
+      case 'move-horse':
+      case 'horse-group-manage':
+        return {
+          message: 'Moviendo caballos...',
+          detail: 'Estamos guardando la nueva ubicación y actualizando el tablero.',
+        };
+      case 'paddock-form':
+      case 'field-work':
+        return {
+          message: 'Actualizando potreros...',
+          detail: 'Procesamos el cambio y volvemos a calcular el estado operativo.',
+        };
+      case 'horse-form':
+        return {
+          message: 'Guardando caballo...',
+          detail: 'Estamos actualizando sus datos, grupo y ubicación si corresponde.',
+        };
+      case 'horse-history':
+        return {
+          message: 'Guardando ficha del caballo...',
+          detail: 'Aplicamos los cambios y refrescamos alimentación, historial y alertas.',
+        };
+      case 'horse-deworm-event':
+      case 'horse-deworm-second-dose':
+      case 'horse-farrier-event':
+      case 'horse-health-event':
+        return {
+          message: 'Guardando salud del caballo...',
+          detail: 'Actualizamos el historial, los próximos controles y las alertas del admin.',
+        };
+      case 'register-rain':
+      case 'register-frost':
+        return {
+          message: 'Guardando registro climático...',
+          detail: 'Sumamos el evento y refrescamos los paneles relacionados.',
+        };
+      default:
+        return {
+          message: 'Procesando cambios...',
+          detail: 'Esto suele demorar solo unos segundos.',
+        };
+    }
+  }
+
+  function normalizeLoadingStatePatch(currentState, nextPatch) {
+    if (!nextPatch || typeof nextPatch !== 'object') {
+      return nextPatch;
+    }
+
+    const normalizedPatch = { ...nextPatch };
+    if (!Object.prototype.hasOwnProperty.call(normalizedPatch, 'loading')) {
+      return normalizedPatch;
+    }
+
+    if (normalizedPatch.loading) {
+      const defaultCopy = getDefaultLoadingCopy(currentState);
+      const explicitMessage = String(normalizedPatch.loadingMessage || '').trim();
+      const explicitDetail = String(normalizedPatch.loadingDetail || '').trim();
+      normalizedPatch.loadingMessage = explicitMessage || defaultCopy.message;
+      normalizedPatch.loadingDetail = explicitDetail || defaultCopy.detail;
+      return normalizedPatch;
+    }
+
+    normalizedPatch.loadingMessage = '';
+    normalizedPatch.loadingDetail = '';
+    return normalizedPatch;
+  }
+
   function setState(patch) {
-    store.setState(patch);
+    if (typeof patch === 'function') {
+      store.setState((currentState) => normalizeLoadingStatePatch(currentState, patch(currentState)));
+      return;
+    }
+
+    store.setState((currentState) => normalizeLoadingStatePatch(currentState, patch));
   }
 
   function buildSignedOutState(overrides = {}) {
     return {
       loading: false,
+      loadingMessage: '',
+      loadingDetail: '',
       booting: false,
       loginPending: false,
       horsesDashboard: null,
@@ -11351,6 +12684,86 @@
   let toastTimer = 0;
   let telegramLinkPromise = null;
   let nextHorseFeedPlanDraftRowKey = 1;
+  let lastRenderedModalKey = '';
+
+  function captureRenderedFocusState() {
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLElement) || !appRoot.contains(activeElement)) {
+      return null;
+    }
+
+    const focusKey = String(activeElement.getAttribute('data-focus-key') || '').trim();
+    if (!focusKey) {
+      return null;
+    }
+
+    const focusState = { focusKey };
+    if (
+      activeElement instanceof HTMLInputElement ||
+      activeElement instanceof HTMLTextAreaElement
+    ) {
+      focusState.selectionStart = activeElement.selectionStart;
+      focusState.selectionEnd = activeElement.selectionEnd;
+    }
+
+    return focusState;
+  }
+
+  function captureRenderedModalScrollState() {
+    const modalPanel = appRoot.querySelector('.modal-panel');
+    if (!modalPanel || !lastRenderedModalKey) {
+      return null;
+    }
+
+    return {
+      key: lastRenderedModalKey,
+      scrollTop: modalPanel.scrollTop,
+      scrollLeft: modalPanel.scrollLeft,
+    };
+  }
+
+  function restoreRenderedModalScrollState(state, snapshot) {
+    if (!snapshot || !state?.modal || snapshot.key !== state.modal.key) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const modalPanel = appRoot.querySelector('.modal-panel');
+      if (!modalPanel) {
+        return;
+      }
+
+      modalPanel.scrollTop = snapshot.scrollTop;
+      modalPanel.scrollLeft = snapshot.scrollLeft;
+    });
+  }
+
+  function restoreRenderedFocusState(snapshot) {
+    if (!snapshot?.focusKey) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      const escapedFocusKey =
+        typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+          ? CSS.escape(snapshot.focusKey)
+          : snapshot.focusKey.replace(/"/g, '\\"');
+      const selector = `[data-focus-key="${escapedFocusKey}"]`;
+      const nextElement = appRoot.querySelector(selector);
+      if (!(nextElement instanceof HTMLElement)) {
+        return;
+      }
+
+      nextElement.focus({ preventScroll: true });
+      if (
+        (nextElement instanceof HTMLInputElement || nextElement instanceof HTMLTextAreaElement) &&
+        Number.isInteger(snapshot.selectionStart) &&
+        Number.isInteger(snapshot.selectionEnd)
+      ) {
+        nextElement.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+      }
+    });
+  }
 
   function getDatasetPayload(dataset) {
     const payload = { ...dataset };
@@ -11523,6 +12936,21 @@
     const payload = await requestJson(PADDOCKS_API_URL);
     setState({
       paddocksDashboard: payload,
+      refreshedAt: payload?.meta?.refreshed_at || new Date().toISOString(),
+      ...(options.closeModal ? { modal: null } : {}),
+    });
+    return payload;
+  }
+
+  async function loadStockDashboard(options = {}) {
+    if (!isRealSession(store.getState())) {
+      setState({ stockDashboard: null });
+      return null;
+    }
+
+    const payload = await requestJson(STOCK_DASHBOARD_API_URL);
+    setState({
+      stockDashboard: payload,
       refreshedAt: payload?.meta?.refreshed_at || new Date().toISOString(),
       ...(options.closeModal ? { modal: null } : {}),
     });
@@ -12270,7 +13698,289 @@
     }
   }
 
-  async function saveHorseFeedPlan(horseId) {
+  async function submitStockConsumeForm(formData) {
+    const currentState = store.getState();
+    const values = formDataToObject(formData);
+    const itemId = parsePositiveInt(values.itemId);
+    const item = itemId ? getRealStockItemById(currentState, itemId) : null;
+    const quantity = Number(values.quantity);
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
+    const notes = String(values.notes || '').trim();
+
+    if (!itemId || !item) {
+      showToast('Elegí un producto válido para descontar stock.', 'critical');
+      return;
+    }
+
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      showToast('La cantidad consumida tiene que ser mayor a 0.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida para registrar el consumo.', 'critical');
+      return;
+    }
+
+    setState({ loading: true, modal: null });
+
+    try {
+      await postMutation({
+        action: 'use',
+        itemName: item.name,
+        quantity,
+        unit: item.unit,
+        eventDate,
+        notes: notes || undefined,
+      });
+
+      await loadAdminDashboards();
+      showToast(
+        `Consumo registrado para ${item.name}: ${formatStockValueLabel(quantity, item.unit)}.`
+      );
+    } catch (error) {
+      showToast(error.message || 'No pudimos registrar el consumo de stock.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function restoreHorseHistoryModalAfterSave(formData, horseId) {
+    const values = formDataToObject(formData);
+    const normalizedHorseId = parsePositiveInt(values.horseId || horseId);
+    if (!normalizedHorseId) {
+      return;
+    }
+
+    const returnMonth = normalizeYearMonth(values.returnMonth) || todayDateString().slice(0, 7);
+    setState({
+      modal: {
+        key: 'horse-history',
+        payload: {
+          horseId: normalizedHorseId,
+          feedPlanOpen: parseBooleanFlag(values.returnFeedPlanOpen),
+          feedHistoryOpen: parseBooleanFlag(values.returnFeedHistoryOpen),
+          feedCalendarDraftMonth: returnMonth,
+        },
+      },
+    });
+
+    await Promise.allSettled([
+      loadHorseHistory(normalizedHorseId, { month: returnMonth }),
+      loadAdminDashboards(),
+    ]);
+  }
+
+  async function submitHorseDewormForm(formData) {
+    const values = formDataToObject(formData);
+    const horseId = parsePositiveInt(values.horseId);
+    const productName = String(values.productName || '').trim();
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
+
+    if (!horseId) {
+      showToast('No encontramos el caballo para registrar la desparasitación.', 'critical');
+      return;
+    }
+
+    if (!productName) {
+      showToast('Cargá el producto desparasitante.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida para la desparasitación.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      const payload = await postMutation({
+        action: 'deworm_event_add',
+        horseId,
+        productName,
+        eventDate,
+      });
+
+      await restoreHorseHistoryModalAfterSave(formData, horseId);
+
+      showToast(
+        `${payload?.horse?.name || 'El caballo'} quedó desparasitado con ${payload?.deworming_event?.product_name || productName}. Repaso previsto para ${formatDateLabel(
+          payload?.deworming_event?.next_due_date || shiftIsoDateString(eventDate, 20)
+        )}.`
+      );
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar la desparasitación.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitHorseDewormSecondDoseForm(formData) {
+    const values = formDataToObject(formData);
+    const horseId = parsePositiveInt(values.horseId);
+    const productName = String(values.productName || '').trim();
+    const secondDoseDate = String(values.secondDoseDate || '').trim() || todayDateString();
+
+    if (!horseId) {
+      showToast('No encontramos el caballo para registrar el repaso.', 'critical');
+      return;
+    }
+
+    if (!productName) {
+      showToast('No encontramos el producto del ciclo de desparasitación.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(secondDoseDate)) {
+      showToast('Elegí una fecha válida para el repaso.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      const payload = await postMutation({
+        action: 'deworm_second_dose_set',
+        horseId,
+        productName,
+        secondDoseDate,
+      });
+
+      await restoreHorseHistoryModalAfterSave(formData, horseId);
+
+      showToast(
+        `Repaso guardado para ${payload?.horse?.name || 'el caballo'}. Próxima desparasitación ${formatDateLabel(
+          payload?.deworming_event?.next_due_date || addMonthsToIsoDateString(secondDoseDate, 3)
+        )}.`
+      );
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar el repaso de desparasitación.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitHorseFarrierForm(formData) {
+    const values = formDataToObject(formData);
+    const horseId = parsePositiveInt(values.horseId);
+    const serviceType = String(values.serviceType || '').trim();
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
+    const nextDueDate = String(values.nextDueDate || '').trim();
+
+    if (!horseId) {
+      showToast('No encontramos el caballo para registrar el herrero.', 'critical');
+      return;
+    }
+
+    if (!serviceType) {
+      showToast('Elegí si fue desvasado o herrado.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida para el servicio de herrero.', 'critical');
+      return;
+    }
+
+    if (nextDueDate && !isValidDateString(nextDueDate)) {
+      showToast('La próxima fecha del herrero tiene que ser válida.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      const payload = await postMutation({
+        action: 'farrier_event_add',
+        horseId,
+        serviceType,
+        eventDate,
+        nextDueDate: nextDueDate || undefined,
+      });
+
+      await restoreHorseHistoryModalAfterSave(formData, horseId);
+
+      showToast(
+        `${payload?.horse?.name || 'El caballo'} quedó con ${formatFarrierServiceTypeLabel(
+          payload?.farrier_event?.service_type || serviceType
+        )}. Próximo control ${formatDateLabel(
+          payload?.farrier_event?.next_due_date ||
+            shiftIsoDateString(eventDate, isShoeingServiceType(serviceType) ? 45 : 60)
+        )}.`
+      );
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar el servicio de herrero.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitHorseHealthEventForm(formData) {
+    const values = formDataToObject(formData);
+    const horseId = parsePositiveInt(values.horseId);
+    const eventType = String(values.eventType || '').trim().toLowerCase();
+    const description = String(values.description || '').trim();
+    const notes = String(values.notes || '').trim();
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
+
+    if (!horseId) {
+      showToast('No encontramos el caballo para registrar veterinaria.', 'critical');
+      return;
+    }
+
+    if (!eventType) {
+      showToast('Elegí un tipo de registro veterinario.', 'critical');
+      return;
+    }
+
+    if (!description) {
+      showToast('Agregá una descripción para el registro veterinario.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida para el registro veterinario.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      const payload = await postMutation({
+        action: 'health_event_add',
+        horseId,
+        eventType,
+        description,
+        notes: notes || undefined,
+        eventDate,
+      });
+
+      await restoreHorseHistoryModalAfterSave(formData, horseId);
+
+      showToast(
+        `${payload?.horse?.name || 'El caballo'} quedó con registro de ${formatHorseHealthEventTypeLabel(
+          payload?.health_event?.event_type || eventType
+        )}.`
+      );
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar el registro veterinario.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  function buildHorseFeedDraftResetPayload(currentPayload, historyPayload, selectedMonth) {
+    return {
+      ...currentPayload,
+      feedPlanDraftRows: buildHorseFeedPlanDraftRowsFromHistory(historyPayload),
+      feedCalendarMonth: selectedMonth,
+      feedCalendarDraftMonth: selectedMonth,
+      feedCalendarDraftEntries: getHorseFeedCalendarEntriesForMonth(historyPayload, selectedMonth),
+    };
+  }
+
+  async function saveHorseFeedChanges(horseId) {
     const normalizedHorseId = parsePositiveInt(horseId);
     if (!normalizedHorseId) {
       return;
@@ -12283,53 +13993,239 @@
         ? currentState.modal.payload
         : {};
     const historyPayload = getRealHorseHistoryState(currentState, normalizedHorseId)?.data || null;
-    const draftRows = getHorseFeedPlanDraftRowsForModal(modalPayload, historyPayload);
-    const items = buildHorseFeedPlanSaveItems(draftRows);
     const selectedMonth = getHorseFeedCalendarMonth(modalPayload, historyPayload);
+    const draftRows = getHorseFeedPlanDraftRowsForModal(modalPayload, historyPayload);
+    const planSaveItems = buildHorseFeedPlanSaveItems(draftRows);
+    const planDiff = buildHorseFeedPlanDraftDiff(modalPayload, historyPayload);
+    const calendarDiff = buildHorseFeedCalendarDraftDiff(
+      modalPayload,
+      historyPayload,
+      selectedMonth
+    );
+    const hasChanges = planDiff.hasChanges || calendarDiff.hasChanges;
+
+    if (!hasChanges) {
+      showToast('No hay cambios pendientes en la alimentación de este caballo.', 'info');
+      return;
+    }
+
+    const loadingCopy =
+      planDiff.hasChanges && calendarDiff.hasChanges
+        ? {
+            message: 'Guardando alimentación...',
+            detail:
+              'Actualizamos el plan, recalculamos los consumos marcados y refrescamos stock, historial y contabilidad.',
+          }
+        : planDiff.hasChanges
+          ? {
+              message: 'Actualizando plan de alimentación...',
+              detail:
+                'Recalculamos el stock de granos desde el ingreso cargado y los días ya marcados en el calendario.',
+            }
+          : {
+              message: 'Guardando marcas de alimentación...',
+              detail:
+                'Tomamos los días realmente marcados como consumo y refrescamos stock, historial y contabilidad.',
+            };
+
+    setState({
+      loading: true,
+      loadingMessage: loadingCopy.message,
+      loadingDetail: loadingCopy.detail,
+    });
 
     updateActiveModalPayload((currentPayload) => {
       if (Number(currentPayload.horseId) !== normalizedHorseId) {
         return currentPayload;
       }
 
+      const pendingBits = [];
+      if (planDiff.hasChanges) {
+        pendingBits.push(`${planDiff.changeCount} ajuste(s) del plan`);
+      }
+      if (calendarDiff.hasChanges) {
+        pendingBits.push(`${calendarDiff.changeCount} marca(s) del calendario`);
+      }
+
       return {
         ...currentPayload,
         feedPlanSaving: true,
+        feedCalendarSaving: true,
         feedPlanError: '',
-        feedPlanMessage: items.length
-          ? 'Guardando plan de alimentación...'
-          : 'Limpiando plan de alimentación...',
+        feedPlanMessage: `Guardando ${pendingBits.join(' y ')}...`,
       };
     });
 
+    let planMutationPayload = null;
+
     try {
-      const mutationPayload = await postMutation({
-        action: 'horse_feed_plan_save',
-        horseId: normalizedHorseId,
-        items,
-      });
-      const refreshedPayload = await loadHorseHistory(normalizedHorseId, { month: selectedMonth });
+      if (planDiff.hasChanges) {
+        planMutationPayload = await postMutation({
+          action: 'horse_feed_plan_save',
+          horseId: normalizedHorseId,
+          items: planSaveItems,
+        });
+
+        if (Array.isArray(planMutationPayload?.stock_changes) && planMutationPayload.stock_changes.length) {
+          setState((state) => {
+            const nextStockDashboard = applyHorseFeedStockChangesToState(
+              state,
+              planMutationPayload.stock_changes
+            );
+            return nextStockDashboard ? { stockDashboard: nextStockDashboard } : {};
+          });
+        }
+      }
+
+      if (planDiff.hasChanges) {
+        try {
+          await loadHorseHistory(normalizedHorseId, { month: selectedMonth });
+        } catch (_historyRefreshError) {
+          const fallbackHistoryPayload = {
+            ...(historyPayload || {}),
+            feed_plan: {
+              ...(historyPayload?.feed_plan || {}),
+              items: Array.isArray(planMutationPayload?.plan_items)
+                ? planMutationPayload.plan_items
+                : [],
+            },
+          };
+          const sanitizedEntries = sanitizeHorseFeedCalendarDraftEntries(
+            getHorseFeedCalendarEntriesForMonth(historyPayload, selectedMonth),
+            fallbackHistoryPayload
+          );
+          const nextHistoryPayload = {
+            ...fallbackHistoryPayload,
+            feed_calendar: {
+              ...(historyPayload?.feed_calendar || {}),
+              month: selectedMonth,
+              entries: sanitizedEntries,
+            },
+          };
+
+          setState((state) => {
+            const currentEntry = getRealHorseHistoryState(state, normalizedHorseId) || {};
+            return {
+              horseHistoryById: {
+                ...(state.horseHistoryById || {}),
+                [String(normalizedHorseId)]: {
+                  ...currentEntry,
+                  loading: false,
+                  error: '',
+                  data: nextHistoryPayload,
+                },
+              },
+            };
+          });
+        }
+      }
+
+      const stateAfterPlanSave = store.getState();
+      const modalPayloadAfterPlanSave =
+        stateAfterPlanSave.modal?.key === 'horse-history' &&
+        Number(stateAfterPlanSave.modal?.payload?.horseId) === normalizedHorseId
+          ? stateAfterPlanSave.modal.payload
+          : modalPayload;
+      const historyPayloadAfterPlanSave =
+        getRealHorseHistoryState(stateAfterPlanSave, normalizedHorseId)?.data || historyPayload;
+      const sanitizedDraftEntries = sanitizeHorseFeedCalendarDraftEntries(
+        getHorseFeedCalendarDraftEntriesForModal(
+          modalPayloadAfterPlanSave,
+          historyPayloadAfterPlanSave,
+          selectedMonth
+        ),
+        historyPayloadAfterPlanSave
+      );
+      const calendarPayloadAfterPlanSave = {
+        ...modalPayloadAfterPlanSave,
+        feedCalendarDraftMonth: selectedMonth,
+        feedCalendarDraftEntries: sanitizedDraftEntries,
+      };
+      const nextCalendarDiff = buildHorseFeedCalendarDraftDiff(
+        calendarPayloadAfterPlanSave,
+        historyPayloadAfterPlanSave,
+        selectedMonth
+      );
+
+      for (const entry of nextCalendarDiff.removals) {
+        const mutationPayload = await postMutation({
+          action: 'horse_feed_slot_toggle',
+          horseId: normalizedHorseId,
+          feedSlot: entry.feed_slot,
+          eventDate: entry.event_date,
+          checked: false,
+        });
+
+        setState((state) =>
+          applyHorseFeedCalendarToggleToState(state, normalizedHorseId, mutationPayload)
+        );
+      }
+
+      for (const entry of nextCalendarDiff.additions) {
+        const mutationPayload = await postMutation({
+          action: 'horse_feed_slot_toggle',
+          horseId: normalizedHorseId,
+          feedSlot: entry.feed_slot,
+          eventDate: entry.event_date,
+          checked: true,
+        });
+
+        setState((state) =>
+          applyHorseFeedCalendarToggleToState(state, normalizedHorseId, mutationPayload)
+        );
+      }
+
+      const [historyRefreshResult, stockRefreshResult] = await Promise.allSettled([
+        loadHorseHistory(normalizedHorseId, { month: selectedMonth }),
+        loadStockDashboard(),
+      ]);
+      const latestState = store.getState();
+      const refreshedHistoryPayload =
+        historyRefreshResult.status === 'fulfilled'
+          ? historyRefreshResult.value
+          : getRealHorseHistoryState(latestState, normalizedHorseId)?.data ||
+            (planMutationPayload?.plan_items
+              ? { feed_plan: { items: planMutationPayload.plan_items } }
+              : historyPayloadAfterPlanSave);
       const savedHorseName =
-        mutationPayload?.horse?.name || refreshedPayload?.horse?.name || getRealHorseById(store.getState(), normalizedHorseId)?.name || 'el caballo';
+        planMutationPayload?.horse?.name ||
+        refreshedHistoryPayload?.horse?.name ||
+        getRealHorseById(latestState, normalizedHorseId)?.name ||
+        'el caballo';
+      const refreshFailed =
+        historyRefreshResult.status === 'rejected' || stockRefreshResult.status === 'rejected';
 
       updateActiveModalPayload((currentPayload) => {
         if (Number(currentPayload.horseId) !== normalizedHorseId) {
           return currentPayload;
         }
 
+        const nextPayload = buildHorseFeedDraftResetPayload(
+          currentPayload,
+          refreshedHistoryPayload,
+          selectedMonth
+        );
+
         return {
-          ...currentPayload,
+          ...nextPayload,
           feedPlanSaving: false,
+          feedCalendarSaving: false,
           feedPlanError: '',
-          feedCalendarMonth: selectedMonth,
-          feedPlanDraftRows: buildHorseFeedPlanDraftRowsFromHistory(refreshedPayload),
-          feedPlanMessage: items.length
-            ? `Plan guardado para ${savedHorseName}.`
-            : `Plan limpiado para ${savedHorseName}.`,
+          feedPlanMessage: refreshFailed
+            ? `Alimentación guardada para ${savedHorseName}. Si algo se ve viejo, reabrí la ficha.`
+            : `Alimentación guardada para ${savedHorseName}.`,
         };
       });
 
-      showToast(items.length ? 'Plan de alimentación guardado.' : 'Plan de alimentación limpiado.', 'info');
+      if (refreshFailed) {
+        showToast(
+          'La alimentación se guardó, pero parte del refresco visual quedó pendiente.',
+          'info'
+        );
+        return;
+      }
+
+      showToast('Alimentación guardada y stock recalculado.', 'info');
     } catch (error) {
       updateActiveModalPayload((currentPayload) => {
         if (Number(currentPayload.horseId) !== normalizedHorseId) {
@@ -12339,11 +14235,18 @@
         return {
           ...currentPayload,
           feedPlanSaving: false,
-          feedPlanError: error.message || 'No pudimos guardar el plan de alimentación.',
+          feedCalendarSaving: false,
+          feedPlanError: error.message || 'No pudimos guardar la alimentación de este caballo.',
         };
       });
-      showToast(error.message || 'No pudimos guardar el plan de alimentación.', 'critical');
+      showToast(error.message || 'No pudimos guardar la alimentación de este caballo.', 'critical');
+    } finally {
+      setState({ loading: false });
     }
+  }
+
+  async function saveHorseFeedPlan(horseId) {
+    await saveHorseFeedChanges(horseId);
   }
 
   async function setHorseFeedCalendarMonth(horseId, nextMonth) {
@@ -12361,6 +14264,16 @@
         : {};
     const historyPayload = getRealHorseHistoryState(currentState, normalizedHorseId)?.data || null;
     const previousMonth = getHorseFeedCalendarMonth(modalPayload, historyPayload);
+    const currentDraftState = buildHorseFeedCalendarDraftDiff(
+      modalPayload,
+      historyPayload,
+      previousMonth
+    );
+
+    if (currentDraftState.hasChanges) {
+      showToast('Guardá o descartá las marcas pendientes antes de cambiar de mes.', 'info');
+      return;
+    }
 
     updateActiveModalPayload((currentPayload) => {
       if (Number(currentPayload.horseId) !== normalizedHorseId) {
@@ -12376,7 +14289,7 @@
     });
 
     try {
-      await loadHorseHistory(normalizedHorseId, { month: normalizedMonth });
+      const refreshedPayload = await loadHorseHistory(normalizedHorseId, { month: normalizedMonth });
       updateActiveModalPayload((currentPayload) => {
         if (Number(currentPayload.horseId) !== normalizedHorseId) {
           return currentPayload;
@@ -12385,6 +14298,11 @@
         return {
           ...currentPayload,
           feedCalendarMonth: normalizedMonth,
+          feedCalendarDraftMonth: normalizedMonth,
+          feedCalendarDraftEntries: getHorseFeedCalendarEntriesForMonth(
+            refreshedPayload,
+            normalizedMonth
+          ),
           feedPlanError: '',
           feedPlanMessage: `Mostrando ${formatMonthLabel(normalizedMonth)}.`,
         };
@@ -12398,6 +14316,7 @@
         return {
           ...currentPayload,
           feedCalendarMonth: previousMonth,
+          feedCalendarDraftMonth: previousMonth,
           feedPlanError: error.message || 'No pudimos cargar ese mes del calendario.',
         };
       });
@@ -12405,7 +14324,7 @@
     }
   }
 
-  async function toggleHorseFeedCalendarSlot(horseId, feedSlot, eventDate, checked) {
+  function toggleHorseFeedCalendarSlot(horseId, feedSlot, eventDate, checked) {
     const normalizedHorseId = parsePositiveInt(horseId);
     const normalizedSlot = getFeedSlotMeta(feedSlot)?.key || '';
     const normalizedDate = String(eventDate || '').trim();
@@ -12414,72 +14333,68 @@
       return;
     }
 
-    const currentState = store.getState();
-    const modalPayload =
-      currentState.modal?.key === 'horse-history' &&
-      Number(currentState.modal?.payload?.horseId) === normalizedHorseId
-        ? currentState.modal.payload
-        : {};
-    const historyPayload = getRealHorseHistoryState(currentState, normalizedHorseId)?.data || null;
-    const selectedMonth = getHorseFeedCalendarMonth(modalPayload, historyPayload);
-    const pendingKey = `${normalizedDate}:${normalizedSlot}`;
-
-    updateActiveModalPayload((currentPayload) => {
+    updateActiveModalPayload((currentPayload, currentState) => {
       if (Number(currentPayload.horseId) !== normalizedHorseId) {
         return currentPayload;
       }
 
-      return {
+      const historyPayload = getRealHorseHistoryState(currentState, normalizedHorseId)?.data || null;
+      const selectedMonth = getHorseFeedCalendarMonth(currentPayload, historyPayload);
+      const currentDraftEntries = getHorseFeedCalendarDraftEntriesForModal(
+        currentPayload,
+        historyPayload,
+        selectedMonth
+      );
+      const nextDraftEntries = normalizeHorseFeedCalendarDraftEntries(
+        Boolean(checked)
+          ? [
+              ...currentDraftEntries,
+              {
+                horse_id: normalizedHorseId,
+                feed_slot: normalizedSlot,
+                event_date: normalizedDate,
+              },
+            ]
+          : currentDraftEntries.filter(
+              (entry) =>
+                !(
+                  String(entry.event_date || '') === normalizedDate &&
+                  String(entry.feed_slot || '') === normalizedSlot
+                )
+            )
+      );
+      const nextPayload = {
         ...currentPayload,
-        feedCalendarBusyKey: pendingKey,
+        feedCalendarDraftMonth: selectedMonth,
+        feedCalendarDraftEntries: nextDraftEntries,
+        feedCalendarSaving: false,
         feedPlanError: '',
       };
-    });
-
-    try {
-      const mutationPayload = await postMutation({
-        action: 'horse_feed_slot_toggle',
-        horseId: normalizedHorseId,
-        feedSlot: normalizedSlot,
-        eventDate: normalizedDate,
-        checked: Boolean(checked),
-      });
-      await loadHorseHistory(normalizedHorseId, { month: selectedMonth });
-
-      updateActiveModalPayload((currentPayload) => {
-        if (Number(currentPayload.horseId) !== normalizedHorseId) {
-          return currentPayload;
-        }
-
-        return {
-          ...currentPayload,
-          feedCalendarBusyKey: '',
-          feedPlanError: '',
-          feedPlanMessage: `${getFeedSlotLabel(normalizedSlot)} ${checked ? 'marcada' : 'desmarcada'} para ${formatDateLabel(normalizedDate)}.`,
-        };
-      });
-
-      const stockSummary = formatHorseFeedStockChangeSummary(mutationPayload?.stock_changes);
-      showToast(
-        `${getFeedSlotLabel(normalizedSlot)} ${checked ? 'registrada' : 'desmarcada'} para ${formatDateLabel(
-          normalizedDate
-        )}${stockSummary ? ` · ${stockSummary}` : ''}.`,
-        'info'
+      const nextPlanDiff = buildHorseFeedPlanDraftDiff(nextPayload, historyPayload);
+      const nextDraftState = buildHorseFeedCalendarDraftDiff(
+        nextPayload,
+        historyPayload,
+        selectedMonth
       );
-    } catch (error) {
-      updateActiveModalPayload((currentPayload) => {
-        if (Number(currentPayload.horseId) !== normalizedHorseId) {
-          return currentPayload;
-        }
+      const pendingBits = [];
+      if (nextPlanDiff.hasChanges) {
+        pendingBits.push(`${nextPlanDiff.changeCount} ajuste(s) del plan`);
+      }
+      if (nextDraftState.hasChanges) {
+        pendingBits.push(`${nextDraftState.changeCount} marca(s) en ${formatMonthLabel(selectedMonth)}`);
+      }
 
-        return {
-          ...currentPayload,
-          feedCalendarBusyKey: '',
-          feedPlanError: error.message || 'No pudimos actualizar esa comida.',
-        };
-      });
-      showToast(error.message || 'No pudimos actualizar esa comida.', 'critical');
-    }
+      return {
+        ...nextPayload,
+        feedPlanMessage: pendingBits.length
+          ? `Hay cambios pendientes en la alimentación. Guardá todo junto para aplicar (${pendingBits.join(' · ')}).`
+          : '',
+      };
+    });
+  }
+
+  async function saveHorseFeedCalendar(horseId) {
+    await saveHorseFeedChanges(horseId);
   }
 
   async function submitMoveHorseForm(formData) {
@@ -13498,7 +15413,7 @@
           ...currentPayload,
           feedPlanDraftRows: [...draftRows, buildHorseFeedPlanDraftRow({ feed_slot: feedSlot })],
           feedPlanError: '',
-          feedPlanMessage: `${getFeedSlotLabel(feedSlot)} lista para sumar un ingrediente.`,
+          feedPlanMessage: `${getFeedSlotLabel(feedSlot)} lista para sumar un ingrediente. Guardá todo junto para aplicar el cambio.`,
         };
       });
       return;
@@ -13522,14 +15437,81 @@
           ...currentPayload,
           feedPlanDraftRows: draftRows.filter((row) => row.row_key !== rowKey),
           feedPlanError: '',
-          feedPlanMessage: 'Ingrediente removido del plan. Guardá para aplicar el cambio.',
+          feedPlanMessage: 'Ingrediente removido del plan. Guardá todo junto para aplicar el cambio.',
         };
       });
       return;
     }
 
+    if (action === 'save-horse-feed-changes') {
+      saveHorseFeedChanges(payload.horseId);
+      return;
+    }
+
     if (action === 'save-horse-feed-plan') {
       saveHorseFeedPlan(payload.horseId);
+      return;
+    }
+
+    if (action === 'toggle-horse-feed-plan') {
+      updateActiveModalPayload((currentPayload) => ({
+        ...currentPayload,
+        feedPlanOpen: !currentPayload.feedPlanOpen,
+      }));
+      return;
+    }
+
+    if (action === 'save-horse-feed-calendar') {
+      saveHorseFeedCalendar(payload.horseId);
+      return;
+    }
+
+    if (action === 'discard-horse-feed-changes') {
+      const horseId = parsePositiveInt(payload.horseId);
+      if (!horseId) {
+        return;
+      }
+
+      updateActiveModalPayload((currentPayload, currentState) => {
+        if (Number(currentPayload.horseId) !== horseId) {
+          return currentPayload;
+        }
+
+        const historyPayload = getRealHorseHistoryState(currentState, horseId)?.data || null;
+        const selectedMonth = getHorseFeedCalendarMonth(currentPayload, historyPayload);
+        return {
+          ...buildHorseFeedDraftResetPayload(currentPayload, historyPayload, selectedMonth),
+          feedPlanError: '',
+          feedPlanMessage: 'Volvimos a la última versión guardada de la alimentación.',
+        };
+      });
+      return;
+    }
+
+    if (action === 'discard-horse-feed-calendar-changes') {
+      const horseId = parsePositiveInt(payload.horseId);
+      if (!horseId) {
+        return;
+      }
+
+      updateActiveModalPayload((currentPayload, currentState) => {
+        if (Number(currentPayload.horseId) !== horseId) {
+          return currentPayload;
+        }
+
+        const historyPayload = getRealHorseHistoryState(currentState, horseId)?.data || null;
+        const selectedMonth = getHorseFeedCalendarMonth(currentPayload, historyPayload);
+        return {
+          ...currentPayload,
+          feedCalendarDraftMonth: selectedMonth,
+          feedCalendarDraftEntries: getHorseFeedCalendarEntriesForMonth(
+            historyPayload,
+            selectedMonth
+          ),
+          feedPlanError: '',
+          feedPlanMessage: '',
+        };
+      });
       return;
     }
 
@@ -13561,6 +15543,14 @@
         );
         loadHorseHistory(payload.horseId, { month: selectedMonth }).catch(() => {});
       }
+      return;
+    }
+
+    if (action === 'toggle-horse-feed-history') {
+      updateActiveModalPayload((currentPayload) => ({
+        ...currentPayload,
+        feedHistoryOpen: !currentPayload.feedHistoryOpen,
+      }));
       return;
     }
 
@@ -13718,6 +15708,11 @@
           return;
         }
 
+        if (modalKey === 'stock-consume') {
+          submitStockConsumeForm(new FormData(modalForm));
+          return;
+        }
+
         if (modalKey === 'move-horse') {
           submitMoveHorseForm(new FormData(modalForm));
           return;
@@ -13745,6 +15740,26 @@
 
         if (modalKey === 'field-work') {
           submitFieldWorkForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'horse-deworm-event') {
+          submitHorseDewormForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'horse-deworm-second-dose') {
+          submitHorseDewormSecondDoseForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'horse-farrier-event') {
+          submitHorseFarrierForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'horse-health-event') {
+          submitHorseHealthEventForm(new FormData(modalForm));
           return;
         }
       }
@@ -13785,7 +15800,7 @@
       updateActiveModalPayload((currentPayload, currentState) => ({
         ...currentPayload,
         feedPlanError: '',
-        feedPlanMessage: 'Hay cambios pendientes en este plan.',
+        feedPlanMessage: 'Hay cambios pendientes en la alimentación. Guardá todo junto para aplicar.',
         feedPlanDraftRows: updateHorseFeedPlanDraftRows(
           currentState,
           currentPayload,
@@ -13826,6 +15841,50 @@
       }
 
       toggleHorseFeedCalendarSlot(horseId, feedSlot, eventDate, target.checked);
+      return;
+    }
+
+    const stockConsumeField = target.getAttribute('data-stock-consume-field');
+    if (stockConsumeField) {
+      if (event.type !== 'change') {
+        return;
+      }
+
+      const modalForm = target.closest('[data-modal-form]');
+      const currentValues = modalForm ? formDataToObject(new FormData(modalForm)) : {};
+
+      updateActiveModalPayload((currentPayload) => {
+        const nextPayload = {
+          ...currentPayload,
+          itemId: String(currentValues.itemId ?? currentPayload.itemId ?? ''),
+          eventDate: String(currentValues.eventDate ?? currentPayload.eventDate ?? todayDateString()),
+          notes: String(currentValues.notes ?? currentPayload.notes ?? ''),
+        };
+
+        if (stockConsumeField === 'itemId') {
+          nextPayload.quantity = '';
+        } else {
+          nextPayload.quantity = String(currentValues.quantity ?? currentPayload.quantity ?? '');
+        }
+
+        return nextPayload;
+      });
+      return;
+    }
+
+    const careFormField = target.getAttribute('data-care-form-field');
+    if (careFormField) {
+      if (event.type !== 'change') {
+        return;
+      }
+
+      const modalForm = target.closest('[data-modal-form]');
+      const currentValues = modalForm ? formDataToObject(new FormData(modalForm)) : {};
+
+      updateActiveModalPayload((currentPayload) => ({
+        ...currentPayload,
+        ...currentValues,
+      }));
       return;
     }
 
@@ -13878,7 +15937,12 @@
   }
 
   store.subscribe((state) => {
+    const focusSnapshot = captureRenderedFocusState();
+    const modalScrollSnapshot = captureRenderedModalScrollState();
     appRoot.innerHTML = renderApp(state);
+    restoreRenderedFocusState(focusSnapshot);
+    restoreRenderedModalScrollState(state, modalScrollSnapshot);
+    lastRenderedModalKey = state?.modal?.key || '';
   });
 
   appRoot.addEventListener('click', handleClick);

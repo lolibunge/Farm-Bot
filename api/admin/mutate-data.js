@@ -232,6 +232,8 @@ function getModuleKeyForAdminAction(action) {
 function getFarrierDaysUntilNext(serviceType) {
   const normalized = String(serviceType || '').toLowerCase();
   if (
+    normalized.includes('herrad') ||
+    normalized.includes('herraje') ||
     normalized.includes('shoe') ||
     normalized.includes('shoes') ||
     normalized.includes('shoeing')
