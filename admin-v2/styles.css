@@ -198,6 +198,8 @@ button {
   padding: 16px 12px 12px;
   background: rgba(255, 255, 255, 0.94);
   border-right: 1px solid var(--line);
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .sidebar-brand {
@@ -1234,6 +1236,19 @@ button {
 .table-primary span {
   color: var(--muted);
   font-size: 13px;
+  line-height: 1.4;
+}
+
+.plan-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.plan-breakdown span {
+  font-size: 12px;
+  color: var(--muted);
   line-height: 1.4;
 }
 
@@ -2374,6 +2389,39 @@ button {
   border-color: rgba(41, 104, 244, 0.24);
 }
 
+.modal-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.modal-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 13px;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.modal-check-row:hover {
+  border-color: rgba(41, 104, 244, 0.28);
+  background: rgba(41, 104, 244, 0.04);
+}
+
+.modal-check-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;
@@ -3512,6 +3560,75 @@ button {
   flex-wrap: wrap;
 }
 
+.horse-care-hub-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.horse-care-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.horse-care-row-actions .btn {
+  min-width: 0;
+}
+
+.horse-care-batch-section {
+  display: grid;
+  gap: 12px;
+}
+
+.horse-care-batch-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.horse-care-batch-list {
+  display: grid;
+  gap: 10px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.horse-care-batch-item {
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  cursor: pointer;
+}
+
+.horse-care-batch-item input {
+  margin-top: 2px;
+}
+
+.horse-care-batch-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.horse-care-batch-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.horse-care-batch-copy span,
+.horse-care-batch-copy small {
+  color: var(--muted);
+}
+
 .modal-history-list,
 .modal-alert-list,
 .modal-role-help,
@@ -3926,6 +4043,14 @@ button {
   }
 
   .horse-feed-save-actions .btn {
+    width: 100%;
+  }
+
+  .horse-care-row-actions {
+    display: grid;
+  }
+
+  .horse-care-row-actions .btn {
     width: 100%;
   }
 

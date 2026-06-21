@@ -9,6 +9,7 @@
   const HORSE_HISTORY_API_URL = '/api/admin/horse-history';
   const DATA_MUTATE_API_URL = '/api/admin/mutate-data';
   const TELEGRAM_LINK_API_URL = '/api/admin-v2/telegram-link';
+  const OWNERS_API_URL = '/api/admin-v2/owners';
   const TELEGRAM_WEB_FALLBACK_URL = 'https://web.telegram.org/';
 
   const DEFAULT_ACTIVE_NAV = 'home';
@@ -1168,13 +1169,20 @@
     },
     owners: {
       title: 'Propietarios de Caballos',
-      subtitle: '5 propietarios · 17 caballos en pensión',
+      getSubtitle(state) {
+        if (!isRealSession(state)) return '5 propietarios · 17 caballos en pensión';
+        if (!state.ownersDashboard) return 'Cargando…';
+        const owners = state.ownersDashboard.owners || [];
+        const totalHorses = owners.reduce((sum, o) => sum + (o.horse_count || 0), 0);
+        if (owners.length === 0) return 'Sin propietarios registrados';
+        return `${owners.length} ${owners.length === 1 ? 'propietario' : 'propietarios'} · ${totalHorses} ${totalHorses === 1 ? 'caballo' : 'caballos'}`;
+      },
       actions: [
         {
           label: 'Nuevo Propietario',
           tone: 'primary',
           icon: 'plus',
-          trigger: { action: 'open-modal', value: 'owner-create' },
+          trigger: { action: 'open-modal', value: 'owner-form', meta: { mode: 'create' } },
         },
       ],
     },
@@ -2439,6 +2447,51 @@
       .join(' · ');
   }
 
+  function getFeedMutationNegativeStockItems(mutationPayload) {
+    const warningItems = Array.isArray(mutationPayload?.warnings?.negative_stock_items)
+      ? mutationPayload.warnings.negative_stock_items
+      : [];
+    const negativeStockByFeedItemId = new Map();
+
+    warningItems.forEach((row) => {
+      const feedItemId = Number(row?.feed_item_id);
+      const currentStock = Number(row?.current_stock);
+      if (!Number.isFinite(feedItemId) || feedItemId <= 0) {
+        return;
+      }
+
+      if (!Number.isFinite(currentStock) || currentStock >= 0) {
+        return;
+      }
+
+      negativeStockByFeedItemId.set(feedItemId, {
+        feed_item_id: feedItemId,
+        feed_item_name: String(row?.feed_item_name || '').trim() || 'insumo',
+        current_stock: currentStock,
+        unit: String(row?.unit || '').trim(),
+      });
+    });
+
+    return Array.from(negativeStockByFeedItemId.values()).sort((left, right) =>
+      String(left.feed_item_name || '').localeCompare(String(right.feed_item_name || ''))
+    );
+  }
+
+  function formatFeedNegativeStockWarningSummary(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return '';
+    }
+
+    const visibleItems = items
+      .slice(0, 3)
+      .map((row) => `${row.feed_item_name}: ${formatStockValueLabel(row.current_stock, row.unit)}`);
+    const extraCount = items.length - visibleItems.length;
+
+    return `Stock negativo en ${visibleItems.join(' · ')}${
+      extraCount > 0 ? ` · y ${formatNumberLabel(extraCount)} más` : ''
+    }.`;
+  }
+
   function getRealStockActions(state) {
     if (!state?.stockDashboard?.meta?.feed_module_enabled) {
       return [];
@@ -2838,17 +2891,19 @@
 
   function renderAccountingHorseCostPanel(horseCosts, periodLabel) {
     const rows = Array.isArray(horseCosts?.rows) ? horseCosts.rows : [];
+    const hasRealDaily = rows.some((r) => r.real_daily_cost != null);
 
     return `
       <section class="panel">
         <div class="panel-head">
           <div>
             <h2>${escapeHtml(horseCosts?.title || 'Costo por caballo')}</h2>
-            ${
-              horseCosts?.message
-                ? `<span class="subtle-text">${escapeHtml(horseCosts.message)}</span>`
-                : ''
-            }
+            <span class="subtle-text">
+              MES ACTUAL: consumos reales registrados.
+              ${hasRealDaily
+                ? 'DIARIO REAL: promedio del mes. MENSUAL PROY.: extrapolado a fin de mes.'
+                : 'DIARIO/MENSUAL EST.: desde el plan de alimentación cargado.'}
+            </span>
           </div>
           ${renderBadge(periodLabel, 'gray')}
         </div>
@@ -2862,21 +2917,15 @@
                     <tr>
                       <th>Caballo</th>
                       <th>Mes actual</th>
-                      <th>Diario est.</th>
-                      <th>Mensual est.</th>
-                      <th>Anual est.</th>
+                      <th>${hasRealDaily ? 'Diario real' : 'Diario est.'}</th>
+                      <th>${hasRealDaily ? 'Mensual proy.' : 'Mensual est.'}</th>
+                      <th>Plan diario</th>
                       <th>Cobertura</th>
                     </tr>
                   </thead>
                   <tbody>
                     ${rows
                       .map((row) => {
-                        const plannedCoverage =
-                          row.planned_items_count > 0
-                            ? `${formatNumberLabel(row.planned_items_with_cost)} / ${formatNumberLabel(
-                                row.planned_items_count
-                              )} insumos con precio`
-                            : 'Sin plan cargado';
                         const actualCoverage =
                           row.actual_items_count > 0
                             ? `${formatNumberLabel(row.actual_items_with_cost)} / ${formatNumberLabel(
@@ -2886,7 +2935,27 @@
                         const missingPriceLine =
                           Array.isArray(row.missing_price_items) && row.missing_price_items.length
                             ? `Falta costo para: ${row.missing_price_items.join(', ')}`
-                            : 'Cobertura completa para alimento.';
+                            : 'Cobertura completa.';
+
+                        const planBreakdown = Array.isArray(row.plan_breakdown) && row.plan_breakdown.length
+                          ? `<div class="plan-breakdown">
+                              ${row.plan_breakdown.map((item) =>
+                                `<span>${escapeHtml(item.name)}: ${escapeHtml(String(item.quantity))} ${escapeHtml(item.unit || '')}${item.daily_cost != null ? ` · ${escapeHtml(formatCurrencyLabel(item.daily_cost))}` : ''}</span>`
+                              ).join('')}
+                            </div>`
+                          : '';
+
+                        const dailyDisplay = row.real_daily_cost != null
+                          ? formatCurrencyLabel(row.real_daily_cost)
+                          : row.estimated_daily_cost > 0
+                            ? formatCurrencyLabel(row.estimated_daily_cost)
+                            : 'Sin datos';
+
+                        const monthlyDisplay = row.real_monthly_projection != null
+                          ? formatCurrencyLabel(row.real_monthly_projection)
+                          : row.estimated_monthly_cost > 0
+                            ? formatCurrencyLabel(row.estimated_monthly_cost)
+                            : 'Sin datos';
 
                         return `
                           <tr>
@@ -2906,25 +2975,21 @@
                                 <span>${escapeHtml(periodLabel)}</span>
                               </div>
                             </td>
-                            <td>${escapeHtml(
-                              row.estimated_daily_cost > 0
-                                ? formatCurrencyLabel(row.estimated_daily_cost)
-                                : 'Sin plan'
-                            )}</td>
-                            <td>${escapeHtml(
-                              row.estimated_monthly_cost > 0
-                                ? formatCurrencyLabel(row.estimated_monthly_cost)
-                                : 'Sin plan'
-                            )}</td>
-                            <td>${escapeHtml(
-                              row.estimated_annual_cost > 0
-                                ? formatCurrencyLabel(row.estimated_annual_cost)
-                                : 'Sin plan'
-                            )}</td>
+                            <td>${escapeHtml(dailyDisplay)}</td>
+                            <td>${escapeHtml(monthlyDisplay)}</td>
                             <td>
                               <div class="table-primary">
-                                <strong>${escapeHtml(plannedCoverage)}</strong>
-                                <span>${escapeHtml(missingPriceLine)}</span>
+                                <strong>${escapeHtml(
+                                  row.estimated_daily_cost > 0
+                                    ? formatCurrencyLabel(row.estimated_daily_cost)
+                                    : 'Sin plan'
+                                )}</strong>
+                                ${planBreakdown}
+                              </div>
+                            </td>
+                            <td>
+                              <div class="table-primary">
+                                <strong>${escapeHtml(missingPriceLine)}</strong>
                               </div>
                             </td>
                           </tr>
@@ -3125,8 +3190,21 @@
 
     horses.forEach((horse) => {
       const careEntries = [
-        { type: 'Desparasitación', dueDate: horse?.care?.deworming?.next_due_date || null },
-        { type: 'Herraje', dueDate: horse?.care?.farrier?.next_due_date || null },
+        {
+          type: 'Desparasitación',
+          dueDate: horse?.care?.deworming?.next_due_date || null,
+          alertKey: 'deworm-due',
+        },
+        {
+          type: getHorseFarrierLabel(horse),
+          dueDate: horse?.care?.farrier?.next_due_date || null,
+          alertKey:
+            getHorseFarrierCareFilterValue(horse) === 'farrier-shoeing-alert'
+              ? 'farrier-shoeing-due'
+              : getHorseFarrierCareFilterValue(horse) === 'farrier-trim-alert'
+                ? 'farrier-trim-due'
+                : 'farrier-due',
+        },
       ];
 
       careEntries.forEach((entry) => {
@@ -3138,6 +3216,7 @@
           horseId: horse.id,
           horseName: horse.name,
           type: entry.type,
+          alertKey: entry.alertKey,
           dueDate: entry.dueDate,
           overdue: entry.dueDate < today,
           soon: entry.dueDate >= today && entry.dueDate <= alertLimit,
@@ -3151,9 +3230,21 @@
   function getHorseCareFilterOptions() {
     return [
       { value: 'all', label: 'Todos los cuidados' },
-      { value: 'farrier-alert', label: 'Herraje pendiente' },
+      { value: 'farrier-alert', label: 'Herrero pendiente' },
+      { value: 'farrier-shoeing-alert', label: 'Herrado pendiente' },
+      { value: 'farrier-trim-alert', label: 'Desvasado pendiente' },
       { value: 'deworm-alert', label: 'Desparasitación pendiente' },
     ];
+  }
+
+  function isFarrierCareFilterValue(careFilter) {
+    return ['farrier-alert', 'farrier-shoeing-alert', 'farrier-trim-alert'].includes(
+      String(careFilter || '')
+    );
+  }
+
+  function isVeterinaryCareFilterValue(careFilter) {
+    return String(careFilter || '') === 'deworm-alert';
   }
 
   function horseMatchesCareFilter(horse, careFilter) {
@@ -3164,13 +3255,23 @@
     const today = todayDateString();
     const alertLimit = shiftIsoDateString(today, REAL_HOME_CARE_WINDOW_DAYS) || today;
     const farrierDueDate = horse?.care?.farrier?.next_due_date || null;
+    const farrierFilter = getHorseFarrierCareFilterValue(horse);
     const dewormDueDate = horse?.care?.deworming?.next_due_date || null;
+    const farrierNeedsAttention = Boolean(
+      farrierDueDate &&
+        (farrierDueDate < today || (farrierDueDate >= today && farrierDueDate <= alertLimit))
+    );
 
     if (careFilter === 'farrier-alert') {
-      return Boolean(
-        farrierDueDate &&
-          (farrierDueDate < today || (farrierDueDate >= today && farrierDueDate <= alertLimit))
-      );
+      return farrierNeedsAttention;
+    }
+
+    if (careFilter === 'farrier-shoeing-alert') {
+      return farrierNeedsAttention && farrierFilter === 'farrier-shoeing-alert';
+    }
+
+    if (careFilter === 'farrier-trim-alert') {
+      return farrierNeedsAttention && farrierFilter === 'farrier-trim-alert';
     }
 
     if (careFilter === 'deworm-alert') {
@@ -3197,8 +3298,16 @@
       return 'stock-low';
     }
 
-    if (normalizedTitle === 'herrajes') {
+    if (normalizedTitle === 'herrero' || normalizedTitle === 'herrajes') {
       return 'farrier-due';
+    }
+
+    if (normalizedTitle === 'herrado' || normalizedTitle === 'herrados') {
+      return 'farrier-shoeing-due';
+    }
+
+    if (normalizedTitle === 'desvasado' || normalizedTitle === 'desvasados') {
+      return 'farrier-trim-due';
     }
 
     if (normalizedTitle === 'desparasitación') {
@@ -3258,10 +3367,20 @@
       ];
     }
 
-    const today = todayDateString();
     const lowStockItems = getRealLowStockItems(state);
     const careAgenda = buildRealHorseCareAgenda(state);
-    const farrierEntries = careAgenda.filter((entry) => entry.type === 'Herraje' && (entry.overdue || entry.soon));
+    const farrierEntries = careAgenda.filter(
+      (entry) =>
+        ['farrier-due', 'farrier-shoeing-due', 'farrier-trim-due'].includes(entry.alertKey) &&
+        (entry.overdue || entry.soon)
+    );
+    const farrierShoeingEntries = farrierEntries.filter(
+      (entry) => entry.alertKey === 'farrier-shoeing-due'
+    );
+    const farrierTrimEntries = farrierEntries.filter(
+      (entry) => entry.alertKey === 'farrier-trim-due'
+    );
+    const farrierGenericEntries = farrierEntries.filter((entry) => entry.alertKey === 'farrier-due');
     const dewormEntries = careAgenda.filter(
       (entry) => entry.type === 'Desparasitación' && (entry.overdue || entry.soon)
     );
@@ -3284,16 +3403,46 @@
       });
     }
 
-    if (farrierEntries.length) {
-      const overdueCount = farrierEntries.filter((entry) => entry.overdue).length;
+    if (farrierShoeingEntries.length) {
+      const overdueCount = farrierShoeingEntries.filter((entry) => entry.overdue).length;
       alerts.push({
-        alertKey: 'farrier-due',
-        title: 'Herrajes',
+        alertKey: 'farrier-shoeing-due',
+        title: 'Herrados',
         detail:
           overdueCount > 0
             ? `${overdueCount} atrasado(s)`
-            : `${farrierEntries.length} próximo(s)`,
-        count: farrierEntries.length,
+            : `${farrierShoeingEntries.length} próximo(s)`,
+        count: farrierShoeingEntries.length,
+        tone: 'warning',
+        navKey: 'horses',
+      });
+    }
+
+    if (farrierTrimEntries.length) {
+      const overdueCount = farrierTrimEntries.filter((entry) => entry.overdue).length;
+      alerts.push({
+        alertKey: 'farrier-trim-due',
+        title: 'Desvasados',
+        detail:
+          overdueCount > 0
+            ? `${overdueCount} atrasado(s)`
+            : `${farrierTrimEntries.length} próximo(s)`,
+        count: farrierTrimEntries.length,
+        tone: 'warning',
+        navKey: 'horses',
+      });
+    }
+
+    if (farrierGenericEntries.length) {
+      const overdueCount = farrierGenericEntries.filter((entry) => entry.overdue).length;
+      alerts.push({
+        alertKey: 'farrier-due',
+        title: 'Herrero',
+        detail:
+          overdueCount > 0
+            ? `${overdueCount} atrasado(s)`
+            : `${farrierGenericEntries.length} próximo(s)`,
+        count: farrierGenericEntries.length,
         tone: 'warning',
         navKey: 'horses',
       });
@@ -3851,7 +4000,7 @@
     horses.forEach((horse) => {
       [
         { type: 'Desparasitación', dueDate: horse?.care?.deworming?.next_due_date || null },
-        { type: 'Herraje', dueDate: horse?.care?.farrier?.next_due_date || null },
+        { type: getHorseFarrierLabel(horse), dueDate: horse?.care?.farrier?.next_due_date || null },
       ].forEach((careItem) => {
         if (!careItem.dueDate) {
           return;
@@ -4102,6 +4251,70 @@
     );
   }
 
+  function isTrimServiceType(serviceType) {
+    const normalized = String(serviceType || '')
+      .trim()
+      .toLowerCase();
+
+    return (
+      normalized.includes('desvas') ||
+      normalized.includes('trim') ||
+      normalized.includes('trimming')
+    );
+  }
+
+  function getStoredFarrierServiceTypeKey(serviceType) {
+    const normalized = String(serviceType || '')
+      .trim()
+      .toLowerCase();
+
+    if (!normalized) {
+      return '';
+    }
+
+    if (isShoeingServiceType(normalized)) {
+      return 'herrado';
+    }
+
+    if (isTrimServiceType(normalized)) {
+      return 'desvasado';
+    }
+
+    return normalized;
+  }
+
+  function getFarrierServiceTypeLabel(serviceType, { plural = false, fallback = 'Herrero' } = {}) {
+    const normalizedType = getStoredFarrierServiceTypeKey(serviceType);
+
+    if (normalizedType === 'herrado') {
+      return plural ? 'Herrados' : 'Herrado';
+    }
+
+    if (normalizedType === 'desvasado') {
+      return plural ? 'Desvasados' : 'Desvasado';
+    }
+
+    return fallback;
+  }
+
+  function getHorseFarrierLabel(horse, options = {}) {
+    return getFarrierServiceTypeLabel(horse?.care?.farrier?.service_type, options);
+  }
+
+  function getHorseFarrierCareFilterValue(horse) {
+    const normalizedType = getStoredFarrierServiceTypeKey(horse?.care?.farrier?.service_type);
+
+    if (normalizedType === 'herrado') {
+      return 'farrier-shoeing-alert';
+    }
+
+    if (normalizedType === 'desvasado') {
+      return 'farrier-trim-alert';
+    }
+
+    return 'farrier-alert';
+  }
+
   function formatFarrierServiceTypeLabel(serviceType) {
     const normalized = String(serviceType || '')
       .trim()
@@ -4115,11 +4328,7 @@
       return 'Herrado';
     }
 
-    if (
-      normalized.includes('desvas') ||
-      normalized.includes('trim') ||
-      normalized.includes('trimming')
-    ) {
+    if (isTrimServiceType(normalized)) {
       return 'Desvasado';
     }
 
@@ -4139,11 +4348,7 @@
       return 'herrado';
     }
 
-    if (
-      normalized.includes('desvas') ||
-      normalized.includes('trim') ||
-      normalized.includes('trimming')
-    ) {
+    if (isTrimServiceType(normalized)) {
       return 'desvasado';
     }
 
@@ -4244,7 +4449,10 @@
 
     const checks = [
       { label: 'Desparasitación', next_due_date: horse?.care?.deworming?.next_due_date },
-      { label: 'Herraje', next_due_date: horse?.care?.farrier?.next_due_date },
+      {
+        label: getHorseFarrierLabel(horse, { fallback: 'Herrero' }),
+        next_due_date: horse?.care?.farrier?.next_due_date,
+      },
     ].filter((item) => item.next_due_date);
 
     const overdue = checks.find((item) => item.next_due_date < today);
@@ -4491,6 +4699,19 @@
     }
 
     return [String(value)];
+  }
+
+  function parsePositiveIntList(value) {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => parsePositiveInt(item))
+        .filter((item) => Number.isFinite(item) && item > 0);
+    }
+
+    return String(value || '')
+      .split(',')
+      .map((item) => parsePositiveInt(item))
+      .filter((item) => Number.isFinite(item) && item > 0);
   }
 
   function getGroupManageHorseKey(horse) {
@@ -5151,6 +5372,103 @@
           ${renderModalFooter(options.footerButtons || [{ label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } }])}
         </div>
       `,
+    });
+  }
+
+  function renderRealOwnerFormModal(state, payload) {
+    const isEdit = payload?.mode === 'edit';
+    const ownerId = parsePositiveInt(payload?.ownerId);
+    const owner = isEdit ? getRealOwnerById(state, ownerId) : null;
+
+    if (isEdit && !owner) {
+      return '';
+    }
+
+    const assignedHorseIds = new Set((owner?.horses || []).map((h) => h.id));
+    const horses = (getRealHorseDashboard(state)?.horses || [])
+      .slice()
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
+
+    return renderFormModal({
+      key: 'owner-form',
+      size: 'wide',
+      title: isEdit ? `Editar ${owner.name}` : 'Nuevo Propietario',
+      subtitle: isEdit ? 'Actualizá la información del propietario' : 'Registrá un nuevo propietario de caballos',
+      columns: 2,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        ...(isEdit
+          ? [{ label: 'Eliminar', tone: 'danger', icon: 'close', trigger: { action: 'delete-owner', meta: { ownerId: owner.id } } }]
+          : []),
+        { label: isEdit ? 'Guardar Cambios' : 'Crear Propietario', tone: 'primary', icon: isEdit ? 'check' : 'plus', submit: true },
+      ],
+      fields: [
+        {
+          label: 'Nombre',
+          name: 'ownerName',
+          type: 'text',
+          value: isEdit ? owner.name : '',
+          placeholder: 'Ej: Juan García',
+          required: true,
+          layout: 'wide',
+        },
+        {
+          label: 'Teléfono',
+          name: 'phone',
+          type: 'tel',
+          value: isEdit ? owner.phone : '',
+          placeholder: '+54 9 11 1234-5678',
+        },
+        {
+          label: 'Email',
+          name: 'email',
+          type: 'email',
+          value: isEdit ? owner.email : '',
+          placeholder: 'juan@email.com',
+        },
+        {
+          label: 'Tarifa por caballo / mes ($)',
+          name: 'ratePerHorse',
+          type: 'number',
+          value: isEdit ? String(owner.rate_per_horse || '') : '',
+          min: '0',
+          step: '100',
+          placeholder: '2500',
+        },
+        {
+          label: 'Notas',
+          name: 'notes',
+          type: 'textarea',
+          value: isEdit ? owner.notes : '',
+          placeholder: 'Observaciones...',
+          rows: 2,
+          layout: 'wide',
+        },
+      ],
+      extraBody: horses.length > 0
+        ? `
+          <div class="modal-field modal-field--wide">
+            <span>Caballos asignados</span>
+            <div class="modal-check-grid">
+              ${horses
+                .map(
+                  (horse) => `
+                    <label class="modal-check-row">
+                      <input
+                        type="checkbox"
+                        name="horseId"
+                        value="${escapeHtml(String(horse.id))}"
+                        ${assignedHorseIds.has(horse.id) ? 'checked' : ''}
+                      />
+                      <span>${escapeHtml(horse.name)}</span>
+                    </label>
+                  `
+                )
+                .join('')}
+            </div>
+          </div>
+        `
+        : '',
     });
   }
 
@@ -6394,7 +6712,7 @@
                     )}</dd>
                   </div>
                   <div>
-                    <dt>Herraje</dt>
+                    <dt>${escapeHtml(getHorseFarrierLabel(horse, { fallback: 'Herrero' }))}</dt>
                     <dd>${escapeHtml(
                       horse.care?.farrier?.next_due_date
                         ? formatDateLabel(horse.care.farrier.next_due_date)
@@ -6436,6 +6754,411 @@
           })
           .join('')}
       </section>
+    `;
+  }
+
+  function getHorseCareStatusMeta(dueDate) {
+    const normalizedDueDate = String(dueDate || '').trim();
+    if (!normalizedDueDate) {
+      return {
+        label: 'Sin fecha',
+        tone: 'gray',
+        detail: 'Todavía sin próximo control cargado.',
+      };
+    }
+
+    const today = todayDateString();
+    const alertLimit = shiftIsoDateString(today, REAL_HOME_CARE_WINDOW_DAYS) || today;
+
+    if (normalizedDueDate < today) {
+      return {
+        label: 'Atrasado',
+        tone: 'critical',
+        detail: `Venció el ${formatDateLabel(normalizedDueDate)}.`,
+      };
+    }
+
+    if (normalizedDueDate >= today && normalizedDueDate <= alertLimit) {
+      return {
+        label: 'Próximo',
+        tone: 'warning',
+        detail: `Control ${formatDateLabel(normalizedDueDate)}.`,
+      };
+    }
+
+    return {
+      label: 'En fecha',
+      tone: 'green',
+      detail: `Próximo ${formatDateLabel(normalizedDueDate)}.`,
+    };
+  }
+
+  function buildHorseCareActionIdList(horses) {
+    return (Array.isArray(horses) ? horses : [])
+      .map((horse) => parsePositiveInt(horse?.id))
+      .filter((horseId) => Number.isFinite(horseId) && horseId > 0)
+      .join(',');
+  }
+
+  function buildRealFarrierHubRows(state, dashboard) {
+    return getFilteredRealHorses(state, dashboard)
+      .map((horse) => {
+        const nextDueDate = horse?.care?.farrier?.next_due_date || null;
+        return {
+          ...horse,
+          farrier_label: getHorseFarrierLabel(horse, { fallback: 'Herrero' }),
+          farrier_due_date: nextDueDate,
+          farrier_status: getHorseCareStatusMeta(nextDueDate),
+        };
+      })
+      .sort((left, right) => {
+        const dueDiff =
+          getIsoSortValue(left.farrier_due_date || '9999-12-31') -
+          getIsoSortValue(right.farrier_due_date || '9999-12-31');
+        if (dueDiff !== 0) {
+          return dueDiff;
+        }
+
+        return String(left.name || '').localeCompare(String(right.name || ''), 'es');
+      });
+  }
+
+  function buildRealVeterinaryHubRows(state, dashboard) {
+    return getFilteredRealHorses(state, dashboard)
+      .map((horse) => {
+        const nextDueDate = horse?.care?.deworming?.next_due_date || null;
+        return {
+          ...horse,
+          deworm_due_date: nextDueDate,
+          deworm_product_name: horse?.care?.deworming?.product_name || '',
+          deworm_status: getHorseCareStatusMeta(nextDueDate),
+        };
+      })
+      .sort((left, right) => {
+        const dueDiff =
+          getIsoSortValue(left.deworm_due_date || '9999-12-31') -
+          getIsoSortValue(right.deworm_due_date || '9999-12-31');
+        if (dueDiff !== 0) {
+          return dueDiff;
+        }
+
+        return String(left.name || '').localeCompare(String(right.name || ''), 'es');
+      });
+  }
+
+  function renderRealFarrierHubView(state, dashboard) {
+    const rows = buildRealFarrierHubRows(state, dashboard);
+    const overdueCount = rows.filter((horse) => horse.farrier_due_date && horse.farrier_due_date < todayDateString()).length;
+    const upcomingCount = rows.filter(
+      (horse) =>
+        horse.farrier_due_date &&
+        horse.farrier_due_date >= todayDateString() &&
+        horse.farrier_due_date <= (shiftIsoDateString(todayDateString(), REAL_HOME_CARE_WINDOW_DAYS) || todayDateString())
+    ).length;
+    const filteredHorseIds = buildHorseCareActionIdList(rows);
+
+    return `
+      <div class="page-stack">
+        ${renderRealHorseSearchRow(state, dashboard)}
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Herrero</h2>
+              <span class="subtle-text">Registrá desvasados y herrados desde acá. Cada evento se guarda en la base del caballo y recalcula su próximo control.</span>
+            </div>
+            <div class="action-row">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                ${renderActionAttributes({
+                  action: 'open-modal',
+                  value: 'horse-care-batch-farrier',
+                  meta: { horseIds: filteredHorseIds, serviceType: 'desvasado' },
+                })}
+                ${rows.length ? '' : ' disabled'}
+              >
+                ${renderIcon('work')}
+                <span>Carga masiva desvasado</span>
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary"
+                ${renderActionAttributes({
+                  action: 'open-modal',
+                  value: 'horse-care-batch-farrier',
+                  meta: { horseIds: filteredHorseIds, serviceType: 'herrado' },
+                })}
+                ${rows.length ? '' : ' disabled'}
+              >
+                ${renderIcon('work')}
+                <span>Carga masiva herrado</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-summary-grid horse-care-hub-summary">
+            <article class="modal-stat-card">
+              <span>Caballos visibles</span>
+              <strong>${escapeHtml(String(rows.length))}</strong>
+              <small>según filtros actuales</small>
+            </article>
+            <article class="modal-stat-card">
+              <span>Vencidos</span>
+              <strong>${escapeHtml(String(overdueCount))}</strong>
+              <small>con herrero atrasado</small>
+            </article>
+            <article class="modal-stat-card">
+              <span>Próximos</span>
+              <strong>${escapeHtml(String(upcomingCount))}</strong>
+              <small>en los próximos ${escapeHtml(String(REAL_HOME_CARE_WINDOW_DAYS))} días</small>
+            </article>
+          </div>
+
+          ${
+            rows.length
+              ? `
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Caballo</th>
+                      <th>Grupo</th>
+                      <th>Potrero</th>
+                      <th>Tipo en base</th>
+                      <th>Próximo control</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${rows
+                      .map(
+                        (horse) => `
+                          <tr>
+                            <td>
+                              <div class="table-primary">
+                                <strong>${escapeHtml(horse.name)}</strong>
+                                <span>${escapeHtml(getHorseCardSubtitle(horse) || 'Sin perfil adicional')}</span>
+                              </div>
+                            </td>
+                            <td>${escapeHtml(horse.current_group?.name || 'Individual')}</td>
+                            <td>${escapeHtml(horse.current_location?.paddock_name || 'Sin potrero')}</td>
+                            <td>
+                              <div class="table-primary">
+                                <strong>${escapeHtml(horse.farrier_label)}</strong>
+                                <span>${escapeHtml(
+                                  horse.care?.farrier?.service_type
+                                    ? `Último guardado como ${formatFarrierServiceTypeLabel(
+                                        horse.care.farrier.service_type
+                                      )}`
+                                    : 'Sin evento previo'
+                                )}</span>
+                              </div>
+                            </td>
+                            <td>${escapeHtml(
+                              horse.farrier_due_date ? formatDateLabel(horse.farrier_due_date) : 'Sin fecha'
+                            )}</td>
+                            <td>
+                              <div class="table-status-stack">
+                                ${renderBadge(horse.farrier_status.label, horse.farrier_status.tone)}
+                                <span>${escapeHtml(horse.farrier_status.detail)}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <div class="horse-care-row-actions">
+                                <button
+                                  type="button"
+                                  class="btn btn-secondary horse-feed-inline-btn"
+                                  ${renderActionAttributes({
+                                    action: 'open-modal',
+                                    value: 'horse-farrier-event',
+                                    meta: {
+                                      horseId: horse.id,
+                                      serviceType: 'desvasado',
+                                      eventDate: todayDateString(),
+                                    },
+                                  })}
+                                >
+                                  <span>Desvasado</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  class="btn btn-primary horse-feed-inline-btn"
+                                  ${renderActionAttributes({
+                                    action: 'open-modal',
+                                    value: 'horse-farrier-event',
+                                    meta: {
+                                      horseId: horse.id,
+                                      serviceType: 'herrado',
+                                      eventDate: todayDateString(),
+                                    },
+                                  })}
+                                >
+                                  <span>Herrado</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        `
+                      )
+                      .join('')}
+                  </tbody>
+                </table>
+              `
+              : `
+                <div class="empty-state-card">
+                  <strong>No encontramos caballos para ese filtro.</strong>
+                  <span>Probá limpiar la búsqueda o ajustar el filtro de cuidado.</span>
+                </div>
+              `
+          }
+        </section>
+      </div>
+    `;
+  }
+
+  function renderRealVeterinaryHubView(state, dashboard) {
+    const rows = buildRealVeterinaryHubRows(state, dashboard);
+    const overdueCount = rows.filter((horse) => horse.deworm_due_date && horse.deworm_due_date < todayDateString()).length;
+    const upcomingCount = rows.filter(
+      (horse) =>
+        horse.deworm_due_date &&
+        horse.deworm_due_date >= todayDateString() &&
+        horse.deworm_due_date <= (shiftIsoDateString(todayDateString(), REAL_HOME_CARE_WINDOW_DAYS) || todayDateString())
+    ).length;
+    const filteredHorseIds = buildHorseCareActionIdList(rows);
+
+    return `
+      <div class="page-stack">
+        ${renderRealHorseSearchRow(state, dashboard)}
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Veterinaria</h2>
+              <span class="subtle-text">Desparasitá varios caballos juntos o abrí tratamiento/veterinaria por caballo. Todo queda guardado en su historial real.</span>
+            </div>
+            <div class="action-row">
+              <button
+                type="button"
+                class="btn btn-primary"
+                ${renderActionAttributes({
+                  action: 'open-modal',
+                  value: 'horse-care-batch-deworm',
+                  meta: { horseIds: filteredHorseIds },
+                })}
+                ${rows.length ? '' : ' disabled'}
+              >
+                ${renderIcon('shield')}
+                <span>Desparasitación masiva</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-summary-grid horse-care-hub-summary">
+            <article class="modal-stat-card">
+              <span>Caballos visibles</span>
+              <strong>${escapeHtml(String(rows.length))}</strong>
+              <small>según filtros actuales</small>
+            </article>
+            <article class="modal-stat-card">
+              <span>Vencidos</span>
+              <strong>${escapeHtml(String(overdueCount))}</strong>
+              <small>con desparasitación atrasada</small>
+            </article>
+            <article class="modal-stat-card">
+              <span>Próximos</span>
+              <strong>${escapeHtml(String(upcomingCount))}</strong>
+              <small>en los próximos ${escapeHtml(String(REAL_HOME_CARE_WINDOW_DAYS))} días</small>
+            </article>
+          </div>
+
+          ${
+            rows.length
+              ? `
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Caballo</th>
+                      <th>Grupo</th>
+                      <th>Potrero</th>
+                      <th>Último producto</th>
+                      <th>Próxima desparasitación</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${rows
+                      .map(
+                        (horse) => `
+                          <tr>
+                            <td>
+                              <div class="table-primary">
+                                <strong>${escapeHtml(horse.name)}</strong>
+                                <span>${escapeHtml(getHorseCardSubtitle(horse) || 'Sin perfil adicional')}</span>
+                              </div>
+                            </td>
+                            <td>${escapeHtml(horse.current_group?.name || 'Individual')}</td>
+                            <td>${escapeHtml(horse.current_location?.paddock_name || 'Sin potrero')}</td>
+                            <td>${escapeHtml(horse.deworm_product_name || 'Sin registro')}</td>
+                            <td>${escapeHtml(
+                              horse.deworm_due_date ? formatDateLabel(horse.deworm_due_date) : 'Sin fecha'
+                            )}</td>
+                            <td>
+                              <div class="table-status-stack">
+                                ${renderBadge(horse.deworm_status.label, horse.deworm_status.tone)}
+                                <span>${escapeHtml(horse.deworm_status.detail)}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <div class="horse-care-row-actions">
+                                <button
+                                  type="button"
+                                  class="btn btn-secondary horse-feed-inline-btn"
+                                  ${renderActionAttributes({
+                                    action: 'open-modal',
+                                    value: 'horse-deworm-event',
+                                    meta: {
+                                      horseId: horse.id,
+                                      productName: horse.deworm_product_name || '',
+                                      eventDate: todayDateString(),
+                                    },
+                                  })}
+                                >
+                                  <span>Desparasitar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  class="btn btn-primary horse-feed-inline-btn"
+                                  ${renderActionAttributes({
+                                    action: 'open-modal',
+                                    value: 'horse-health-event',
+                                    meta: {
+                                      horseId: horse.id,
+                                      eventType: 'veterinaria',
+                                      eventDate: todayDateString(),
+                                    },
+                                  })}
+                                >
+                                  <span>Tratamiento</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        `
+                      )
+                      .join('')}
+                  </tbody>
+                </table>
+              `
+              : `
+                <div class="empty-state-card">
+                  <strong>No encontramos caballos para ese filtro.</strong>
+                  <span>Probá limpiar la búsqueda o ajustar el filtro de cuidado.</span>
+                </div>
+              `
+          }
+        </section>
+      </div>
     `;
   }
 
@@ -6553,16 +7276,27 @@
 
   function renderRealHorsesView(state, dashboard) {
     const activeView = getActiveView(state, 'horses');
+    const horseTabs = [
+      ...(Array.isArray(dashboard.tabs) ? dashboard.tabs : []).filter(
+        (tab) => !['herrero', 'veterinaria'].includes(String(tab?.key || ''))
+      ),
+      { key: 'herrero', label: 'Herrero', status: 'ready' },
+      { key: 'veterinaria', label: 'Veterinaria', status: 'ready' },
+    ];
 
     return `
       <div class="page-stack">
         ${renderMetricGrid(dashboard.summary_cards || [])}
         ${dashboard.notice ? renderNoticeCard(dashboard.notice) : ''}
-        ${renderSegmentedTabs(state, 'horses', dashboard.tabs || [])}
+        ${renderSegmentedTabs(state, 'horses', horseTabs)}
         ${
           activeView === 'groups'
             ? renderRealHorseGroups(dashboard)
-            : `${renderRealHorseSearchRow(state, dashboard)}${renderRealHorseCards(state, dashboard)}`
+            : activeView === 'herrero'
+              ? renderRealFarrierHubView(state, dashboard)
+              : activeView === 'veterinaria'
+                ? renderRealVeterinaryHubView(state, dashboard)
+                : `${renderRealHorseSearchRow(state, dashboard)}${renderRealHorseCards(state, dashboard)}`
         }
       </div>
     `;
@@ -6898,7 +7632,125 @@
     `;
   }
 
+  function renderRealOwnersView(state) {
+    if (!state.ownersDashboard) {
+      return `<div class="page-stack"><div class="empty-state"><p>Cargando propietarios…</p></div></div>`;
+    }
+    const owners = state.ownersDashboard?.owners || [];
+    const totalMonthly = owners.reduce((sum, o) => sum + (o.monthly_total || 0), 0);
+
+    const horses = (getRealHorseDashboard(state)?.horses || [])
+      .slice()
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
+
+    const monthLabel = state.ownersDashboard?.meta?.month || '';
+    const totalFeedCost = owners.reduce((sum, o) => sum + (o.current_month?.feed_cost || 0), 0);
+
+    const ownerCards = owners.length > 0
+      ? owners.map((owner) => {
+          const cm = owner.current_month || {};
+          const feedCost = cm.feed_cost || 0;
+          const farrierCount = cm.farrier_count || 0;
+          const dewormCount = cm.deworm_count || 0;
+          const hasServices = farrierCount > 0 || dewormCount > 0;
+
+          return `
+            <article class="owner-card">
+              <div class="owner-head">
+                <div class="avatar">${escapeHtml(owner.name.slice(0, 2).toUpperCase())}</div>
+                <div>
+                  <h2>${escapeHtml(owner.name)}</h2>
+                  ${renderBadge(`${owner.horse_count} ${owner.horse_count === 1 ? 'caballo' : 'caballos'}`, 'neutral')}
+                </div>
+              </div>
+
+              <div class="stacked-info stacked-info--tight">
+                ${owner.email ? `<span>${renderIcon('mail')} ${escapeHtml(owner.email)}</span>` : ''}
+                ${owner.phone ? `<span>${renderIcon('phone')} ${escapeHtml(owner.phone)}</span>` : ''}
+              </div>
+
+              ${owner.horses.length > 0
+                ? `<div class="horse-tags">
+                    ${owner.horses.map((h) => `<span class="mini-chip">${escapeHtml(h.name)}</span>`).join('')}
+                  </div>`
+                : `<p class="text-muted" style="font-size:13px">Sin caballos asignados</p>`
+              }
+
+              <dl class="owner-stats">
+                <div>
+                  <dt>Alimento ${monthLabel ? escapeHtml(monthLabel) : 'este mes'}</dt>
+                  <dd>${feedCost > 0 ? `$${feedCost.toLocaleString('es-AR')}` : '—'}</dd>
+                </div>
+                ${hasServices ? `
+                  <div>
+                    <dt>Servicios este mes</dt>
+                    <dd>${[
+                      farrierCount > 0 ? `${farrierCount} herrado${farrierCount > 1 ? 's' : ''}` : '',
+                      dewormCount > 0 ? `${dewormCount} desparasitado${dewormCount > 1 ? 's' : ''}` : '',
+                    ].filter(Boolean).join(' · ')}</dd>
+                  </div>
+                ` : ''}
+                ${owner.rate_per_horse > 0 ? `
+                  <div>
+                    <dt>Tarifa / caballo</dt>
+                    <dd>$${owner.rate_per_horse.toLocaleString('es-AR')}</dd>
+                  </div>
+                ` : ''}
+                ${owner.notes ? `<div><dt>Notas</dt><dd>${escapeHtml(owner.notes)}</dd></div>` : ''}
+              </dl>
+
+              <div class="split-actions">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-grow"
+                  ${renderActionAttributes({
+                    action: 'open-modal',
+                    value: 'owner-form',
+                    meta: { mode: 'edit', ownerId: owner.id },
+                  })}
+                >
+                  ${renderIcon('edit')}
+                  <span>Editar</span>
+                </button>
+              </div>
+            </article>
+          `;
+        }).join('')
+      : `
+          <div class="empty-state">
+            <p>No hay propietarios registrados todavía.</p>
+          </div>
+        `;
+
+    return `
+      <div class="page-stack">
+        <section class="metric-grid">
+          <article class="metric-card">
+            <span class="metric-label">Propietarios</span>
+            <strong class="metric-value">${owners.length}</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Caballos en pensión</span>
+            <strong class="metric-value">${owners.reduce((sum, o) => sum + o.horse_count, 0)}</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Costo alimento ${monthLabel}</span>
+            <strong class="metric-value">${totalFeedCost > 0 ? `$${totalFeedCost.toLocaleString('es-AR')}` : '—'}</strong>
+          </article>
+        </section>
+
+        <section class="card-grid card-grid--two">
+          ${ownerCards}
+        </section>
+      </div>
+    `;
+  }
+
   function renderOwnersView(state) {
+    if (isRealSession(state)) {
+      return renderRealOwnersView(state);
+    }
+
     const activeView = getActiveView(state, 'owners');
 
     return `
@@ -7964,7 +8816,123 @@
     `;
   }
 
+  function renderRealRecordsTimeline(events) {
+    const sorted = events.slice().sort((a, b) => {
+      const ta = a.event_at || a.event_date || '';
+      const tb = b.event_at || b.event_date || '';
+      return tb.localeCompare(ta);
+    });
+
+    if (sorted.length === 0) {
+      return `<section class="panel"><div class="empty-state"><p>No hay registros este mes.</p></div></section>`;
+    }
+
+    return `
+      <section class="panel">
+        <div class="timeline-list">
+          ${sorted.map((event) => {
+            const cm = getCalendarCategoryMeta(event.category);
+            const detailParts = [event.subtitle, event.detail].filter(Boolean);
+            const metaParts = [event.meta, formatCompactDateLabel(event.event_date)].filter(Boolean);
+            return `
+              <article class="timeline-row">
+                <span class="timeline-icon timeline-icon--${escapeHtml(cm.tone)}">${renderIcon(cm.icon)}</span>
+                <div class="timeline-body">
+                  <div class="timeline-title">
+                    <strong>${escapeHtml(event.title || 'Evento')}</strong>
+                    ${renderBadge(cm.tag, cm.tone)}
+                  </div>
+                  ${detailParts.length ? `<p>${escapeHtml(detailParts.join(' · '))}</p>` : ''}
+                  <span>${escapeHtml(metaParts.join(' · '))}</span>
+                </div>
+                <div class="timeline-age">${escapeHtml(formatCompactDateLabel(event.event_date))}</div>
+              </article>
+            `;
+          }).join('')}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderRealRecordsByCategory(events) {
+    if (events.length === 0) {
+      return `<section class="panel"><div class="empty-state"><p>No hay registros este mes.</p></div></section>`;
+    }
+
+    const groups = {};
+    for (const event of events) {
+      const cm = getCalendarCategoryMeta(event.category);
+      const tag = cm.tag;
+      if (!groups[tag]) groups[tag] = { tag, tone: cm.tone, icon: cm.icon, items: [] };
+      const label = [event.title, event.subtitle].filter(Boolean).join(' · ');
+      groups[tag].items.push({ label, date: event.event_date });
+    }
+
+    return `
+      <div class="stack-gap">
+        ${Object.values(groups).map((group) => `
+          <section class="panel">
+            <div class="panel-head">
+              <h2>${escapeHtml(group.tag)}</h2>
+              ${renderBadge(String(group.items.length), group.tone)}
+            </div>
+            <div class="category-records">
+              ${group.items
+                .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+                .map((item) => `
+                  <article class="category-record">
+                    <span>${escapeHtml(item.label)}</span>
+                    <span class="subtle-text">${escapeHtml(formatCompactDateLabel(item.date))}</span>
+                  </article>
+                `).join('')}
+            </div>
+          </section>
+        `).join('')}
+      </div>
+    `;
+  }
+
   function renderRecordsView(state) {
+    const RECORDS_TABS = [
+      { key: 'timeline', label: 'Línea de Tiempo' },
+      { key: 'categories', label: 'Por Categoría' },
+    ];
+
+    if (isRealSession(state)) {
+      // Collect events from all loaded calendar months, newest-first across months
+      const allMonthStates = Object.values(state.calendarEventsByMonth || {});
+      const loaded = allMonthStates.filter((ms) => ms && ms.data && Array.isArray(ms.data.events));
+
+      if (allMonthStates.length === 0) {
+        return `<div class="page-stack"><div class="empty-state"><p>Cargando registros…</p></div></div>`;
+      }
+
+      const events = loaded.flatMap((ms) => ms.data.events);
+
+      const byCategory = {};
+      for (const e of events) {
+        const tag = getCalendarCategoryMeta(e.category).tag;
+        byCategory[tag] = (byCategory[tag] || 0) + 1;
+      }
+      const topCategories = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+      const metrics = [
+        { label: 'Total registros', value: String(events.length), detail: 'este mes', tone: 'neutral', icon: 'records' },
+        ...topCategories.map(([tag, count]) => ({
+          label: tag, value: String(count), detail: 'registros', tone: 'neutral', icon: 'records',
+        })),
+      ].slice(0, 4);
+
+      const activeView = getActiveView(state, 'records');
+      return `
+        <div class="page-stack">
+          ${renderMetricGrid(metrics)}
+          ${renderSegmentedTabs(state, 'records', RECORDS_TABS)}
+          ${activeView === 'categories' ? renderRealRecordsByCategory(events) : renderRealRecordsTimeline(events)}
+        </div>
+      `;
+    }
+
     return `
       <div class="page-stack">
         ${renderMetricGrid(DEMO_DATA.records.metrics)}
@@ -8371,73 +9339,31 @@
     `;
   }
 
-  function renderSettingsUsers() {
+  function renderSettingsUsers(state) {
+    const account = getSessionAccount(state);
     return `
       <div class="stack-gap">
         <section class="panel">
           <div class="panel-head">
             <h2>Usuarios Autorizados</h2>
-            <button
-              type="button"
-              class="btn btn-primary"
-              ${renderActionAttributes({
-                action: 'open-modal',
-                value: 'user-form',
-                meta: { mode: 'create' },
-              })}
-            >
-              ${renderIcon('owners')}
-              <span>Agregar usuario</span>
-            </button>
           </div>
           <div class="user-list">
-            ${DEMO_DATA.settings.users
-              .map(
-                (user) => `
-                  <article class="user-row">
-                    <div class="user-main">
-                      <div class="avatar">${escapeHtml(user.initials)}</div>
-                      <div>
-                        <div class="user-title-row">
-                          <strong>${escapeHtml(user.name)}</strong>
-                          ${user.status ? renderBadge(user.status, user.statusTone) : ''}
-                        </div>
-                        <span>${escapeHtml(user.email)}</span>
-                        <div class="chip-row">
-                          <span class="mini-chip">${escapeHtml(user.role)}</span>
-                          ${user.handle ? `<span class="subtle-text">${escapeHtml(user.handle)}</span>` : ''}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      class="text-action"
-                      ${renderActionAttributes({
-                        action: 'open-modal',
-                        value: 'user-form',
-                        meta: { mode: 'edit', name: user.name },
-                      })}
-                    >
-                      Editar
-                    </button>
-                  </article>
-                `
-              )
-              .join('')}
+            <article class="user-row">
+              <div class="user-main">
+                <div class="avatar">${escapeHtml(account.initials)}</div>
+                <div>
+                  <div class="user-title-row">
+                    <strong>${escapeHtml(account.displayName)}</strong>
+                    ${renderBadge('Activo', 'green')}
+                  </div>
+                  ${account.email ? `<span>${escapeHtml(account.email)}</span>` : ''}
+                  <div class="chip-row">
+                    <span class="mini-chip">${escapeHtml(account.role)}</span>
+                  </div>
+                </div>
+              </div>
+            </article>
           </div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <h2>Permisos</h2>
-          </div>
-          <article class="toggle-card">
-            <div>
-              <strong>Autenticación de dos factores</strong>
-              <span>Requiere código de verificación al iniciar sesión</span>
-            </div>
-            <span class="toggle-switch"></span>
-          </article>
         </section>
       </div>
     `;
@@ -8475,7 +9401,7 @@
                 : activeView === 'notifications'
                   ? renderSettingsNotifications()
                   : activeView === 'users'
-                    ? renderSettingsUsers()
+                    ? renderSettingsUsers(state)
                     : renderSettingsTelegram(state)
         }
       </div>
@@ -8783,6 +9709,24 @@
       }));
 
     return includeBlank ? [{ value: '', label: blankLabel }, ...rows] : rows;
+  }
+
+  function buildRealOwnerSelectOptions(state, options = {}) {
+    const includeBlank = Boolean(options.includeBlank);
+    const blankLabel = options.blankLabel || 'Sin propietario';
+    const rows = (state.ownersDashboard?.owners || [])
+      .slice()
+      .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), 'es'))
+      .map((owner) => ({
+        value: String(owner.id),
+        label: owner.name,
+      }));
+
+    return includeBlank ? [{ value: '', label: blankLabel }, ...rows] : rows;
+  }
+
+  function getRealOwnerById(state, ownerId) {
+    return (state.ownersDashboard?.owners || []).find((o) => o.id === ownerId) || null;
   }
 
   function getPaddockActivationLabel(activeValue) {
@@ -9615,6 +10559,7 @@
 
     const selectedMonth = getHorseFeedCalendarMonth(payload, historyPayload);
     const draftRows = getHorseFeedPlanDraftRowsForModal(payload, historyPayload);
+    const planDiff = buildHorseFeedPlanDraftDiff(payload, historyPayload);
     const calendarDraftState = buildHorseFeedCalendarDraftDiff(payload, historyPayload, selectedMonth);
     const calendarEntries = calendarDraftState.draftEntries;
     const summary = buildHorseFeedPlanSummary(draftRows, calendarEntries);
@@ -9626,6 +10571,17 @@
     const controlsDisabled = isSaving || isCalendarSaving || isRefreshing;
     const disabledAttr = controlsDisabled ? ' disabled' : '';
     const isOpen = Boolean(payload?.feedPlanOpen);
+    const hasPendingChanges = planDiff.hasChanges || calendarDraftState.hasChanges;
+    const pendingBits = [];
+    if (planDiff.hasChanges) {
+      pendingBits.push(`${planDiff.changeCount} ajuste(s) del plan`);
+    }
+    if (calendarDraftState.hasChanges) {
+      pendingBits.push(`${calendarDraftState.changeCount} marca(s) del calendario`);
+    }
+    const inlineSaveSummary = hasPendingChanges
+      ? `Tenés pendientes ${pendingBits.join(' y ')}. Tocá Guardar todo para escribirlos en Neon y recalcular stock.`
+      : 'Los cambios que hagas acá no se guardan solos. Tocá Guardar todo para escribirlos en Neon y recalcular stock.';
     const accordionSummary = draftRows.length
       ? `${summary.ingredients} ingrediente(s) en ${summary.slots} slot(s). ${summary.completions} marca(s) en ${formatMonthLabel(selectedMonth)}.`
       : `Sin ingredientes cargados todavía para ${horse.name}.`;
@@ -9794,6 +10750,38 @@
                 <div class="modal-callout horse-feed-callout">
                   <strong>Tip para granos y fardos</strong>
                   <span>Usá el plan diario para consumo en kg o unidades chicas. Si terminás un fardo entero, registralo desde Stock para no mezclarlo con la ración diaria.</span>
+                </div>
+
+                <div class="horse-feed-save-bar${hasPendingChanges ? ' is-dirty' : ''}">
+                  <div class="horse-feed-save-copy">
+                    <strong>${escapeHtml(hasPendingChanges ? 'Cambios pendientes' : 'Sin guardado automático')}</strong>
+                    <span>${escapeHtml(inlineSaveSummary)}</span>
+                  </div>
+                  <div class="horse-feed-save-actions">
+                    <button
+                      type="button"
+                      class="btn btn-secondary horse-feed-inline-btn"
+                      ${renderActionAttributes({
+                        action: 'discard-horse-feed-changes',
+                        meta: { horseId: horse.id },
+                      })}
+                      ${hasPendingChanges && !controlsDisabled ? '' : ' disabled'}
+                    >
+                      <span>Descartar</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-primary horse-feed-inline-btn"
+                      ${renderActionAttributes({
+                        action: 'save-horse-feed-changes',
+                        meta: { horseId: horse.id },
+                      })}
+                      ${hasPendingChanges && !controlsDisabled ? '' : ' disabled'}
+                    >
+                      ${renderIcon('check')}
+                      <span>${escapeHtml(isSaving || isCalendarSaving ? 'Guardando...' : 'Guardar todo')}</span>
+                    </button>
+                  </div>
                 </div>
 
                 <datalist id="${escapeHtml(datalistId)}">
@@ -10347,6 +11335,203 @@
     });
   }
 
+  function resolveHorseCareBatchTargets(state, payload) {
+    const horses = Array.isArray(getRealHorseDashboard(state)?.horses)
+      ? getRealHorseDashboard(state).horses
+      : [];
+    const horseById = new Map(
+      horses
+        .map((horse) => [parsePositiveInt(horse?.id), horse])
+        .filter(([horseId, horse]) => Number.isFinite(horseId) && horseId > 0 && horse)
+    );
+    const requestedIds = parsePositiveIntList(payload?.horseIds);
+    const selectedHorses = requestedIds.length
+      ? requestedIds.map((horseId) => horseById.get(horseId)).filter(Boolean)
+      : horses.slice();
+    const selectedHorseIds = new Set(
+      (requestedIds.length ? requestedIds : selectedHorses.map((horse) => horse.id))
+        .map((horseId) => parsePositiveInt(horseId))
+        .filter((horseId) => Number.isFinite(horseId) && horseId > 0)
+    );
+
+    return {
+      horses: selectedHorses.sort((left, right) =>
+        String(left.name || '').localeCompare(String(right.name || ''), 'es')
+      ),
+      selectedHorseIds,
+    };
+  }
+
+  function renderHorseCareBatchChecklist(horses, selectedHorseIds, careType) {
+    const safeHorses = Array.isArray(horses) ? horses : [];
+
+    if (!safeHorses.length) {
+      return `
+        <div class="empty-state-card">
+          <strong>No hay caballos para cargar.</strong>
+          <span>Probá volver al módulo y abrir esta acción con otro filtro.</span>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="horse-care-batch-list">
+        ${safeHorses
+          .map((horse) => {
+            const horseId = parsePositiveInt(horse?.id);
+            const isChecked = selectedHorseIds.has(horseId);
+            const dueDate =
+              careType === 'farrier'
+                ? horse?.care?.farrier?.next_due_date || null
+                : horse?.care?.deworming?.next_due_date || null;
+            const dueStatus = getHorseCareStatusMeta(dueDate);
+            const serviceLabel =
+              careType === 'farrier'
+                ? getHorseFarrierLabel(horse, { fallback: 'Herrero' })
+                : horse?.care?.deworming?.product_name || 'Sin producto previo';
+
+            return `
+              <label class="horse-care-batch-item">
+                <input type="checkbox" name="horseIds" value="${escapeHtml(String(horseId))}"${
+                  isChecked ? ' checked' : ''
+                } />
+                <div class="horse-care-batch-copy">
+                  <div class="horse-care-batch-title">
+                    <strong>${escapeHtml(horse.name || `Caballo ${horseId}`)}</strong>
+                    ${renderBadge(dueStatus.label, dueStatus.tone)}
+                  </div>
+                  <span>${escapeHtml(
+                    [
+                      horse.current_group?.name || 'Individual',
+                      horse.current_location?.paddock_name || 'Sin potrero',
+                      serviceLabel,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  )}</span>
+                  <small>${escapeHtml(dueStatus.detail)}</small>
+                </div>
+              </label>
+            `;
+          })
+          .join('')}
+      </div>
+    `;
+  }
+
+  function renderHorseCareBatchFarrierModal(state, payload) {
+    const targetState = resolveHorseCareBatchTargets(state, payload);
+    const serviceType = normalizeFarrierServiceTypeValue(payload?.serviceType || 'desvasado');
+
+    return renderModalShell({
+      size: 'wide',
+      title: serviceType === 'herrado' ? 'Carga masiva de herrado' : 'Carga masiva de desvasado',
+      subtitle:
+        'Guardamos un evento real por caballo en la base. Si no cargás próxima fecha, la calculamos según el tipo.',
+      content: `
+        <form class="modal-form" data-modal-form data-modal-key="horse-care-batch-farrier">
+          <div class="modal-callout">
+            <strong>Guardado individual por caballo</strong>
+            <span>Esta carga crea un registro en <code>farrier_events</code> para cada caballo seleccionado.</span>
+          </div>
+
+          <div class="modal-body modal-body--two">
+            ${renderModalField({
+              label: 'Tipo de servicio',
+              name: 'serviceType',
+              type: 'select',
+              value: serviceType,
+              options: FARRIER_SERVICE_OPTIONS,
+              required: true,
+            })}
+            ${renderModalField({
+              label: 'Fecha del servicio',
+              name: 'eventDate',
+              type: 'date',
+              value: payload?.eventDate || todayDateString(),
+              required: true,
+            })}
+            ${renderModalField({
+              label: 'Próximo control (opcional)',
+              name: 'nextDueDate',
+              type: 'date',
+              value: payload?.nextDueDate || '',
+              layout: 'wide',
+              hint: 'Si la dejás vacía, usamos 45 días para herrado y 60 para desvasado.',
+            })}
+          </div>
+
+          <section class="horse-care-batch-section">
+            <div class="horse-care-batch-section-head">
+              <strong>Caballos a guardar</strong>
+              ${renderBadge(`${targetState.horses.length} seleccionable(s)`, 'blue')}
+            </div>
+            ${renderHorseCareBatchChecklist(targetState.horses, targetState.selectedHorseIds, 'farrier')}
+          </section>
+
+          ${renderModalFooter([
+            { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+            { label: 'Guardar herrero', tone: 'primary', icon: 'work', submit: true },
+          ])}
+        </form>
+      `,
+    });
+  }
+
+  function renderHorseCareBatchDewormModal(state, payload) {
+    const targetState = resolveHorseCareBatchTargets(state, payload);
+
+    return renderModalShell({
+      size: 'wide',
+      title: 'Desparasitación masiva',
+      subtitle:
+        'Guardamos una desparasitación real por caballo. El repaso queda pendiente para registrar después desde cada ficha.',
+      content: `
+        <form class="modal-form" data-modal-form data-modal-key="horse-care-batch-deworm">
+          <div class="modal-callout">
+            <strong>Guardado individual por caballo</strong>
+            <span>Esta carga crea un registro en <code>deworming_events</code> para cada caballo seleccionado.</span>
+          </div>
+
+          <div class="modal-body modal-body--two">
+            ${renderModalField({
+              label: 'Producto',
+              name: 'productName',
+              type: 'text',
+              value: payload?.productName || '',
+              placeholder: 'Ej. ivermectina',
+              required: true,
+            })}
+            ${renderModalField({
+              label: 'Fecha',
+              name: 'eventDate',
+              type: 'date',
+              value: payload?.eventDate || todayDateString(),
+              required: true,
+            })}
+          </div>
+
+          <section class="horse-care-batch-section">
+            <div class="horse-care-batch-section-head">
+              <strong>Caballos a guardar</strong>
+              ${renderBadge(`${targetState.horses.length} seleccionable(s)`, 'blue')}
+            </div>
+            ${renderHorseCareBatchChecklist(
+              targetState.horses,
+              targetState.selectedHorseIds,
+              'deworm'
+            )}
+          </section>
+
+          ${renderModalFooter([
+            { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+            { label: 'Guardar desparasitación', tone: 'primary', icon: 'shield', submit: true },
+          ])}
+        </form>
+      `,
+    });
+  }
+
   function renderRealHorseHistoryModal(state, payload) {
     const horse = getRealHorseById(state, payload.horseId);
     if (!horse) {
@@ -10729,6 +11914,13 @@
           options: HORSE_ACTIVITY_OPTIONS,
         },
         {
+          label: 'Propietario',
+          name: 'ownerId',
+          type: 'select',
+          value: isEdit ? String(horse.owner_id || '') : '',
+          options: buildRealOwnerSelectOptions(state, { includeBlank: true, blankLabel: 'Sin propietario' }),
+        },
+        {
           label: 'Entrenamiento',
           name: 'trainingStatus',
           type: 'select',
@@ -10761,7 +11953,10 @@
               <span>${escapeHtml(
                 [
                   formatHorseCareLine(horse.care?.deworming, 'Desparasitación'),
-                  formatHorseCareLine(horse.care?.farrier, 'Herraje'),
+                  formatHorseCareLine(
+                    horse.care?.farrier,
+                    getHorseFarrierLabel(horse, { fallback: 'Herrero' })
+                  ),
                 ].join(' · ')
               )}</span>
             </div>
@@ -11993,6 +13188,26 @@
         });
       }
 
+      case 'owner-form': {
+        if (isRealSession(state)) {
+          return renderRealOwnerFormModal(state, payload);
+        }
+
+        return renderFormModal({
+          key: 'owner-form',
+          title: 'Nuevo Propietario',
+          subtitle: 'Registrá un nuevo propietario de caballos',
+          submitLabel: 'Crear Propietario',
+          submitIcon: 'plus',
+          fields: [
+            { label: 'Nombre', name: 'ownerName', type: 'text', placeholder: 'Ej: Juan García', required: true },
+            { label: 'Teléfono', name: 'phone', type: 'tel', placeholder: '+54 9 11 1234-5678' },
+            { label: 'Email', name: 'email', type: 'email', placeholder: 'juan@email.com' },
+            { label: 'Tarifa / caballo / mes ($)', name: 'ratePerHorse', type: 'number', min: '0', step: '100', placeholder: '2500' },
+          ],
+        });
+      }
+
       case 'owner-detail': {
         const owner = getOwnerByName(payload.name);
         return renderInfoModal({
@@ -12044,22 +13259,6 @@
           ],
         });
       }
-
-      case 'owner-form':
-        return renderFormModal({
-          key: 'owner-form',
-          title: 'Nuevo Propietario',
-          subtitle: 'Crea una ficha base para facturación y seguimiento',
-          submitLabel: 'Crear Propietario',
-          submitIcon: 'plus',
-          fields: [
-            { label: 'Nombre Completo', name: 'name', type: 'text', placeholder: 'Nombre y apellido', required: true },
-            { label: 'Email', name: 'email', type: 'email', placeholder: 'correo@ejemplo.com', required: true },
-            { label: 'Teléfono', name: 'phone', type: 'text', placeholder: '+54 9 11...' },
-            { label: 'Tarifa mensual', name: 'monthlyFee', type: 'text', placeholder: '$60,000' },
-            { label: 'Caballos iniciales', name: 'horses', type: 'text', placeholder: 'Zeus, Apolo' },
-          ],
-        });
 
       case 'invoice-create': {
         const owner = getOwnerByName(payload.name);
@@ -12300,6 +13499,18 @@
         }
         return '';
 
+      case 'horse-care-batch-farrier':
+        if (isRealSession(state)) {
+          return renderHorseCareBatchFarrierModal(state, payload);
+        }
+        return '';
+
+      case 'horse-care-batch-deworm':
+        if (isRealSession(state)) {
+          return renderHorseCareBatchDewormModal(state, payload);
+        }
+        return '';
+
       case 'commands':
         return renderInfoModal({
           size: 'wide',
@@ -12505,6 +13716,7 @@
     horsesDashboard: null,
     paddocksDashboard: null,
     stockDashboard: null,
+    ownersDashboard: null,
     calendarEventsByMonth: {},
     horseHistoryById: {},
     paddockDetailById: {},
@@ -12570,6 +13782,8 @@
       case 'horse-deworm-second-dose':
       case 'horse-farrier-event':
       case 'horse-health-event':
+      case 'horse-care-batch-farrier':
+      case 'horse-care-batch-deworm':
         return {
           message: 'Guardando salud del caballo...',
           detail: 'Actualizamos el historial, los próximos controles y las alertas del admin.',
@@ -12957,36 +14171,54 @@
     return payload;
   }
 
+  async function loadOwnersDashboard(options = {}) {
+    if (!isRealSession(store.getState())) {
+      setState({ ownersDashboard: null });
+      return null;
+    }
+
+    const payload = await requestJson(OWNERS_API_URL);
+    setState({
+      ownersDashboard: payload,
+      ...(options.closeModal ? { modal: null } : {}),
+    });
+    return payload;
+  }
+
   async function loadAdminDashboards(options = {}) {
     if (!isRealSession(store.getState())) {
       setState({
         horsesDashboard: null,
         paddocksDashboard: null,
         stockDashboard: null,
+        ownersDashboard: null,
         calendarEventsByMonth: {},
       });
       return null;
     }
 
     const currentCalendarMonth = getCalendarMonthKeyFromOffset(store.getState().calendarMonthOffset || 0);
-    const [horsesResult, paddocksResult, stockResult, calendarResult] = await Promise.allSettled([
+    const [horsesResult, paddocksResult, stockResult, calendarResult, ownersResult] = await Promise.allSettled([
       requestJson(HORSES_API_URL),
       requestJson(PADDOCKS_API_URL),
       requestJson(STOCK_DASHBOARD_API_URL),
       requestJson(buildCalendarEventsUrl(currentCalendarMonth)),
+      requestJson(OWNERS_API_URL),
     ]);
 
     if (
       horsesResult.status !== 'fulfilled' &&
       paddocksResult.status !== 'fulfilled' &&
       stockResult.status !== 'fulfilled' &&
-      calendarResult.status !== 'fulfilled'
+      calendarResult.status !== 'fulfilled' &&
+      ownersResult.status !== 'fulfilled'
     ) {
       throw (
         horsesResult.reason ||
         paddocksResult.reason ||
         stockResult.reason ||
         calendarResult.reason ||
+        ownersResult.reason ||
         new Error('No pudimos cargar el dashboard.')
       );
     }
@@ -12995,11 +14227,13 @@
     const paddocksDashboard = paddocksResult.status === 'fulfilled' ? paddocksResult.value : null;
     const stockDashboard = stockResult.status === 'fulfilled' ? stockResult.value : null;
     const calendarMonthPayload = calendarResult.status === 'fulfilled' ? calendarResult.value : null;
+    const ownersDashboard = ownersResult.status === 'fulfilled' ? ownersResult.value : null;
 
     setState((currentState) => ({
       horsesDashboard,
       paddocksDashboard,
       stockDashboard,
+      ownersDashboard,
       calendarEventsByMonth: {
         ...(currentState.calendarEventsByMonth || {}),
         ...(calendarMonthPayload
@@ -13024,6 +14258,7 @@
       horsesDashboard,
       paddocksDashboard,
       stockDashboard,
+      ownersDashboard,
       calendarMonthPayload,
     };
   }
@@ -13437,6 +14672,7 @@
           activity: values.activity || '',
           sex: values.sex || '',
           trainingStatus: values.trainingStatus || '',
+          ownerId: values.ownerId || '',
         }),
       });
 
@@ -13515,6 +14751,53 @@
       );
     } catch (error) {
       showToast(error.message || 'No pudimos crear el grupo.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitOwnerForm(formData) {
+    const currentState = store.getState();
+    const isEdit = currentState.modal?.payload?.mode === 'edit';
+    const ownerId = parsePositiveInt(currentState.modal?.payload?.ownerId);
+    const values = formDataToObject(formData);
+    const ownerName = String(values.ownerName || '').trim();
+
+    if (!ownerName) {
+      showToast('El nombre del propietario es requerido.', 'critical');
+      return;
+    }
+
+    const horseIds = formData.getAll('horseId').map((v) => parsePositiveInt(v)).filter(Boolean);
+    const ratePerHorse = parseFloat(values.ratePerHorse) || 0;
+
+    setState({ loading: true });
+    try {
+      await requestJson(OWNERS_API_URL, {
+        method: isEdit ? 'PATCH' : 'POST',
+        body: JSON.stringify({
+          ownerId: isEdit ? ownerId : undefined,
+          name: ownerName,
+          phone: values.phone || '',
+          email: values.email || '',
+          notes: values.notes || '',
+          horseIds,
+          ratePerHorse,
+        }),
+      });
+
+      await Promise.all([
+        loadOwnersDashboard({ closeModal: true }),
+        loadHorsesDashboard(),
+      ]);
+
+      showToast(
+        isEdit
+          ? `Propietario actualizado: ${ownerName}`
+          : `Propietario creado: ${ownerName}`
+      );
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar el propietario.', 'critical');
     } finally {
       setState({ loading: false });
     }
@@ -13752,6 +15035,17 @@
       return;
     }
 
+    const shouldReturnToHistory =
+      Object.prototype.hasOwnProperty.call(values, 'returnMonth') ||
+      Object.prototype.hasOwnProperty.call(values, 'returnFeedPlanOpen') ||
+      Object.prototype.hasOwnProperty.call(values, 'returnFeedHistoryOpen');
+
+    if (!shouldReturnToHistory) {
+      setState({ modal: null });
+      await loadAdminDashboards();
+      return;
+    }
+
     const returnMonth = normalizeYearMonth(values.returnMonth) || todayDateString().slice(0, 7);
     setState({
       modal: {
@@ -13970,6 +15264,165 @@
     }
   }
 
+  async function submitHorseCareBatchFarrierForm(formData) {
+    const values = formDataToObject(formData);
+    const horseIds = [...new Set(formData.getAll('horseIds').map((value) => parsePositiveInt(value)).filter(Boolean))];
+    const serviceType = String(values.serviceType || '').trim();
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
+    const nextDueDate = String(values.nextDueDate || '').trim();
+
+    if (!horseIds.length) {
+      showToast('Elegí al menos un caballo para guardar el herrero.', 'critical');
+      return;
+    }
+
+    if (!serviceType) {
+      showToast('Elegí si fue desvasado o herrado.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida para el servicio de herrero.', 'critical');
+      return;
+    }
+
+    if (nextDueDate && !isValidDateString(nextDueDate)) {
+      showToast('La próxima fecha del herrero tiene que ser válida.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      const failures = [];
+      let successCount = 0;
+
+      for (const horseId of horseIds) {
+        const horseName = getRealHorseById(store.getState(), horseId)?.name || `caballo ${horseId}`;
+
+        try {
+          await postMutation({
+            action: 'farrier_event_add',
+            horseId,
+            serviceType,
+            eventDate,
+            nextDueDate: nextDueDate || undefined,
+          });
+          successCount += 1;
+        } catch (error) {
+          failures.push({
+            horseId,
+            horseName,
+            message: error.message || 'No pudimos guardar este caballo.',
+          });
+        }
+      }
+
+      if (successCount > 0) {
+        await loadAdminDashboards({ closeModal: failures.length === 0 });
+      }
+
+      if (failures.length > 0) {
+        updateActiveModalPayload({
+          horseIds: failures.map((entry) => entry.horseId).join(','),
+          serviceType,
+          eventDate,
+          nextDueDate,
+        });
+        showToast(
+          successCount > 0
+            ? `Guardamos herrero para ${successCount} caballo(s). Quedaron ${failures.length} pendiente(s).`
+            : failures[0]?.message || 'No pudimos guardar el herrero masivo.',
+          successCount > 0 ? 'info' : 'critical'
+        );
+        return;
+      }
+
+      showToast(
+        `${successCount} caballo(s) guardados con ${formatFarrierServiceTypeLabel(serviceType).toLowerCase()}.`,
+        'info'
+      );
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar el herrero masivo.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitHorseCareBatchDewormForm(formData) {
+    const values = formDataToObject(formData);
+    const horseIds = [...new Set(formData.getAll('horseIds').map((value) => parsePositiveInt(value)).filter(Boolean))];
+    const productName = String(values.productName || '').trim();
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
+
+    if (!horseIds.length) {
+      showToast('Elegí al menos un caballo para desparasitar.', 'critical');
+      return;
+    }
+
+    if (!productName) {
+      showToast('Cargá el producto desparasitante.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida para la desparasitación.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      const failures = [];
+      let successCount = 0;
+
+      for (const horseId of horseIds) {
+        const horseName = getRealHorseById(store.getState(), horseId)?.name || `caballo ${horseId}`;
+
+        try {
+          await postMutation({
+            action: 'deworm_event_add',
+            horseId,
+            productName,
+            eventDate,
+          });
+          successCount += 1;
+        } catch (error) {
+          failures.push({
+            horseId,
+            horseName,
+            message: error.message || 'No pudimos guardar este caballo.',
+          });
+        }
+      }
+
+      if (successCount > 0) {
+        await loadAdminDashboards({ closeModal: failures.length === 0 });
+      }
+
+      if (failures.length > 0) {
+        updateActiveModalPayload({
+          horseIds: failures.map((entry) => entry.horseId).join(','),
+          productName,
+          eventDate,
+        });
+        showToast(
+          successCount > 0
+            ? `Guardamos desparasitación para ${successCount} caballo(s). Quedaron ${failures.length} pendiente(s).`
+            : failures[0]?.message || 'No pudimos guardar la desparasitación masiva.',
+          successCount > 0 ? 'info' : 'critical'
+        );
+        return;
+      }
+
+      showToast(`${successCount} caballo(s) desparasitados y guardados en Neon.`, 'info');
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar la desparasitación masiva.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
   function buildHorseFeedDraftResetPayload(currentPayload, historyPayload, selectedMonth) {
     return {
       ...currentPayload,
@@ -14057,6 +15510,14 @@
     });
 
     let planMutationPayload = null;
+    let savedPlanItems = [];
+    const negativeStockItemsByFeedItemId = new Map();
+
+    const collectNegativeStockWarnings = (mutationPayload) => {
+      getFeedMutationNegativeStockItems(mutationPayload).forEach((row) => {
+        negativeStockItemsByFeedItemId.set(row.feed_item_id, row);
+      });
+    };
 
     try {
       if (planDiff.hasChanges) {
@@ -14065,8 +15526,17 @@
           horseId: normalizedHorseId,
           items: planSaveItems,
         });
+        savedPlanItems = Array.isArray(planMutationPayload?.feed_plan?.items)
+          ? planMutationPayload.feed_plan.items
+          : Array.isArray(planMutationPayload?.plan_items)
+            ? planMutationPayload.plan_items
+            : [];
+        collectNegativeStockWarnings(planMutationPayload);
 
-        if (Array.isArray(planMutationPayload?.stock_changes) && planMutationPayload.stock_changes.length) {
+        if (
+          Array.isArray(planMutationPayload?.stock_changes) &&
+          planMutationPayload.stock_changes.length
+        ) {
           setState((state) => {
             const nextStockDashboard = applyHorseFeedStockChangesToState(
               state,
@@ -14085,9 +15555,7 @@
             ...(historyPayload || {}),
             feed_plan: {
               ...(historyPayload?.feed_plan || {}),
-              items: Array.isArray(planMutationPayload?.plan_items)
-                ? planMutationPayload.plan_items
-                : [],
+              items: savedPlanItems,
             },
           };
           const sanitizedEntries = sanitizeHorseFeedCalendarDraftEntries(
@@ -14155,6 +15623,7 @@
           eventDate: entry.event_date,
           checked: false,
         });
+        collectNegativeStockWarnings(mutationPayload);
 
         setState((state) =>
           applyHorseFeedCalendarToggleToState(state, normalizedHorseId, mutationPayload)
@@ -14169,6 +15638,7 @@
           eventDate: entry.event_date,
           checked: true,
         });
+        collectNegativeStockWarnings(mutationPayload);
 
         setState((state) =>
           applyHorseFeedCalendarToggleToState(state, normalizedHorseId, mutationPayload)
@@ -14184,8 +15654,8 @@
         historyRefreshResult.status === 'fulfilled'
           ? historyRefreshResult.value
           : getRealHorseHistoryState(latestState, normalizedHorseId)?.data ||
-            (planMutationPayload?.plan_items
-              ? { feed_plan: { items: planMutationPayload.plan_items } }
+            (planMutationPayload
+              ? { feed_plan: { items: savedPlanItems } }
               : historyPayloadAfterPlanSave);
       const savedHorseName =
         planMutationPayload?.horse?.name ||
@@ -14194,6 +15664,22 @@
         'el caballo';
       const refreshFailed =
         historyRefreshResult.status === 'rejected' || stockRefreshResult.status === 'rejected';
+      const negativeStockWarningItems = Array.from(negativeStockItemsByFeedItemId.values()).sort(
+        (left, right) =>
+          String(left.feed_item_name || '').localeCompare(String(right.feed_item_name || ''))
+      );
+      const negativeStockWarningSummary = formatFeedNegativeStockWarningSummary(
+        negativeStockWarningItems
+      );
+      const savedMessageBits = [`Alimentación guardada para ${savedHorseName}.`];
+
+      if (negativeStockWarningSummary) {
+        savedMessageBits.push(negativeStockWarningSummary);
+      }
+
+      if (refreshFailed) {
+        savedMessageBits.push('Si algo se ve viejo, reabrí la ficha.');
+      }
 
       updateActiveModalPayload((currentPayload) => {
         if (Number(currentPayload.horseId) !== normalizedHorseId) {
@@ -14211,21 +15697,26 @@
           feedPlanSaving: false,
           feedCalendarSaving: false,
           feedPlanError: '',
-          feedPlanMessage: refreshFailed
-            ? `Alimentación guardada para ${savedHorseName}. Si algo se ve viejo, reabrí la ficha.`
-            : `Alimentación guardada para ${savedHorseName}.`,
+          feedPlanMessage: savedMessageBits.join(' '),
         };
       });
 
       if (refreshFailed) {
         showToast(
-          'La alimentación se guardó, pero parte del refresco visual quedó pendiente.',
+          negativeStockWarningSummary
+            ? `Plan guardado. ${negativeStockWarningSummary} Parte del refresco visual quedó pendiente.`
+            : 'La alimentación se guardó, pero parte del refresco visual quedó pendiente.',
           'info'
         );
         return;
       }
 
-      showToast('Alimentación guardada y stock recalculado.', 'info');
+      showToast(
+        negativeStockWarningSummary
+          ? `Plan guardado. ${negativeStockWarningSummary}`
+          : 'Alimentación guardada y stock recalculado.',
+        'info'
+      );
     } catch (error) {
       updateActiveModalPayload((currentPayload) => {
         if (Number(currentPayload.horseId) !== normalizedHorseId) {
@@ -14778,6 +16269,35 @@
     }
   }
 
+  async function deleteOwnerById(ownerId) {
+    const owner = getRealOwnerById(store.getState(), ownerId);
+    if (!owner) {
+      showToast('No encontramos ese propietario en la lectura actual.', 'critical');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Vas a eliminar a ${owner.name}. Sus caballos quedarán sin propietario asignado.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await requestJson(OWNERS_API_URL, {
+        method: 'DELETE',
+        body: JSON.stringify({ ownerId }),
+      });
+      await Promise.all([loadOwnersDashboard({ closeModal: true }), loadHorsesDashboard()]);
+      showToast(`${owner.name} eliminado.`);
+    } catch (error) {
+      showToast(error.message || 'No pudimos eliminar el propietario.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
   async function deleteStockMovementById(stockEventId) {
     const currentState = store.getState();
     const movement = getRealStockMovementById(currentState, stockEventId);
@@ -15178,20 +16698,29 @@
     const alertKey = String(payload?.alertKey || '').trim();
     const alertNavKey = String(payload?.alertNavKey || '').trim() || 'home';
 
-    if (alertKey === 'farrier-due') {
+    if (
+      alertKey === 'farrier-due' ||
+      alertKey === 'farrier-shoeing-due' ||
+      alertKey === 'farrier-trim-due'
+    ) {
       setState({
         activeNav: 'horses',
         mobileMenuOpen: false,
         modal: null,
         views: {
           ...(currentState.views || {}),
-          horses: 'individual',
+          horses: 'herrero',
         },
         horseFilters: {
           ...(currentState.horseFilters || {}),
           query: '',
           group: 'all',
-          care: 'farrier-alert',
+          care:
+            alertKey === 'farrier-shoeing-due'
+              ? 'farrier-shoeing-alert'
+              : alertKey === 'farrier-trim-due'
+                ? 'farrier-trim-alert'
+                : 'farrier-alert',
         },
       });
       return;
@@ -15204,7 +16733,7 @@
         modal: null,
         views: {
           ...(currentState.views || {}),
-          horses: 'individual',
+          horses: 'veterinaria',
         },
         horseFilters: {
           ...(currentState.horseFilters || {}),
@@ -15286,16 +16815,47 @@
       if (navKey === 'calendar' && isRealSession(store.getState())) {
         loadCalendarMonthData(nextMonth).catch(() => {});
       }
+
+      if (navKey === 'owners' && isRealSession(store.getState()) && !store.getState().ownersDashboard) {
+        loadOwnersDashboard().catch(() => {});
+      }
       return;
     }
 
     if (viewKey && viewNav) {
-      setState((currentState) => ({
-        views: {
-          ...(currentState.views || {}),
-          [viewNav]: viewKey,
-        },
-      }));
+      setState((currentState) => {
+        const nextPatch = {
+          views: {
+            ...(currentState.views || {}),
+            [viewNav]: viewKey,
+          },
+        };
+
+        if (viewNav === 'horses') {
+          const currentCareFilter = currentState?.horseFilters?.care || 'all';
+          let nextCareFilter = currentCareFilter;
+
+          if (viewKey === 'herrero' && !(currentCareFilter === 'all' || isFarrierCareFilterValue(currentCareFilter))) {
+            nextCareFilter = 'all';
+          }
+
+          if (
+            viewKey === 'veterinaria' &&
+            !(currentCareFilter === 'all' || isVeterinaryCareFilterValue(currentCareFilter))
+          ) {
+            nextCareFilter = 'all';
+          }
+
+          if (nextCareFilter !== currentCareFilter) {
+            nextPatch.horseFilters = {
+              ...(currentState.horseFilters || {}),
+              care: nextCareFilter,
+            };
+          }
+        }
+
+        return nextPatch;
+      });
       return;
     }
 
@@ -15390,6 +16950,11 @@
       return;
     }
 
+    if (action === 'delete-owner') {
+      deleteOwnerById(payload.ownerId);
+      return;
+    }
+
     if (action === 'delete-stock-movement') {
       deleteStockMovementById(payload.stockEventId);
       return;
@@ -15413,7 +16978,7 @@
           ...currentPayload,
           feedPlanDraftRows: [...draftRows, buildHorseFeedPlanDraftRow({ feed_slot: feedSlot })],
           feedPlanError: '',
-          feedPlanMessage: `${getFeedSlotLabel(feedSlot)} lista para sumar un ingrediente. Guardá todo junto para aplicar el cambio.`,
+          feedPlanMessage: `${getFeedSlotLabel(feedSlot)} lista para sumar un ingrediente. Guardá todo para escribir el cambio en Neon.`,
         };
       });
       return;
@@ -15437,7 +17002,7 @@
           ...currentPayload,
           feedPlanDraftRows: draftRows.filter((row) => row.row_key !== rowKey),
           feedPlanError: '',
-          feedPlanMessage: 'Ingrediente removido del plan. Guardá todo junto para aplicar el cambio.',
+          feedPlanMessage: 'Ingrediente removido del plan. Guardá todo para escribir el cambio en Neon.',
         };
       });
       return;
@@ -15728,6 +17293,11 @@
           return;
         }
 
+        if (modalKey === 'owner-form') {
+          submitOwnerForm(new FormData(modalForm));
+          return;
+        }
+
         if (modalKey === 'register-rain') {
           submitRainForm(new FormData(modalForm));
           return;
@@ -15760,6 +17330,16 @@
 
         if (modalKey === 'horse-health-event') {
           submitHorseHealthEventForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'horse-care-batch-farrier') {
+          submitHorseCareBatchFarrierForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'horse-care-batch-deworm') {
+          submitHorseCareBatchDewormForm(new FormData(modalForm));
           return;
         }
       }
@@ -15800,7 +17380,8 @@
       updateActiveModalPayload((currentPayload, currentState) => ({
         ...currentPayload,
         feedPlanError: '',
-        feedPlanMessage: 'Hay cambios pendientes en la alimentación. Guardá todo junto para aplicar.',
+        feedPlanMessage:
+          'Hay cambios pendientes en la alimentación. Guardá todo para escribirlos en Neon.',
         feedPlanDraftRows: updateHorseFeedPlanDraftRows(
           currentState,
           currentPayload,

@@ -1,4 +1,6 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": ".",
   "functions": {
     "api/telegram/*.js": {
       "maxDuration": 30

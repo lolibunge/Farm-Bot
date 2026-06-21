@@ -1,5 +1,5 @@
 const { pool } = require('../../lib/db');
-const { ensureHorseProfileColumns } = require('../../lib/horse-profile');
+const { ensureHorseProfileColumns, normalizeTrainingStatus } = require('../../lib/horse-profile');
 const {
   ensurePaddockTables,
   listGrazingHistory,
@@ -34,34 +34,6 @@ function parseHorseId(value) {
 function parseMonth(value) {
   const normalized = normalizeYearMonth(Array.isArray(value) ? value[0] : value);
   return normalized || todayYearMonth();
-}
-
-function normalizeTrainingStatus(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ');
-
-  if (!normalized) {
-    return null;
-  }
-
-  if (normalized === 'in training' || normalized === 'training' || normalized === 'intraining') {
-    return 'in training';
-  }
-
-  if (
-    normalized === 'breaking in' ||
-    normalized === 'breaking' ||
-    normalized === 'break in' ||
-    normalized === 'breakingin' ||
-    normalized === 'for breaking in' ||
-    normalized === 'horse for breaking in'
-  ) {
-    return 'breaking in';
-  }
-
-  return null;
 }
 
 function filterHorseTimelineRows(rows, enabledModules) {
