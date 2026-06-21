@@ -7,32 +7,7 @@ const {
   getAuthSetup,
   isRequestAuthorized,
 } = require('../../lib/admin-auth');
-
-async function getJsonBody(req) {
-  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
-    return req.body;
-  }
-
-  if (typeof req.body === 'string') {
-    return req.body ? JSON.parse(req.body) : {};
-  }
-
-  if (Buffer.isBuffer(req.body)) {
-    return req.body.length > 0 ? JSON.parse(req.body.toString('utf8')) : {};
-  }
-
-  const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
-
-  if (chunks.length === 0) {
-    return {};
-  }
-
-  const raw = Buffer.concat(chunks).toString('utf8');
-  return raw ? JSON.parse(raw) : {};
-}
+const { getJsonBody } = require('../../lib/request-helpers');
 
 function formatDisplayName(username) {
   const preferred = String(process.env.ADMIN_DISPLAY_NAME || '').trim();

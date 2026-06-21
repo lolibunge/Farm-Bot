@@ -1,5 +1,5 @@
 const { pool } = require('../../lib/db');
-const { ensureHorseProfileColumns } = require('../../lib/horse-profile');
+const { ensureHorseProfileColumns, normalizeTrainingStatus } = require('../../lib/horse-profile');
 const {
   ensurePaddockTables,
   listGrazingHistory,
@@ -34,34 +34,6 @@ function parseHorseId(value) {
 function parseMonth(value) {
   const normalized = normalizeYearMonth(Array.isArray(value) ? value[0] : value);
   return normalized || todayYearMonth();
-}
-
-function normalizeTrainingStatus(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ');
-
-  if (!normalized) {
-    return null;
-  }
-
-  if (normalized === 'in training' || normalized === 'training' || normalized === 'intraining') {
-    return 'in training';
-  }
-
-  if (
-    normalized === 'breaking in' ||
-    normalized === 'breaking' ||
-    normalized === 'break in' ||
-    normalized === 'breakingin' ||
-    normalized === 'for breaking in' ||
-    normalized === 'horse for breaking in'
-  ) {
-    return 'breaking in';
-  }
-
-  return null;
 }
 
 function filterHorseTimelineRows(rows, enabledModules) {
@@ -241,7 +213,9 @@ module.exports = async (req, res) => {
       pool.query(
         `
         SELECT
+          f.id,
           COALESCE(f.event_date::timestamp, f.created_at) AS at,
+          f.event_date,
           f.service_type,
           f.next_due_date
         FROM farrier_events f
@@ -254,9 +228,12 @@ module.exports = async (req, res) => {
       pool.query(
         `
         SELECT
+          h.id,
           COALESCE(h.event_date::timestamp, h.created_at) AS at,
+          h.event_date,
           h.event_type,
-          h.description
+          h.description,
+          h.notes
         FROM horse_health_events h
         WHERE h.horse_id = $1
         ORDER BY COALESCE(h.event_date, h.created_at::date) DESC, h.id DESC
@@ -325,14 +302,19 @@ module.exports = async (req, res) => {
         next_due_date: toIsoDateString(row.next_due_date),
       })),
       farrier_history: (farrierModuleEnabled ? farrierHistoryResult.rows : []).map((row) => ({
+        id: row.id,
         at: row.at instanceof Date ? row.at.toISOString() : String(row.at),
+        event_date: toIsoDateString(row.event_date),
         service_type: row.service_type,
         next_due_date: toIsoDateString(row.next_due_date),
       })),
       health_history: (healthModuleEnabled ? healthHistoryResult.rows : []).map((row) => ({
+        id: row.id,
         at: row.at instanceof Date ? row.at.toISOString() : String(row.at),
+        event_date: toIsoDateString(row.event_date),
         event_type: row.event_type,
         description: row.description,
+        notes: row.notes || null,
       })),
       group_history: (groupsModuleEnabled ? groupHistoryRows : []).map((row) => ({
         id: row.id,

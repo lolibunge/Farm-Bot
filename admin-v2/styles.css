@@ -198,6 +198,8 @@ button {
   padding: 16px 12px 12px;
   background: rgba(255, 255, 255, 0.94);
   border-right: 1px solid var(--line);
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .sidebar-brand {
@@ -594,13 +596,14 @@ button {
   cursor: not-allowed;
 }
 
+.horse-feed-block-head .btn-primary span,
 .btn-primary {
   background: var(--brand);
-  color: #fff;
+  color: var(--surface);
 }
 
 .btn-secondary {
-  background: #fff;
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--line-strong);
 }
@@ -1185,6 +1188,7 @@ button {
 
 .split-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 16px;
 }
@@ -1232,6 +1236,19 @@ button {
 .table-primary span {
   color: var(--muted);
   font-size: 13px;
+  line-height: 1.4;
+}
+
+.plan-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.plan-breakdown span {
+  font-size: 12px;
+  color: var(--muted);
   line-height: 1.4;
 }
 
@@ -2105,6 +2122,66 @@ button {
   background: linear-gradient(90deg, var(--brand) 0%, var(--blue) 60%, var(--teal) 100%);
 }
 
+.processing-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.processing-overlay__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(4px);
+}
+
+.processing-overlay__card {
+  position: relative;
+  width: min(420px, 100%);
+  border-radius: 24px;
+  padding: 28px 24px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(213, 223, 240, 0.9);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.22);
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.processing-overlay__spinner {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  border: 4px solid rgba(18, 183, 73, 0.18);
+  border-top-color: var(--brand);
+  animation: loading-spin 820ms linear infinite;
+}
+
+.processing-overlay__eyebrow {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-dark);
+}
+
+.processing-overlay__card h2 {
+  margin: 0;
+  font-size: clamp(1.45rem, 2vw, 1.8rem);
+  color: var(--ink-strong);
+}
+
+.processing-overlay__card p:last-child {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .modal-layer {
   position: fixed;
   inset: 0;
@@ -2310,6 +2387,39 @@ button {
 .modal-field select:focus,
 .modal-field textarea:focus {
   border-color: rgba(41, 104, 244, 0.24);
+}
+
+.modal-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.modal-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 13px;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.modal-check-row:hover {
+  border-color: rgba(41, 104, 244, 0.28);
+  background: rgba(41, 104, 244, 0.04);
+}
+
+.modal-check-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand);
+  cursor: pointer;
+  flex: 0 0 auto;
 }
 
 .modal-footer {
@@ -2890,6 +3000,20 @@ button {
   gap: 12px;
 }
 
+.horse-history-block-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.horse-history-block-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
 .horse-history-summary-head strong,
 .horse-history-block-head strong,
 .horse-history-health-copy strong,
@@ -2898,6 +3022,7 @@ button {
 }
 
 .horse-history-summary-head span,
+.horse-history-block-head span,
 .horse-history-summary-meta span,
 .horse-history-health-copy span,
 .horse-history-health-copy dt,
@@ -2939,6 +3064,11 @@ button {
   border-color: rgba(255, 133, 51, 0.16);
 }
 
+.horse-history-health-card--blue {
+  background: rgba(37, 99, 235, 0.06);
+  border-color: rgba(37, 99, 235, 0.14);
+}
+
 .horse-history-health-icon {
   width: 40px;
   height: 40px;
@@ -2978,6 +3108,60 @@ button {
   text-align: right;
   font-weight: 600;
   color: var(--text);
+}
+
+.horse-history-health-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.horse-history-health-btn {
+  min-height: 42px;
+}
+
+.horse-feed-section-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.horse-feed-save-block {
+  gap: 0;
+}
+
+.horse-feed-save-bar {
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.horse-feed-save-bar.is-dirty {
+  border-color: rgba(59, 130, 246, 0.18);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.horse-feed-save-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.horse-feed-save-copy span {
+  color: var(--muted);
+}
+
+.horse-feed-save-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .horse-history-timeline {
@@ -3311,6 +3495,43 @@ button {
   opacity: 0.5;
 }
 
+.horse-feed-history-toggle {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+}
+
+.horse-feed-history-toggle-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.horse-feed-history-toggle-copy span,
+.horse-feed-history-toggle-action {
+  color: var(--muted);
+}
+
+.horse-feed-history-toggle-action {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.horse-feed-log-panel {
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 6px;
+}
+
 .horse-feed-log-row {
   border-radius: 14px;
   border: 1px solid var(--line);
@@ -3337,6 +3558,75 @@ button {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.horse-care-hub-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.horse-care-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.horse-care-row-actions .btn {
+  min-width: 0;
+}
+
+.horse-care-batch-section {
+  display: grid;
+  gap: 12px;
+}
+
+.horse-care-batch-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.horse-care-batch-list {
+  display: grid;
+  gap: 10px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.horse-care-batch-item {
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  cursor: pointer;
+}
+
+.horse-care-batch-item input {
+  margin-top: 2px;
+}
+
+.horse-care-batch-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.horse-care-batch-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.horse-care-batch-copy span,
+.horse-care-batch-copy small {
+  color: var(--muted);
 }
 
 .modal-history-list,
@@ -3710,10 +4000,17 @@ button {
   .horse-history-summary-head,
   .horse-history-summary-meta,
   .horse-history-timeline-title,
+  .horse-history-block-head,
   .horse-history-health-copy dl div,
   .horse-feed-block-head,
-  .horse-feed-calendar-header {
+  .horse-feed-calendar-header,
+  .horse-feed-save-bar {
     display: grid;
+  }
+
+  .horse-history-health-actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .horse-feed-summary-grid {
@@ -3739,6 +4036,22 @@ button {
 
   .horse-feed-mobile-label {
     display: block;
+  }
+
+  .horse-feed-save-actions {
+    width: 100%;
+  }
+
+  .horse-feed-save-actions .btn {
+    width: 100%;
+  }
+
+  .horse-care-row-actions {
+    display: grid;
+  }
+
+  .horse-care-row-actions .btn {
+    width: 100%;
   }
 
   .toast-banner {
@@ -3770,6 +4083,10 @@ button {
   }
 
   .horse-feed-log-row {
+    align-items: flex-start;
+  }
+
+  .horse-feed-history-toggle {
     align-items: flex-start;
   }
 

@@ -1,5 +1,5 @@
 const { pool } = require('../../lib/db');
-const { ensureHorseProfileColumns } = require('../../lib/horse-profile');
+const { ensureHorseProfileColumns, normalizeTrainingStatus } = require('../../lib/horse-profile');
 const {
   ensurePaddockTables,
   savePaddock,
@@ -29,146 +29,24 @@ const { ensureFarmSettingsTable, saveFarmSettings } = require('../../lib/farm-se
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
 const { ensureFrostRegistryTable } = require('../../lib/frost-registry');
 const { syncWeatherIntoRainRegistry } = require('../../lib/weather-sync');
-const { toIsoDateString } = require('../../lib/date-helpers');
+const {
+  toIsoDateString,
+  todayDateString,
+  looksLikeDateString,
+  isValidDateString,
+  addDaysToDateString,
+  addMonthsToDateString,
+} = require('../../lib/date-helpers');
 const { requireAdminApiAuth } = require('../../lib/admin-auth');
 const { ensureTableColumns } = require('../../lib/schema');
-
-async function getJsonBody(req) {
-  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
-    return req.body;
-  }
-
-  if (typeof req.body === 'string') {
-    return req.body ? JSON.parse(req.body) : {};
-  }
-
-  if (Buffer.isBuffer(req.body)) {
-    return req.body.length > 0 ? JSON.parse(req.body.toString('utf8')) : {};
-  }
-
-  const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
-
-  if (chunks.length === 0) {
-    return {};
-  }
-
-  const raw = Buffer.concat(chunks).toString('utf8');
-  return raw ? JSON.parse(raw) : {};
-}
-
-function parsePositiveInt(value) {
-  const parsed = Number.parseInt(String(value), 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-  return parsed;
-}
-
-function parseNonNegativeNumber(value) {
-  if (value == null || String(value).trim() === '') {
-    return null;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return null;
-  }
-
-  return parsed;
-}
-
-function parseNonNegativeInteger(value) {
-  if (value == null || String(value).trim() === '') {
-    return null;
-  }
-
-  const parsed = Number.parseInt(String(value), 10);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return null;
-  }
-
-  return parsed;
-}
-
-function parseBooleanValue(value, fallbackValue = false) {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase();
-
-  if (!normalized) {
-    return fallbackValue;
-  }
-
-  if (['true', '1', 'yes', 'active', 'on'].includes(normalized)) {
-    return true;
-  }
-
-  if (['false', '0', 'no', 'inactive', 'off'].includes(normalized)) {
-    return false;
-  }
-
-  return fallbackValue;
-}
-
-function parsePositiveIntArray(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return [...new Set(value.map((entry) => parsePositiveInt(entry)).filter(Boolean))];
-}
-
-function looksLikeDateString(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value));
-}
-
-function isValidDateString(value) {
-  const stringValue = String(value);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(stringValue)) {
-    return false;
-  }
-
-  const [year, month, day] = stringValue.split('-').map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
-}
-
-function todayDateString() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function addDaysToDateString(dateString, daysToAdd) {
-  const date = new Date(`${dateString}T00:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  date.setDate(date.getDate() + daysToAdd);
-  return date.toISOString().slice(0, 10);
-}
-
-function addMonthsToDateString(dateString, monthsToAdd) {
-  const [year, month, day] = String(dateString)
-    .split('-')
-    .map((part) => Number(part));
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  date.setUTCMonth(date.getUTCMonth() + monthsToAdd);
-  return date.toISOString().slice(0, 10);
-}
+const {
+  getJsonBody,
+  parsePositiveInt,
+  parseNonNegativeNumber,
+  parseNonNegativeInteger,
+  parseBooleanValue,
+  parsePositiveIntArray,
+} = require('../../lib/request-helpers');
 
 function getModuleKeyForAdminAction(action) {
   if (
@@ -232,6 +110,8 @@ function getModuleKeyForAdminAction(action) {
 function getFarrierDaysUntilNext(serviceType) {
   const normalized = String(serviceType || '').toLowerCase();
   if (
+    normalized.includes('herrad') ||
+    normalized.includes('herraje') ||
     normalized.includes('shoe') ||
     normalized.includes('shoes') ||
     normalized.includes('shoeing')
@@ -239,34 +119,6 @@ function getFarrierDaysUntilNext(serviceType) {
     return 45;
   }
   return 60;
-}
-
-function normalizeTrainingStatus(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[_-]+/g, ' ');
-
-  if (!normalized) {
-    return '';
-  }
-
-  if (normalized === 'in training' || normalized === 'training' || normalized === 'intraining') {
-    return 'in training';
-  }
-
-  if (
-    normalized === 'breaking in' ||
-    normalized === 'breaking' ||
-    normalized === 'break in' ||
-    normalized === 'breakingin' ||
-    normalized === 'for breaking in' ||
-    normalized === 'horse for breaking in'
-  ) {
-    return 'breaking in';
-  }
-
-  return '';
 }
 
 const ALLOWED_COLORS = new Set([
@@ -2087,9 +1939,13 @@ module.exports = async (req, res) => {
         ok: true,
         action,
         horse: data.horse,
+        plan_items: data.plan_items,
         feed_plan: {
           items: data.plan_items,
         },
+        stock_changes: data.stock_changes,
+        feed_events: data.feed_events,
+        warnings: data.warnings || { negative_stock_items: [] },
       });
       return;
     }
@@ -2131,6 +1987,7 @@ module.exports = async (req, res) => {
         entry: data.entry,
         feed_events: data.feed_events,
         stock_changes: data.stock_changes,
+        warnings: data.warnings || { negative_stock_items: [] },
       });
       return;
     }

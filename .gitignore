@@ -3,3 +3,7 @@
 .env.*
 !.env.example
 .env*.local
+.DS_Store
+node_modules/
+admin-v2/app.min.js
+admin-v2/styles.min.css
