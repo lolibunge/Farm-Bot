@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node --env-file=.env index.js",
+    "start": "node index.js",
     "start:benteveo": "node --env-file=.env.benteveo index.js",
     "build": "esbuild admin-v2/app.js --minify --legal-comments=none --outfile=admin-v2/app.min.js && esbuild admin-v2/styles.css --minify --outfile=admin-v2/styles.min.css",
     "test": "echo \"Error: no test specified\" && exit 1"
