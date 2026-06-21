@@ -5,6 +5,7 @@ const {
   updateAdminV2Horse,
   deleteAdminV2Horse,
 } = require('../../lib/admin-v2/horses');
+const { getAdminV2StockDashboard } = require('../../lib/admin-v2/stock-dashboard');
 
 async function getJsonBody(req) {
   if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
@@ -44,6 +45,11 @@ module.exports = async (req, res) => {
 
   try {
     if (req.method === 'GET') {
+      if (req.query?._view === 'stock') {
+        const payload = await getAdminV2StockDashboard();
+        res.status(200).json(payload);
+        return;
+      }
       const payload = await getAdminV2HorsesDashboard();
       res.status(200).json(payload);
       return;

@@ -9,6 +9,9 @@
       "maxDuration": 30
     }
   },
+  "rewrites": [
+    { "source": "/api/admin-v2/stock-dashboard", "destination": "/api/admin-v2/horses?_view=stock" }
+  ],
   "crons": [
     {
       "path": "/api/reminders",
