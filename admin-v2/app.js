@@ -26,13 +26,17 @@
 
   const HORSE_COLOR_OPTIONS = [
     { value: '', label: 'Sin definir' },
-    { value: 'bay', label: 'Bayo' },
+    { value: 'dune', label: 'Bayo' },
     { value: 'gray', label: 'Tordillo' },
     { value: 'black', label: 'Negro' },
     { value: 'chestnut', label: 'Alazán' },
     { value: 'dune', label: 'Gateado' },
+    { value: 'red', label: 'Colorado' },
     { value: 'dark bay', label: 'Zaino oscuro' },
-    { value: 'blue roan', label: 'Rosillo azulado' },
+    { value: 'red bay', label: 'Zaino colorado' },
+    { value: 'bay', label: 'Zaino' },
+    { value: 'blue roan', label: 'Moro' },
+    { value: 'red roan', label: 'Rosillo colorado' },
   ];
 
   const HORSE_ACTIVITY_OPTIONS = [
@@ -53,6 +57,7 @@
     { value: 'stallion', label: 'Padrillo' },
     { value: 'gelding', label: 'Castrado' },
     { value: 'filly', label: 'Potranca' },
+    { value: 'colt', label: 'Potranco' },
     { value: 'unknown', label: 'Desconocido' },
   ];
 
@@ -69,6 +74,14 @@
     { value: 'spraying', label: 'Fumigación' },
     { value: 'ready_check', label: 'Chequeo de ingreso' },
     { value: 'other', label: 'Otro' },
+  ];
+
+  const VISIT_CATEGORY_OPTIONS = [
+    { value: 'visit', label: 'Visita al campo' },
+    { value: 'deworming', label: 'Desparasitada' },
+    { value: 'farrier', label: 'Desvasada / herrado' },
+    { value: 'vet', label: 'Atención veterinaria' },
+    { value: 'note', label: 'Nota / recordatorio' },
   ];
 
   const FROST_INTENSITY_OPTIONS = [
@@ -1663,16 +1676,30 @@
     return `${formatStockValueLabel(purchaseUnitSize, baseUnit)} por ${purchaseUnitLabel || 'compra'}`;
   }
 
-  function formatHorseAgeLabel(ageYears) {
-    if (ageYears == null || ageYears === '') {
-      return 'Edad sin cargar';
+  function formatHorseAgeLabel(ageYears, dateOfBirth) {
+    if (dateOfBirth) {
+      const birth = new Date(dateOfBirth + 'T00:00:00Z');
+      const now = new Date();
+      const totalMonths =
+        (now.getFullYear() - birth.getUTCFullYear()) * 12 +
+        (now.getMonth() - birth.getUTCMonth()) -
+        (now.getDate() < birth.getUTCDate() ? 1 : 0);
+
+      if (totalMonths < 1) return 'Recién nacido';
+      if (totalMonths < 12) return `${totalMonths} mes${totalMonths === 1 ? '' : 'es'}`;
+
+      const years = Math.floor(totalMonths / 12);
+      const months = totalMonths % 12;
+      const yearLabel = `${years} año${years === 1 ? '' : 's'}`;
+
+      if (months === 0) return yearLabel;
+      if (months === 6) return `${yearLabel} y medio`;
+      return `${yearLabel} ${months} mes${months === 1 ? '' : 'es'}`;
     }
 
+    if (ageYears == null || ageYears === '') return 'Edad sin cargar';
     const parsed = Number(ageYears);
-    if (!Number.isFinite(parsed)) {
-      return 'Edad sin cargar';
-    }
-
+    if (!Number.isFinite(parsed)) return 'Edad sin cargar';
     return `${parsed} año${parsed === 1 ? '' : 's'}`;
   }
 
@@ -3350,6 +3377,7 @@
   }
 
   function buildRealAdminAlerts(state) {
+    const today = todayDateString();
     const horseDashboard = getRealHorseDashboard(state);
     const paddockDashboard = getRealPaddockDashboard(state);
     const stockDashboard = getRealStockDashboard(state);
@@ -3849,6 +3877,11 @@
     return `${CALENDAR_EVENTS_API_URL}?month=${encodeURIComponent(normalizedMonth)}`;
   }
 
+  function extractVisitIdFromKey(eventKey) {
+    const m = String(eventKey || '').match(/^visit-(\d+)$/);
+    return m ? Number(m[1]) : null;
+  }
+
   function getRealCalendarMonthState(state, monthKey) {
     const normalizedMonth = normalizeCalendarMonthValue(monthKey);
     return state?.calendarEventsByMonth?.[normalizedMonth] || null;
@@ -3872,6 +3905,7 @@
     return new Intl.DateTimeFormat('es-UY', {
       day: 'numeric',
       month: 'short',
+      timeZone: 'UTC',
     }).format(parsed);
   }
 
@@ -3947,6 +3981,13 @@
           navKey: 'stock',
           tone: 'green',
         };
+      case 'visit':
+        return {
+          tag: 'Visita',
+          icon: 'pin',
+          navKey: 'calendar',
+          tone: 'blue',
+        };
       default:
         return {
           tag: 'Registro',
@@ -3958,14 +3999,22 @@
   }
 
   function buildRealCalendarCompletedTasks(state, monthKey) {
-    return getRealCalendarEvents(state, monthKey).map((event) => {
+    return getRealCalendarEvents(state, monthKey).filter((event) => {
+      if (event.category !== 'visit') return true;
+      return event.meta === 'done' || event.meta === 'missed';
+    }).map((event) => {
       const meta = getCalendarCategoryMeta(event.category);
+      const isVisit = event.category === 'visit';
+      const visitStatus = isVisit ? (event.meta || 'done') : null;
+      const isMissed = isVisit && visitStatus === 'missed';
       const detailLine = [event.subtitle, event.detail].filter(Boolean).join(' · ');
-      const extraLines = [event.meta, event.notes].filter(Boolean).join(' · ');
+      const extraLines = [event.notes].filter(Boolean).join(' · ');
 
       return {
         key: `event-${event.key}`,
-        source: 'event',
+        source: isVisit ? 'visit' : 'event',
+        visitId: isVisit ? extractVisitIdFromKey(event.key) : null,
+        visitStatus,
         completed: true,
         title: event.title || 'Actividad registrada',
         detail: detailLine || 'Evento registrado en la base.',
@@ -3973,13 +4022,13 @@
         notes: event.notes || '',
         tag: meta.tag,
         icon: meta.icon,
-        navKey: meta.navKey,
+        navKey: isVisit ? null : meta.navKey,
         dateIso: event.event_date,
         dateLabel: formatCalendarDayLabel(event.event_date),
-        priorityTone: 'green',
-        priority: 'Completa',
-        agendaTone: meta.tone,
-        metaLine: event.meta || '',
+        priorityTone: isMissed ? 'warning' : 'green',
+        priority: isMissed ? 'No fui' : 'Completa',
+        agendaTone: isMissed ? 'warning' : meta.tone,
+        metaLine: '',
         sortAt: event.event_date,
       };
     });
@@ -4084,6 +4133,39 @@
         sortAt: readyDate,
       });
     });
+
+    getRealCalendarEvents(state, monthKey)
+      .filter((e) => e.category === 'visit' && e.meta === 'pending')
+      .forEach((e) => {
+        const overdue = e.event_date < today;
+        const near = !overdue && e.event_date <= shiftIsoDateString(today, 7);
+        const priorityTone = overdue ? 'critical' : near ? 'warning' : 'green';
+        const visitId = extractVisitIdFromKey(e.key);
+
+        pendingTasks.push({
+          key: `visit-pending-${e.key}`,
+          source: 'visit',
+          visitId,
+          visitStatus: 'pending',
+          completed: false,
+          title: e.title || 'Visita programada',
+          detail: e.subtitle || 'Campo',
+          description: overdue
+            ? `Visita pendiente desde ${formatDateLabel(e.event_date)}. ¿Fuiste?`
+            : `Visita programada para ${formatDateLabel(e.event_date)}.${e.notes ? ' ' + e.notes : ''}`,
+          notes: e.notes || '',
+          tag: 'Visita',
+          icon: 'pin',
+          navKey: null,
+          dateIso: e.event_date,
+          dateLabel: formatCalendarDayLabel(e.event_date),
+          priorityTone,
+          priority: formatCalendarPriorityLabel(priorityTone, false),
+          agendaTone: getCalendarAgendaTone(priorityTone),
+          metaLine: e.notes || '',
+          sortAt: e.event_date,
+        });
+      });
 
     return pendingTasks.sort((left, right) => {
       const byDate = getIsoSortValue(left.sortAt) - getIsoSortValue(right.sortAt);
@@ -4410,7 +4492,7 @@
   }
 
   function getHorseCardSubtitle(horse) {
-    const parts = [formatHorseAgeLabel(horse.age_years)];
+    const parts = [formatHorseAgeLabel(horse.age_years, horse.date_of_birth)];
     const profileBits = [
       formatValueLabel(horse.activity || '', HORSE_ACTIVITY_OPTIONS),
       formatValueLabel(horse.sex || '', HORSE_SEX_OPTIONS),
@@ -6967,7 +7049,7 @@
                               <div class="horse-care-row-actions">
                                 <button
                                   type="button"
-                                  class="btn btn-secondary horse-feed-inline-btn"
+                                  class="btn btn-secondary"
                                   ${renderActionAttributes({
                                     action: 'open-modal',
                                     value: 'horse-farrier-event',
@@ -6982,7 +7064,7 @@
                                 </button>
                                 <button
                                   type="button"
-                                  class="btn btn-primary horse-feed-inline-btn"
+                                  class="btn btn-secondary"
                                   ${renderActionAttributes({
                                     action: 'open-modal',
                                     value: 'horse-farrier-event',
@@ -7113,7 +7195,7 @@
                               <div class="horse-care-row-actions">
                                 <button
                                   type="button"
-                                  class="btn btn-secondary horse-feed-inline-btn"
+                                  class="btn btn-secondary"
                                   ${renderActionAttributes({
                                     action: 'open-modal',
                                     value: 'horse-deworm-event',
@@ -7128,7 +7210,7 @@
                                 </button>
                                 <button
                                   type="button"
-                                  class="btn btn-primary horse-feed-inline-btn"
+                                  class="btn btn-secondary"
                                   ${renderActionAttributes({
                                     action: 'open-modal',
                                     value: 'horse-health-event',
@@ -10515,7 +10597,7 @@
           <div class="horse-feed-save-actions">
             <button
               type="button"
-              class="btn btn-secondary horse-feed-inline-btn"
+              class="btn btn-secondary"
               ${renderActionAttributes({
                 action: 'discard-horse-feed-changes',
                 meta: { horseId: horse.id },
@@ -10526,7 +10608,7 @@
             </button>
             <button
               type="button"
-              class="btn btn-primary horse-feed-inline-btn"
+              class="btn btn-primary"
               ${renderActionAttributes({
                 action: 'save-horse-feed-changes',
                 meta: { horseId: horse.id },
@@ -10597,7 +10679,7 @@
             </div>
             <button
               type="button"
-              class="btn btn-secondary horse-feed-inline-btn"
+              class="btn btn-secondary"
               ${renderActionAttributes({
                 action: 'add-horse-feed-plan-row',
                 meta: { horseId: horse.id, feedSlot: slot.key },
@@ -10673,7 +10755,7 @@
                           <span class="horse-feed-mobile-label">Acciones</span>
                           <button
                             type="button"
-                            class="btn btn-secondary horse-feed-inline-btn horse-feed-inline-btn--danger"
+                            class="btn btn-secondary--danger"
                             ${renderActionAttributes({
                               action: 'remove-horse-feed-plan-row',
                               meta: { horseId: horse.id, rowKey: row.row_key },
@@ -10760,7 +10842,7 @@
                   <div class="horse-feed-save-actions">
                     <button
                       type="button"
-                      class="btn btn-secondary horse-feed-inline-btn"
+                      class="btn btn-secondary"
                       ${renderActionAttributes({
                         action: 'discard-horse-feed-changes',
                         meta: { horseId: horse.id },
@@ -10771,7 +10853,7 @@
                     </button>
                     <button
                       type="button"
-                      class="btn btn-primary horse-feed-inline-btn"
+                      class="btn btn-primary"
                       ${renderActionAttributes({
                         action: 'save-horse-feed-changes',
                         meta: { horseId: horse.id },
@@ -10901,7 +10983,7 @@
           <div class="horse-feed-calendar-controls">
             <button
               type="button"
-              class="btn btn-secondary horse-feed-inline-btn"
+              class="btn btn-secondary"
               ${renderActionAttributes({
                 action: 'shift-horse-feed-calendar-month',
                 meta: { horseId: horse.id, monthDelta: -1 },
@@ -10919,7 +11001,7 @@
             />
             <button
               type="button"
-              class="btn btn-secondary horse-feed-inline-btn"
+              class="btn btn-secondary"
               ${renderActionAttributes({
                 action: 'set-horse-feed-calendar-month',
                 meta: { horseId: horse.id, month: currentYearMonthString() },
@@ -10930,7 +11012,7 @@
             </button>
             <button
               type="button"
-              class="btn btn-secondary horse-feed-inline-btn"
+              class="btn btn-secondary"
               ${renderActionAttributes({
                 action: 'shift-horse-feed-calendar-month',
                 meta: { horseId: horse.id, monthDelta: 1 },
@@ -12308,35 +12390,52 @@
     });
   }
 
-  function renderRealNewTaskModal() {
-    return renderInfoModal({
-      title: 'Nueva Tarea',
-      subtitle: 'El calendario real todavía no tiene una tabla propia de tareas manuales.',
-      body: `
-        <div class="stack-gap">
-          <div class="modal-detail-card">
-            <strong>Cómo funciona hoy</strong>
-            <span>Esta vista arma tareas reales desde vencimientos de salud, hitos de potreros y eventos ya registrados en la base.</span>
-          </div>
-          <div class="modal-role-help">
-            <article>
-              <strong>Trabajo de campo</strong>
-              <span>Regístralo desde Potreros para que aparezca en el calendario.</span>
-            </article>
-            <article>
-              <strong>Movimiento o cuidado</strong>
-              <span>Usa Caballos para que el evento quede guardado con impacto real.</span>
-            </article>
-            <article>
-              <strong>Lluvia o helada</strong>
-              <span>Regístralo desde Potreros y se verá en el mes correspondiente.</span>
-            </article>
-          </div>
-        </div>
-      `,
-      footerButtons: [
-        { label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } },
-        { label: 'Ir a Potreros', tone: 'primary', trigger: { action: 'close-and-nav', value: 'paddocks' } },
+  function renderRealNewTaskModal(payload) {
+    return renderFormModal({
+      key: 'new-task',
+      title: 'Registrar Evento',
+      subtitle: 'Anotá una visita, cuidado o recordatorio en el calendario',
+      submitLabel: 'Guardar',
+      submitIcon: 'plus',
+      fields: [
+        {
+          label: 'Tipo',
+          name: 'category',
+          type: 'select',
+          value: payload?.category || 'visit',
+          options: VISIT_CATEGORY_OPTIONS,
+          required: true,
+        },
+        {
+          label: 'Título',
+          name: 'title',
+          type: 'text',
+          value: payload?.title || '',
+          placeholder: 'Ej: Visita Ginevra, Desparasitada lote A...',
+          required: true,
+        },
+        {
+          label: 'Fecha',
+          name: 'eventDate',
+          type: 'date',
+          value: payload?.eventDate || todayDateString(),
+          required: true,
+        },
+        {
+          label: 'Campo (opcional)',
+          name: 'farmName',
+          type: 'text',
+          value: payload?.farmName || '',
+          placeholder: 'Ej: Ginevra, Benteveo...',
+        },
+        {
+          label: 'Notas',
+          name: 'notes',
+          type: 'textarea',
+          rows: 4,
+          placeholder: 'Qué revisaste, qué encontraste, próximos pasos...',
+          layout: 'wide',
+        },
       ],
     });
   }
@@ -12409,15 +12508,36 @@
       `,
       footerButtons: [
         { label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } },
-        ...(task.navKey
-          ? [
-              {
-                label: task.completed ? 'Abrir módulo' : 'Resolver en módulo',
-                tone: 'primary',
-                trigger: { action: 'close-and-nav', value: task.navKey },
-              },
-            ]
-          : []),
+        ...(task.source === 'visit' && task.visitId
+          ? task.visitStatus === 'pending'
+            ? [
+                {
+                  label: 'No pude ir',
+                  tone: 'secondary',
+                  trigger: { action: 'mark-visit-status', value: 'missed', meta: { visitId: String(task.visitId) } },
+                },
+                {
+                  label: '✓ Fui',
+                  tone: 'primary',
+                  trigger: { action: 'mark-visit-status', value: 'done', meta: { visitId: String(task.visitId) } },
+                },
+              ]
+            : [
+                {
+                  label: 'Desmarcar',
+                  tone: 'secondary',
+                  trigger: { action: 'mark-visit-status', value: 'pending', meta: { visitId: String(task.visitId) } },
+                },
+              ]
+          : task.navKey
+            ? [
+                {
+                  label: task.completed ? 'Abrir módulo' : 'Resolver en módulo',
+                  tone: 'primary',
+                  trigger: { action: 'close-and-nav', value: task.navKey },
+                },
+              ]
+            : []),
       ],
     });
   }
@@ -12995,7 +13115,7 @@
 
       case 'new-task':
         if (isRealSession(state)) {
-          return renderRealNewTaskModal();
+          return renderRealNewTaskModal(payload);
         }
 
         return renderFormModal({
@@ -13793,6 +13913,11 @@
         return {
           message: 'Guardando registro climático...',
           detail: 'Sumamos el evento y refrescamos los paneles relacionados.',
+        };
+      case 'new-task':
+        return {
+          message: 'Guardando evento...',
+          detail: 'Registramos el evento en el calendario.',
         };
       default:
         return {
@@ -16075,6 +16200,60 @@
     }
   }
 
+  async function markVisitStatus(visitId, status) {
+    if (!visitId || !status) {
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      await postMutation({ action: 'farm_visit_update', id: visitId, status });
+      await loadAdminDashboards({ closeModal: true });
+      showToast(status === 'done' ? 'Visita marcada como realizada.' : 'Visita marcada como no realizada.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos actualizar la visita.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitFarmVisitForm(formData) {
+    const values = formDataToObject(formData);
+    const category = String(values.category || 'visit').trim();
+    const title = String(values.title || '').trim();
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
+    const farmName = String(values.farmName || '').trim();
+    const notes = String(values.notes || '').trim();
+
+    if (!title) {
+      showToast('Escribí un título para el evento.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      const payload = await postMutation({
+        action: 'farm_visit_save',
+        category,
+        title,
+        eventDate,
+        farmName: farmName || undefined,
+        notes: notes || undefined,
+      });
+
+      await loadAdminDashboards({ closeModal: true });
+      showToast(
+        `"${payload?.visit?.title || title}" guardado para el ${formatDateLabel(payload?.visit?.event_date || eventDate)}.`
+      );
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar el evento.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
   async function submitFieldWorkForm(formData) {
     const currentState = store.getState();
     const values = formDataToObject(formData);
@@ -16270,7 +16449,7 @@
   }
 
   async function deleteOwnerById(ownerId) {
-    const owner = getRealOwnerById(store.getState(), ownerId);
+    const owner = getRealOwnerById(store.getState(), parsePositiveInt(ownerId));
     if (!owner) {
       showToast('No encontramos ese propietario en la lectura actual.', 'critical');
       return;
@@ -16287,7 +16466,7 @@
     try {
       await requestJson(OWNERS_API_URL, {
         method: 'DELETE',
-        body: JSON.stringify({ ownerId }),
+        body: JSON.stringify({ ownerId: owner.id }),
       });
       await Promise.all([loadOwnersDashboard({ closeModal: true }), loadHorsesDashboard()]);
       showToast(`${owner.name} eliminado.`);
@@ -16945,6 +17124,11 @@
       return;
     }
 
+    if (action === 'mark-visit-status') {
+      markVisitStatus(parsePositiveInt(payload.visitId), actionValue);
+      return;
+    }
+
     if (action === 'delete-horse') {
       deleteHorseById(payload.horseId);
       return;
@@ -17305,6 +17489,11 @@
 
         if (modalKey === 'register-frost') {
           submitFrostForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'new-task') {
+          submitFarmVisitForm(new FormData(modalForm));
           return;
         }
 

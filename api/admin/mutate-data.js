@@ -28,6 +28,7 @@ const {
 const { ensureFarmSettingsTable, saveFarmSettings } = require('../../lib/farm-settings');
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
 const { ensureFrostRegistryTable } = require('../../lib/frost-registry');
+const { ensureFarmVisitsTable } = require('../../lib/farm-visits');
 const { syncWeatherIntoRainRegistry } = require('../../lib/weather-sync');
 const {
   toIsoDateString,
@@ -102,6 +103,10 @@ function getModuleKeyForAdminAction(action) {
 
   if (action === 'rain_save' || action === 'rain_weather_sync' || action === 'frost_save') {
     return 'rain';
+  }
+
+  if (action === 'farm_visit_save') {
+    return null;
   }
 
   return null;
@@ -353,6 +358,7 @@ module.exports = async (req, res) => {
     await ensureFeedPlanningTables();
     await ensureRainRegistryTable();
     await ensureFrostRegistryTable();
+    await ensureFarmVisitsTable();
 
     const body = await getJsonBody(req);
     const action = String(body.action || '').trim().toLowerCase();
@@ -2529,6 +2535,88 @@ module.exports = async (req, res) => {
       return;
     }
 
+    if (action === 'farm_visit_save') {
+      const ALLOWED_VISIT_CATEGORIES = new Set(['visit', 'deworming', 'farrier', 'vet', 'note']);
+      const category = String(body.category || 'visit').trim().toLowerCase();
+      const title = String(body.title || '').trim();
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const farmName = body.farmName ? String(body.farmName).trim() : null;
+      const notes = body.notes ? String(body.notes).trim() : '';
+
+      if (!title) {
+        res.status(400).json({ ok: false, error: 'title is required' });
+        return;
+      }
+
+      if (!ALLOWED_VISIT_CATEGORIES.has(category)) {
+        res.status(400).json({ ok: false, error: 'invalid category' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      const saveResult = await pool.query(
+        `
+        INSERT INTO farm_visits (event_date, category, title, farm_name, notes)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, event_date, category, title, farm_name, notes
+        `,
+        [eventDateRaw, category, title, farmName || null, notes || null]
+      );
+
+      const row = saveResult.rows[0];
+      res.status(200).json({
+        ok: true,
+        action,
+        visit: {
+          id: row.id,
+          event_date: toIsoDateString(row.event_date),
+          category: row.category,
+          title: row.title,
+          farm_name: row.farm_name || null,
+          notes: row.notes || null,
+        },
+      });
+      return;
+    }
+
+    if (action === 'farm_visit_update') {
+      const ALLOWED_VISIT_STATUSES = new Set(['pending', 'done', 'missed']);
+      const id = parsePositiveInt(body.id);
+      const status = String(body.status || '').trim().toLowerCase();
+
+      if (!id) {
+        res.status(400).json({ ok: false, error: 'id is required' });
+        return;
+      }
+
+      if (!ALLOWED_VISIT_STATUSES.has(status)) {
+        res.status(400).json({ ok: false, error: 'status must be pending, done, or missed' });
+        return;
+      }
+
+      const updateResult = await pool.query(
+        `UPDATE farm_visits SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, status`,
+        [status, id]
+      );
+
+      if (updateResult.rowCount === 0) {
+        res.status(404).json({ ok: false, error: 'Visit not found' });
+        return;
+      }
+
+      const row = updateResult.rows[0];
+      res.status(200).json({
+        ok: true,
+        action,
+        visit: { id: row.id, status: row.status },
+      });
+      return;
+    }
+
     if (action === 'rain_weather_sync') {
       const data = await syncWeatherIntoRainRegistry();
 
@@ -3018,7 +3106,7 @@ module.exports = async (req, res) => {
       res.status(400).json({
         ok: false,
         error:
-        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, or admin_modules_save.',
+        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
       });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);

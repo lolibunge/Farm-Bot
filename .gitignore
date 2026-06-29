@@ -7,3 +7,4 @@
 node_modules/
 admin-v2/app.min.js
 admin-v2/styles.min.css
+.env*
