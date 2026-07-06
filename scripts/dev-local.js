@@ -31,6 +31,36 @@ const REWRITES = [
     destination: '/api/admin-v2/horses',
     extraQuery: { _view: 'stock' },
   },
+  {
+    source: '/api/admin-v2/owner-ledger',
+    destination: '/api/admin-v2/owners',
+    extraQuery: { resource: 'ledger' },
+  },
+  {
+    source: '/api/admin-v2/owner-statement',
+    destination: '/api/admin-v2/owners',
+    extraQuery: { resource: 'statement' },
+  },
+  {
+    source: '/api/admin-v2/owner-feed-purchases',
+    destination: '/api/admin-v2/owners',
+    extraQuery: { resource: 'feed-purchases' },
+  },
+  {
+    source: '/api/admin-v2/owner-expense-split',
+    destination: '/api/admin-v2/owners',
+    extraQuery: { resource: 'expense-split' },
+  },
+  {
+    source: '/api/admin-v2/owner-expense-split-drafts',
+    destination: '/api/admin-v2/owners',
+    extraQuery: { resource: 'expense-split-drafts' },
+  },
+  {
+    source: '/api/admin-v2/general-expenses',
+    destination: '/api/admin-v2/owners',
+    extraQuery: { resource: 'general-expenses' },
+  },
 ];
 
 // Static directories served at these URL prefixes
