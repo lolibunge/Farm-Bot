@@ -11,6 +11,7 @@ const {
   savePaddock,
   savePaddockWorkEvent,
   updatePaddockWorkEvent,
+  extendPaddockReadyDate,
   findHorseGroupByName,
   listHorseGroups,
   saveHorseGroup,
@@ -1322,6 +1323,61 @@ Status: ${data.paddock.active ? 'Active' : 'Inactive'}
 Paddock ID: ${data.paddock.id}
 Raw message ID: ${rawMessageId}`
         );
+        continue;
+      }
+
+      // -----------------------------
+      // PADDOCK READY DATE (extend/override the rest period)
+      // paddock ready <paddock name> | <YYYY-MM-DD> | [notes]
+      // -----------------------------
+      if (lowerMessage.startsWith('paddock ready ')) {
+        const parts = messageText
+          .slice('paddock ready '.length)
+          .split('|')
+          .map((part) => part.trim());
+        const [paddockNameRaw, readyDateRaw, notesRaw] = parts;
+
+        if (!paddockNameRaw || !readyDateRaw) {
+          await ctx.reply('Use: paddock ready <paddock name> | <YYYY-MM-DD> | [notes]');
+          continue;
+        }
+
+        if (!isValidDateString(readyDateRaw)) {
+          await ctx.reply(`Invalid calendar date: ${readyDateRaw}`);
+          continue;
+        }
+
+        const paddock = await findPaddockByName(paddockNameRaw);
+
+        if (!paddock) {
+          const paddocks = await listPaddockNames();
+          await ctx.reply(
+            `Paddock not found: ${paddockNameRaw}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        try {
+          const data = await extendPaddockReadyDate({
+            paddockId: paddock.id,
+            readyToGrazeOn: readyDateRaw,
+            notes: notesRaw || null,
+            telegramUserId,
+          });
+
+          await ctx.reply(
+            `Paddock ready date updated ✅
+
+Paddock: ${data.paddock.name}
+Ready to graze: ${formatDateForReply(data.paddock_work_event.ready_to_graze_on)}
+${notesRaw ? `Notes: ${notesRaw}\n` : ''}Raw message ID: ${rawMessageId}`
+          );
+        } catch (error) {
+          await ctx.reply(error.message || 'Could not update the ready date for that paddock.');
+        }
         continue;
       }
 

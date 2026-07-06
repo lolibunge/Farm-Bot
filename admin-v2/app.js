@@ -5,11 +5,17 @@
   const HORSES_API_URL = '/api/admin-v2/horses';
   const PADDOCKS_API_URL = '/api/admin-v2/paddocks';
   const STOCK_DASHBOARD_API_URL = '/api/admin-v2/stock-dashboard';
+  const GENERAL_EXPENSES_API_URL = '/api/admin-v2/general-expenses';
+  const OWNER_STATEMENT_API_URL = '/api/admin-v2/owner-statement';
+  const OWNER_FEED_PURCHASES_API_URL = '/api/admin-v2/owner-feed-purchases';
+  const OWNER_EXPENSE_SPLIT_API_URL = '/api/admin-v2/owner-expense-split';
+  const OWNER_EXPENSE_SPLIT_DRAFTS_API_URL = '/api/admin-v2/owner-expense-split-drafts';
   const CALENDAR_EVENTS_API_URL = '/api/admin/calendar-events';
   const HORSE_HISTORY_API_URL = '/api/admin/horse-history';
   const DATA_MUTATE_API_URL = '/api/admin/mutate-data';
   const TELEGRAM_LINK_API_URL = '/api/admin-v2/telegram-link';
   const OWNERS_API_URL = '/api/admin-v2/owners';
+  const OWNER_LEDGER_API_URL = '/api/admin-v2/owner-ledger';
   const TELEGRAM_WEB_FALLBACK_URL = 'https://web.telegram.org/';
 
   const DEFAULT_ACTIVE_NAV = 'home';
@@ -1190,14 +1196,27 @@
         if (owners.length === 0) return 'Sin propietarios registrados';
         return `${owners.length} ${owners.length === 1 ? 'propietario' : 'propietarios'} · ${totalHorses} ${totalHorses === 1 ? 'caballo' : 'caballos'}`;
       },
-      actions: [
-        {
-          label: 'Nuevo Propietario',
-          tone: 'primary',
-          icon: 'plus',
-          trigger: { action: 'open-modal', value: 'owner-form', meta: { mode: 'create' } },
-        },
-      ],
+      getActions(state) {
+        const actions = [
+          {
+            label: 'Nuevo Propietario',
+            tone: 'primary',
+            icon: 'plus',
+            trigger: { action: 'open-modal', value: 'owner-form', meta: { mode: 'create' } },
+          },
+        ];
+
+        if (isRealSession(state)) {
+          actions.unshift({
+            label: 'Repartir gasto',
+            tone: 'secondary',
+            icon: 'cart',
+            trigger: { action: 'open-modal', value: 'owner-expense-split-form' },
+          });
+        }
+
+        return actions;
+      },
     },
     stock: {
       title: 'Stock y Contabilidad',
@@ -1264,20 +1283,32 @@
     records: {
       title: 'Registros de Actividad',
       subtitle: 'Historial completo de todas las operaciones',
-      actions: [
-        {
-          label: 'Filtros',
-          tone: 'secondary',
-          icon: 'filter',
-          trigger: { action: 'open-modal', value: 'advanced-filters' },
-        },
-        {
-          label: 'Exportar',
-          tone: 'secondary',
-          icon: 'download',
-          trigger: { action: 'toast', value: 'Exportación dummy preparada. En la siguiente fase conectamos el archivo real.' },
-        },
-      ],
+      getActions(state) {
+        const f = state.recordsFilters || {};
+        const isFiltered =
+          (f.module && f.module !== 'Todos') ||
+          (f.type && f.type !== 'Todos') ||
+          f.from ||
+          f.to ||
+          (f.channel && f.channel !== 'Todos');
+        return [
+          isFiltered
+            ? { label: 'Limpiar filtros', tone: 'secondary', icon: 'close', trigger: { action: 'clear-records-filters' } }
+            : null,
+          {
+            label: isFiltered ? 'Filtros activos' : 'Filtros',
+            tone: isFiltered ? 'primary' : 'secondary',
+            icon: 'filter',
+            trigger: { action: 'open-modal', value: 'advanced-filters' },
+          },
+          {
+            label: 'Exportar',
+            tone: 'secondary',
+            icon: 'download',
+            trigger: { action: 'toast', value: 'Exportación dummy preparada. En la siguiente fase conectamos el archivo real.' },
+          },
+        ].filter(Boolean);
+      },
     },
     settings: {
       title: 'Configuración',
@@ -2848,7 +2879,7 @@
     if (!rows.length) {
       return `
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head ${escapeHtml(chart?.title || '').trim().toLowerCase().replace(/\s+/g, '-')}">
             <div>
               <h2>${escapeHtml(chart?.title || 'Distribución de costos')}</h2>
               <span class="subtle-text">${escapeHtml(chart?.message || 'Todavía no hay datos suficientes para construir la distribución.')}</span>
@@ -2865,7 +2896,7 @@
 
     return `
       <section class="panel">
-        <div class="panel-head">
+        <div class="panel-head ${escapeHtml(chart?.title || '').trim().toLowerCase().replace(/\s+/g, '-')}">
           <div>
             <h2>${escapeHtml(chart.title || 'Distribución de costos')}</h2>
             ${chart.message ? `<span class="subtle-text">${escapeHtml(chart.message)}</span>` : ''}
@@ -2922,7 +2953,7 @@
 
     return `
       <section class="panel">
-        <div class="panel-head">
+        <div class="panel-head ${escapeHtml(horseCosts?.title || '').trim().toLowerCase().replace(/\s+/g, '-')}">
           <div>
             <h2>${escapeHtml(horseCosts?.title || 'Costo por caballo')}</h2>
             <span class="subtle-text">
@@ -3043,7 +3074,7 @@
 
     return `
       <section class="panel">
-        <div class="panel-head">
+        <div class="panel-head ${escapeHtml(productCosts?.title || '').trim().toLowerCase().replace(/\s+/g, '-')}">
           <div>
             <h2>${escapeHtml(productCosts?.title || 'Costo por producto')}</h2>
             ${
@@ -3162,7 +3193,7 @@
 
     return `
       <section class="panel panel--soft">
-        <div class="panel-head">
+        <div class="panel-head ${escapeHtml(serviceGaps?.title || '').trim().toLowerCase().replace(/\s+/g, '-')}">
           <div>
             <h2>${escapeHtml(serviceGaps?.title || 'Servicios fuera del cálculo')}</h2>
             ${
@@ -5135,6 +5166,15 @@
                   />
                   <small>Queda visible como referencia hasta conectar la rotación real del grupo.</small>
                 </label>
+                <label class="field-block">
+                  <span>Fecha de movimiento</span>
+                  <input
+                    type="date"
+                    name="eventDate"
+                    value="${escapeHtml(todayDateString())}"
+                  />
+                  <small>Fecha efectiva del ingreso al potrero. Usada al agregar caballos al grupo.</small>
+                </label>
               </div>
             </section>
           </div>
@@ -5211,6 +5251,7 @@
       arrow: '<path d="M5 12h14" /><path d="m13 6 6 6-6 6" />',
       chevronLeft: '<path d="m15 6-6 6 6 6" />',
       chevronRight: '<path d="m9 6 6 6-6 6" />',
+      chevronDown: '<path d="m6 9 6 6 6-6" />',
       swap: '<path d="m7 7 3-3 3 3" /><path d="M10 4v12" /><path d="m17 17-3 3-3-3" /><path d="M14 20V8" />',
       edit: '<path d="m4 20 4.5-1 9-9-3.5-3.5-9 9Z" /><path d="m12.5 6 3.5 3.5" /><path d="M4 20h5" />',
       rain: '<path d="M12 4c2.8 3.3 5.5 6 5.5 9a5.5 5.5 0 0 1-11 0c0-3 2.7-5.7 5.5-9Z" /><path d="M9 16.5h6" />',
@@ -5334,6 +5375,16 @@
     } else if (field.type === 'textarea') {
       control = `
         <textarea name="${escapeHtml(field.name)}" rows="${escapeHtml(field.rows || 3)}" placeholder="${escapeHtml(field.placeholder || '')}"${readonly}${required}${extraAttributes}>${escapeHtml(value)}</textarea>
+      `;
+    } else if (field.type === 'checkbox') {
+      return `
+        <label class="modal-field modal-field--checkbox${field.layout === 'wide' ? ' modal-field--wide' : ''}">
+          <input type="checkbox" name="${escapeHtml(field.name)}" value="true"${field.checked ? ' checked' : ''}${disabled}${extraAttributes} />
+          <span class="modal-field-checkbox-label">
+            ${label}
+            ${hint}
+          </span>
+        </label>
       `;
     } else {
       control = `
@@ -5470,6 +5521,10 @@
     const horses = (getRealHorseDashboard(state)?.horses || [])
       .slice()
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
+    const ownerType = isEdit ? (owner.owner_type || 'pension') : (payload?.ownerType || 'pension');
+    const rateLabel = ownerType === 'family'
+      ? 'Aporte a mantenimiento / caballo / mes ($)'
+      : 'Tarifa de pensión / caballo / mes ($)';
 
     return renderFormModal({
       key: 'owner-form',
@@ -5495,6 +5550,18 @@
           layout: 'wide',
         },
         {
+          label: 'Tipo de propietario',
+          name: 'ownerType',
+          type: 'select',
+          value: ownerType,
+          options: [
+            { value: 'pension', label: 'Pensionado (paga tarifa mensual)' },
+            { value: 'family', label: 'Familia (aporta a mantenimiento del campo)' },
+          ],
+          hint: 'Familia: hijos del dueño del campo. No pagan pensión, sino un aporte fijo a mantenimiento (pradera, electrificador, manguera, etc.).',
+          layout: 'wide',
+        },
+        {
           label: 'Teléfono',
           name: 'phone',
           type: 'tel',
@@ -5509,13 +5576,14 @@
           placeholder: 'juan@email.com',
         },
         {
-          label: 'Tarifa por caballo / mes ($)',
+          label: rateLabel,
           name: 'ratePerHorse',
           type: 'number',
           value: isEdit ? String(owner.rate_per_horse || '') : '',
           min: '0',
-          step: '100',
+          step: 'any',
           placeholder: '2500',
+          layout: 'wide',
         },
         {
           label: 'Notas',
@@ -5551,6 +5619,1270 @@
           </div>
         `
         : '',
+    });
+  }
+
+  function renderOwnerLedgerFormModal(state, payload) {
+    const ownerId = parsePositiveInt(payload?.ownerId);
+    const owner = getRealOwnerById(state, ownerId);
+    if (!owner) {
+      return '';
+    }
+
+    const entryType = payload?.entryType === 'charge' ? 'charge' : 'payment';
+    const isPayment = entryType === 'payment';
+
+    return renderFormModal({
+      key: 'owner-ledger-form',
+      title: isPayment ? `Registrar pago de ${owner.name}` : `Registrar cargo de ${owner.name}`,
+      subtitle: isPayment
+        ? 'Sumá un pago recibido para actualizar el saldo de la cuenta corriente.'
+        : 'Sumá un cargo (pensión, gasto extra, etc.) a la cuenta corriente del propietario.',
+      submitLabel: isPayment ? 'Guardar pago' : 'Guardar cargo',
+      submitIcon: isPayment ? 'check' : 'plus',
+      columns: 2,
+      fields: [
+        {
+          label: 'Tipo de movimiento',
+          name: 'entryType',
+          type: 'select',
+          value: entryType,
+          options: [
+            { value: 'payment', label: 'Pago recibido' },
+            { value: 'charge', label: 'Cargo / factura' },
+          ],
+          required: true,
+        },
+        {
+          label: 'Monto',
+          name: 'amount',
+          type: 'number',
+          value: '',
+          min: '0',
+          step: 'any',
+          placeholder: '2500',
+          required: true,
+        },
+        {
+          label: 'Moneda',
+          name: 'currency',
+          type: 'select',
+          value: payload?.currency === 'USD' ? 'USD' : 'UYU',
+          options: [
+            { value: 'UYU', label: 'Pesos (UYU)' },
+            { value: 'USD', label: 'Dólares (USD)' },
+          ],
+        },
+        {
+          label: 'Fecha',
+          name: 'entryDate',
+          type: 'date',
+          value: todayDateString(),
+          required: true,
+        },
+        {
+          label: 'Descripción',
+          name: 'description',
+          type: 'text',
+          value: '',
+          placeholder: isPayment ? 'Ej: Transferencia julio' : 'Ej: Pensión julio 2026',
+          layout: 'wide',
+        },
+        {
+          label: 'Notas',
+          name: 'notes',
+          type: 'textarea',
+          rows: 2,
+          value: '',
+          placeholder: 'Observaciones...',
+          layout: 'wide',
+        },
+      ],
+      extraBody: `<input type="hidden" name="ownerId" value="${escapeHtml(String(owner.id))}" />`,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: isPayment ? 'Guardar pago' : 'Guardar cargo', tone: 'primary', icon: isPayment ? 'check' : 'plus', submit: true },
+      ],
+    });
+  }
+
+  function getGeneralExpenseById(state, expenseId) {
+    const id = parsePositiveInt(expenseId);
+    if (!id) {
+      return null;
+    }
+    const generalExpenses = state.stockDashboard?.stock_dashboard?.accounting_panel?.general_expenses;
+    const entries = generalExpenses?.recent_entries || [];
+    return entries.find((e) => e.id === id) || null;
+  }
+
+  function renderGeneralExpenseFormModal(state, payload) {
+    const isEdit = payload?.mode === 'edit';
+    const existing = isEdit ? getGeneralExpenseById(state, payload?.expenseId) : null;
+    if (isEdit && !existing) {
+      return '';
+    }
+
+    // Once the user edits any field, a live re-render kicks in (for the
+    // cantidad x precio unitario calculation) and rebuilds this whole form
+    // from `payload`. So every field must prefer whatever is already in
+    // payload (the live, in-progress edit) over the original snapshot in
+    // `existing` - otherwise edits get silently reverted the moment focus
+    // moves to another field.
+    const fieldValue = (key, fallback) => (payload?.[key] !== undefined ? payload[key] : fallback);
+
+    const quantityRaw = !isEdit ? fieldValue('quantity', '') : '';
+    const unit = !isEdit ? fieldValue('unit', '') : '';
+    const unitPriceRaw = !isEdit ? fieldValue('unitPrice', '') : '';
+    const parsedQuantity = parseFloat(quantityRaw);
+    const parsedUnitPrice = parseFloat(unitPriceRaw);
+    const computedAmount =
+      !isEdit && Number.isFinite(parsedQuantity) && parsedQuantity > 0 && Number.isFinite(parsedUnitPrice) && parsedUnitPrice > 0
+        ? Number((parsedQuantity * parsedUnitPrice).toFixed(2))
+        : null;
+    const amount = computedAmount != null
+      ? String(computedAmount)
+      : fieldValue('amount', isEdit ? String(existing.amount) : '');
+
+    const fields = [
+      {
+        label: 'Descripción',
+        name: 'description',
+        type: 'text',
+        value: fieldValue('description', isEdit ? existing.description : ''),
+        placeholder: 'Ej: Laboreo de tierra, reparación de tranquera...',
+        required: true,
+        layout: 'wide',
+        attributes: { 'data-care-form-field': 'description' },
+      },
+    ];
+
+    if (!isEdit) {
+      fields.push(
+        {
+          label: 'Cantidad',
+          name: 'quantity',
+          type: 'number',
+          value: quantityRaw,
+          min: '0',
+          step: 'any',
+          placeholder: '10',
+          hint: 'Opcional (ej: hectáreas, bolsas, horas)',
+          attributes: { 'data-care-form-field': 'quantity' },
+        },
+        {
+          label: 'Unidad',
+          name: 'unit',
+          type: 'text',
+          value: unit,
+          placeholder: 'hectáreas, bolsas, horas...',
+          hint: 'Opcional',
+          attributes: { 'data-care-form-field': 'unit' },
+        },
+        {
+          label: 'Precio unitario',
+          name: 'unitPrice',
+          type: 'number',
+          value: unitPriceRaw,
+          min: '0',
+          step: 'any',
+          placeholder: '100',
+          hint: 'Opcional',
+          attributes: { 'data-care-form-field': 'unitPrice' },
+        }
+      );
+    }
+
+    fields.push(
+      {
+        label: 'Monto total',
+        name: 'amount',
+        type: 'number',
+        value: amount,
+        min: '0',
+        step: 'any',
+        placeholder: '5000',
+        required: true,
+        hint: computedAmount != null
+          ? `Calculado: ${parsedQuantity} × ${parsedUnitPrice.toLocaleString('es-AR')}`
+          : (isEdit ? '' : 'Si no cargás cantidad y precio unitario, escribilo directo acá'),
+        attributes: { 'data-care-form-field': 'amount' },
+      },
+      {
+        label: 'Moneda',
+        name: 'currency',
+        type: 'select',
+        value: fieldValue('currency', isEdit ? existing.currency : 'UYU'),
+        options: [
+          { value: 'UYU', label: 'Pesos (UYU)' },
+          { value: 'USD', label: 'Dólares (USD)' },
+        ],
+        attributes: { 'data-care-form-field': 'currency' },
+      },
+      {
+        label: 'Fecha',
+        name: 'expenseDate',
+        type: 'date',
+        value: fieldValue('expenseDate', isEdit ? existing.expense_date : todayDateString()),
+        required: true,
+        attributes: { 'data-care-form-field': 'expenseDate' },
+      },
+      {
+        label: 'Categoría',
+        name: 'category',
+        type: 'text',
+        value: fieldValue('category', isEdit ? existing.category : ''),
+        placeholder: 'Ej: Mantenimiento, combustible, laboreo...',
+        attributes: { 'data-care-form-field': 'category' },
+      },
+      {
+        label: 'Proyecto (opcional)',
+        name: 'groupName',
+        type: 'text',
+        value: fieldValue('groupName', isEdit ? existing.group_name : ''),
+        placeholder: 'Ej: Siembra otoño/invierno 2026',
+        hint: 'Eligí un proyecto ya creado de la lista, o escribí uno nuevo para crearlo (ej: "Siembra otoño/invierno 2026").',
+        layout: 'wide',
+        attributes: { 'data-care-form-field': 'groupName', list: 'general-expense-projects' },
+      },
+      {
+        label: '¿Quién puso la plata por esto? (opcional)',
+        name: 'buyerOwnerId',
+        type: 'select',
+        value: fieldValue('buyerOwnerId', isEdit ? String(existing.buyer_owner_id || '') : ''),
+        options: [
+          { value: '', label: 'La Ercilia (el establecimiento)' },
+          ...((state.ownersDashboard?.owners || [])
+            .slice()
+            .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'))
+            .map((o) => ({ value: String(o.id), label: o.name }))),
+        ],
+        hint: 'Si un propietario adelantó la plata de este insumo puntual, marcalo acá. Al repartir el proyecto entre todos, esa persona ya no paga de nuevo por esta parte (y si puso de más, le queda a favor).',
+        layout: 'wide',
+        attributes: { 'data-care-form-field': 'buyerOwnerId' },
+      },
+      {
+        label: 'Notas',
+        name: 'notes',
+        type: 'textarea',
+        rows: 2,
+        value: fieldValue('notes', isEdit ? existing.notes : ''),
+        placeholder: 'Ej: doble pasada, $50/hect cada una...',
+        layout: 'wide',
+        attributes: { 'data-care-form-field': 'notes' },
+      }
+    );
+
+    return renderFormModal({
+      key: 'general-expense-form',
+      title: isEdit ? `Editar ${existing.description}` : 'Agregar gasto general',
+      subtitle: isEdit
+        ? 'Corregí los datos de este gasto, o asignale un proyecto para poder repartirlo.'
+        : 'Cargá una compra o gasto del campo que no es de un caballo o propietario puntual. Si es por unidad (hectárea, bolsa, hora...), cargá cantidad y precio unitario y calculamos el total.',
+      submitLabel: isEdit ? 'Guardar cambios' : 'Guardar gasto',
+      submitIcon: isEdit ? 'check' : 'plus',
+      columns: 2,
+      fields,
+      extraBody: `
+        <datalist id="general-expense-projects">
+          ${((state.stockDashboard?.stock_dashboard?.accounting_panel?.general_expenses?.groups) || [])
+            .map((g) => `<option value="${escapeHtml(g.group_name)}"></option>`)
+            .join('')}
+        </datalist>
+        ${isEdit ? `<input type="hidden" name="expenseId" value="${escapeHtml(String(existing.id))}" />` : ''}
+      `,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        ...(isEdit
+          ? [{ label: 'Eliminar', tone: 'danger', icon: 'close', trigger: { action: 'delete-general-expense', meta: { expenseId: existing.id } } }]
+          : []),
+        { label: isEdit ? 'Guardar cambios' : 'Guardar gasto', tone: 'primary', icon: isEdit ? 'check' : 'plus', submit: true },
+      ],
+    });
+  }
+
+  function groupFeedPurchasesByMonth(purchases) {
+    const groups = new Map();
+
+    (Array.isArray(purchases) ? purchases : []).forEach((purchase) => {
+      const monthKey = String(purchase.purchase_date || '').slice(0, 7) || 'sin-fecha';
+      if (!groups.has(monthKey)) {
+        groups.set(monthKey, {
+          monthKey,
+          monthLabel: monthKey === 'sin-fecha' ? 'Sin fecha' : formatMonthLabel(monthKey),
+          entries: [],
+          subtotal: 0,
+          productSummary: new Map(),
+        });
+      }
+
+      const group = groups.get(monthKey);
+      group.entries.push(purchase);
+      group.subtotal += Number(purchase.amount) || 0;
+
+      const productKey = String(purchase.product_name || 'Otro').trim() || 'Otro';
+      if (!group.productSummary.has(productKey)) {
+        group.productSummary.set(productKey, { amount: 0, quantityLabels: [] });
+      }
+      const productRow = group.productSummary.get(productKey);
+      productRow.amount += Number(purchase.amount) || 0;
+      if (purchase.quantity_label) {
+        productRow.quantityLabels.push(purchase.quantity_label);
+      }
+    });
+
+    return Array.from(groups.values())
+      .sort((a, b) => (a.monthKey < b.monthKey ? 1 : -1))
+      .map((group) => ({
+        ...group,
+        productSummary: Array.from(group.productSummary.entries())
+          .map(([productName, data]) => ({
+            product_name: productName,
+            amount: data.amount,
+            quantity_summary: data.quantityLabels.join(', '),
+          }))
+          .sort((a, b) => b.amount - a.amount),
+      }));
+  }
+
+  function renderRealOwnerDetailModal(state, payload) {
+    const ownerId = parsePositiveInt(payload?.ownerId);
+    const owner = getRealOwnerById(state, ownerId);
+    if (!owner) {
+      return '';
+    }
+
+    const isFamily = owner.owner_type === 'family';
+    const typeBadgeLabel = isFamily ? 'Familia' : 'Pensionado';
+    const typeBadgeTone = isFamily ? 'purple' : 'blue';
+    const rateStatLabel = isFamily ? 'Aporte mantenimiento / caballo' : 'Tarifa / caballo';
+    const cm = owner.current_month || {};
+    const ledger = owner.ledger || {};
+    const balancesByCurrency = ledger.balances_by_currency || { UYU: { balance: ledger.balance || 0 } };
+    const balance = balancesByCurrency.UYU?.balance || 0;
+    const balanceTone = balance > 0 ? 'critical' : balance < 0 ? 'green' : 'gray';
+    const balanceLabel = balance > 0
+      ? `Debe ${formatCurrencyLabel(balance)}`
+      : balance < 0
+        ? `A favor ${formatCurrencyLabel(Math.abs(balance))}`
+        : 'Al día';
+    // Dólares se muestran aparte para no mezclar el saldo (solo si hay
+    // movimientos en USD para este propietario).
+    const usdBalance = balancesByCurrency.USD?.balance;
+    const hasUsdBalance = typeof usdBalance === 'number' && Math.abs(usdBalance) > 0.001;
+    const usdBalanceLabel = hasUsdBalance
+      ? (usdBalance > 0 ? `Debe ${formatMoneyLabel(usdBalance, 'USD')}` : `A favor ${formatMoneyLabel(Math.abs(usdBalance), 'USD')}`)
+      : '';
+    const horseCosts = Array.isArray(owner.horse_cost_breakdown) ? owner.horse_cost_breakdown : [];
+    const allEntries = Array.isArray(ledger.all_entries) ? ledger.all_entries : [];
+    const generateChargeLabel = isFamily ? 'Generar aporte mensual' : 'Generar cargo mensual';
+    const feedPurchases = owner.feed_purchases || {};
+    const allFeedPurchases = Array.isArray(feedPurchases.all) ? feedPurchases.all : [];
+    const feedStock = Array.isArray(feedPurchases.stock) ? feedPurchases.stock : [];
+
+    return renderInfoModal({
+      size: 'wide',
+      title: owner.name,
+      subtitle: `${typeBadgeLabel} · Detalle financiero y operativo`,
+      body: `
+        <div class="modal-summary-grid">
+          <article class="modal-stat-card">
+            <span>Tipo</span>
+            <strong>${escapeHtml(typeBadgeLabel)}</strong>
+            <small>${escapeHtml(String(owner.horse_count))} ${owner.horse_count === 1 ? 'caballo' : 'caballos'}</small>
+          </article>
+          <article class="modal-stat-card">
+            <span>Costo real ${escapeHtml(cm.label || 'este mes')}</span>
+            <strong>${cm.total_cost > 0 ? formatCurrencyLabel(cm.total_cost) : '—'}</strong>
+            <small>${cm.own_feed_cost > 0 ? `Incluye ${formatCurrencyLabel(cm.own_feed_cost)} de compras propias` : (owner.rate_per_horse > 0 ? `${escapeHtml(rateStatLabel)}: $${owner.rate_per_horse.toLocaleString('es-AR')}` : 'Sin tarifa configurada')}</small>
+          </article>
+          <article class="modal-stat-card">
+            <span>Cuenta corriente</span>
+            <strong>${formatCurrencyLabel(balance < 0 ? Math.abs(balance) : balance)}</strong>
+            <small>${escapeHtml(balanceLabel)}${hasUsdBalance ? ` · ${escapeHtml(usdBalanceLabel)}` : ''}</small>
+          </article>
+        </div>
+
+        <div class="modal-detail-card">
+          <strong>Contacto y notas</strong>
+          <div class="stacked-info stacked-info--tight" style="margin-top:8px">
+            ${owner.email ? `<span>${renderIcon('mail')} ${escapeHtml(owner.email)}</span>` : '<span>Sin email cargado</span>'}
+            ${owner.phone ? `<span>${renderIcon('phone')} ${escapeHtml(owner.phone)}</span>` : '<span>Sin teléfono cargado</span>'}
+            <span>${owner.notes ? escapeHtml(owner.notes) : 'Sin notas.'}</span>
+          </div>
+        </div>
+
+        <div class="modal-detail-card">
+          <strong>Costo por caballo (${escapeHtml(cm.label || 'este mes')})</strong>
+          ${
+            horseCosts.length > 0
+              ? `
+                <div class="table-wrap" style="margin-top:10px">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Caballo</th>
+                        <th>Alimento</th>
+                        <th>Herrero</th>
+                        <th>Desparasitación</th>
+                        <th>Veterinaria</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${horseCosts.map((row) => `
+                        <tr>
+                          <td><strong>${escapeHtml(row.horse_name)}</strong></td>
+                          <td>${row.feed_cost > 0 ? formatCurrencyLabel(row.feed_cost) : '—'}</td>
+                          <td>${row.farrier_cost > 0 ? formatCurrencyLabel(row.farrier_cost) : '—'}</td>
+                          <td>${row.deworm_cost > 0 ? formatCurrencyLabel(row.deworm_cost) : '—'}</td>
+                          <td>${row.health_cost > 0 ? formatCurrencyLabel(row.health_cost) : '—'}</td>
+                          <td><strong>${formatCurrencyLabel(row.total_cost)}</strong></td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              `
+              : `<p class="text-muted" style="font-size:13px;margin-top:8px">Todavía no hay costos cargados por caballo este mes.</p>`
+          }
+        </div>
+
+        <div class="modal-detail-card">
+          <div class="owner-ledger-head">
+            <strong>Compras de alimento propias</strong>
+            ${renderBadge(
+              cm.own_feed_cost > 0 ? `${escapeHtml(formatCurrencyLabel(cm.own_feed_cost))} en ${escapeHtml(cm.label || 'este mes')}` : `Sin compras en ${escapeHtml(cm.label || 'este mes')}`,
+              cm.own_feed_cost > 0 ? 'orange' : 'gray'
+            )}
+          </div>
+          <span class="subtle-text">Lo que vos (u otro propietario) compran por su cuenta para sus caballos: avena, maíz, semitín, fardos, etc. No afecta la cuenta corriente, es solo para que tengas tu costo real y tu stock personal.</span>
+          <div class="split-actions" style="margin-top:12px">
+            <button
+              type="button"
+              class="btn btn-secondary btn-grow"
+              ${renderActionAttributes({
+                action: 'open-modal',
+                value: 'owner-feed-purchase-form',
+                meta: { ownerId: owner.id, movementType: 'purchase' },
+              })}
+            >
+              ${renderIcon('cart')}
+              <span>Registrar compra</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary btn-grow"
+              ${renderActionAttributes({
+                action: 'open-modal',
+                value: 'owner-feed-purchase-form',
+                meta: { ownerId: owner.id, movementType: 'consumption' },
+              })}
+            >
+              ${renderIcon('arrow')}
+              <span>Registrar consumo</span>
+            </button>
+          </div>
+          ${
+            feedStock.length > 0
+              ? `
+                <div class="mini-list" style="margin-top:12px">
+                  ${feedStock.map((row) => `
+                    <div class="mini-list-row">
+                      <div><strong>${escapeHtml(row.product_name)}</strong><span>Stock actual</span></div>
+                      <strong class="${row.current_stock < 0 ? 'text-critical' : ''}">${escapeHtml(String(row.current_stock))} ${escapeHtml(row.unit || '')}</strong>
+                    </div>
+                  `).join('')}
+                </div>
+              `
+              : ''
+          }
+          ${
+            allFeedPurchases.length > 0
+              ? groupFeedPurchasesByMonth(allFeedPurchases).map((group) => `
+                  <div class="feed-purchase-month-group">
+                    <div class="owner-ledger-head" style="margin-top:16px">
+                      <strong>${escapeHtml(group.monthLabel)}</strong>
+                      <span>${formatCurrencyLabel(group.subtotal)}</span>
+                    </div>
+                    <div class="mini-list" style="margin-top:6px">
+                      ${group.productSummary.map((row) => `
+                        <div class="mini-list-row">
+                          <div>
+                            <strong>${escapeHtml(row.product_name)}</strong>
+                            ${row.quantity_summary ? `<span>${escapeHtml(row.quantity_summary)}</span>` : ''}
+                          </div>
+                          <strong>${formatCurrencyLabel(row.amount)}</strong>
+                        </div>
+                      `).join('')}
+                    </div>
+                    <div class="mini-list" style="margin-top:10px">
+                      ${group.entries.map((purchase) => `
+                        <div class="mini-list-row">
+                          <div>
+                            <strong>${purchase.movement_type === 'consumption' ? 'Consumo' : 'Compra'}</strong>
+                            <span>${escapeHtml(purchase.product_name)} · ${escapeHtml(formatCompactDateLabel(purchase.purchase_date))}${purchase.quantity_label ? ` · ${escapeHtml(purchase.quantity_label)}` : ''}${purchase.notes ? ` · ${escapeHtml(purchase.notes)}` : ''}</span>
+                          </div>
+                          <div class="owner-ledger-entry-actions">
+                            <span class="${purchase.movement_type === 'consumption' ? 'text-critical' : 'text-green'}">${purchase.movement_type === 'consumption' ? '−' : '+'}${purchase.amount > 0 ? formatCurrencyLabel(purchase.amount) : (purchase.quantity_label || '')}</span>
+                            <button
+                              type="button"
+                              class="icon-button"
+                              title="Eliminar"
+                              ${renderActionAttributes({
+                                action: 'delete-owner-feed-purchase',
+                                meta: { purchaseId: purchase.id, ownerId: owner.id },
+                              })}
+                            >
+                              ${renderIcon('close')}
+                            </button>
+                          </div>
+                        </div>
+                      `).join('')}
+                    </div>
+                  </div>
+                `).join('<hr class="modal-divider" />')
+              : `<p class="text-muted" style="font-size:13px;margin-top:10px">Todavía no hay compras de alimento registradas.</p>`
+          }
+        </div>
+
+        <div class="modal-detail-card">
+          <div class="owner-ledger-head">
+            <strong>Cuenta corriente</strong>
+            ${renderBadge(balanceLabel, balanceTone)}
+          </div>
+          <div class="split-actions" style="margin-top:12px">
+            <button
+              type="button"
+              class="btn btn-secondary btn-grow"
+              ${renderActionAttributes({
+                action: 'open-modal',
+                value: 'owner-ledger-form',
+                meta: { ownerId: owner.id, entryType: 'payment' },
+              })}
+            >
+              ${renderIcon('check')}
+              <span>Registrar pago</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary btn-grow"
+              ${renderActionAttributes({
+                action: 'open-modal',
+                value: 'owner-ledger-form',
+                meta: { ownerId: owner.id, entryType: 'charge' },
+              })}
+            >
+              ${renderIcon('plus')}
+              <span>Registrar cargo</span>
+            </button>
+            ${owner.rate_per_horse > 0 ? `
+              <button
+                type="button"
+                class="btn btn-ghost btn-grow"
+                ${renderActionAttributes({
+                  action: 'generate-owner-charge',
+                  meta: { ownerId: owner.id },
+                })}
+              >
+                ${renderIcon('calendar')}
+                <span>${escapeHtml(generateChargeLabel)}</span>
+              </button>
+            ` : ''}
+            <button
+              type="button"
+              class="btn btn-ghost btn-grow"
+              ${renderActionAttributes({
+                action: 'open-modal',
+                value: 'owner-statement-form',
+                meta: { ownerId: owner.id },
+              })}
+            >
+              ${renderIcon('records')}
+              <span>Generar estado de cuenta</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="modal-detail-card">
+          <strong>Historial completo de movimientos</strong>
+          ${
+            allEntries.length > 0
+              ? `
+                <div class="mini-list" style="margin-top:10px">
+                  ${allEntries.map((entry) => `
+                    <div class="mini-list-row">
+                      <div>
+                        <strong>${entry.entry_type === 'payment' ? 'Pago' : 'Cargo'} · ${escapeHtml(formatCompactDateLabel(entry.entry_date))}</strong>
+                        <span>${escapeHtml(entry.description || (entry.entry_type === 'payment' ? 'Pago registrado' : 'Cargo registrado'))}${entry.notes ? ` · ${escapeHtml(entry.notes)}` : ''}</span>
+                      </div>
+                      <div class="owner-ledger-entry-actions">
+                        <strong class="${entry.entry_type === 'payment' ? 'text-green' : 'text-critical'}">
+                          ${entry.entry_type === 'payment' ? '+' : '-'}${formatMoneyLabel(entry.amount, entry.currency)}
+                        </strong>
+                        <button
+                          type="button"
+                          class="icon-button"
+                          title="Eliminar movimiento"
+                          ${renderActionAttributes({
+                            action: 'delete-owner-ledger-entry',
+                            meta: { entryId: entry.id, ownerId: owner.id },
+                          })}
+                        >
+                          ${renderIcon('close')}
+                        </button>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              `
+              : `<p class="text-muted" style="font-size:13px;margin-top:8px">Todavía no hay movimientos registrados.</p>`
+          }
+        </div>
+      `,
+      footerButtons: [
+        { label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Editar', tone: 'primary', icon: 'edit', trigger: { action: 'open-modal', value: 'owner-form', meta: { mode: 'edit', ownerId: owner.id } } },
+      ],
+    });
+  }
+
+  function renderOwnerFeedPurchaseFormModal(state, payload) {
+    const ownerId = parsePositiveInt(payload?.ownerId);
+    const owner = getRealOwnerById(state, ownerId);
+    if (!owner) {
+      return '';
+    }
+
+    const movementType = payload?.movementType === 'consumption' ? 'consumption' : 'purchase';
+    const isConsumption = movementType === 'consumption';
+    const quantityRaw = payload?.quantity !== undefined ? payload.quantity : '';
+    const unit = payload?.unit !== undefined ? payload.unit : '';
+    const unitPriceRaw = payload?.unitPrice !== undefined ? payload.unitPrice : '';
+    const parsedQuantity = parseFloat(quantityRaw);
+    const parsedUnitPrice = parseFloat(unitPriceRaw);
+    const computedAmount =
+      Number.isFinite(parsedQuantity) && parsedQuantity > 0 && Number.isFinite(parsedUnitPrice) && parsedUnitPrice > 0
+        ? Number((parsedQuantity * parsedUnitPrice).toFixed(2))
+        : null;
+    const amount = computedAmount != null
+      ? String(computedAmount)
+      : (payload?.amount !== undefined ? payload.amount : '');
+
+    const fields = [
+      {
+        label: 'Tipo de movimiento',
+        name: 'movementType',
+        type: 'select',
+        value: movementType,
+        options: [
+          { value: 'purchase', label: 'Compra (suma al stock)' },
+          { value: 'consumption', label: 'Consumo (resta del stock)' },
+        ],
+        hint: 'Consumo: cuando tus caballos van gastando lo que ya compraste (ej: fardos).',
+        layout: 'wide',
+        attributes: { 'data-care-form-field': 'movementType' },
+      },
+      {
+        label: 'Producto',
+        name: 'productName',
+        type: 'text',
+        value: payload?.productName || '',
+        placeholder: 'Ej: Avena, Maíz, Semitín, Fardos...',
+        required: true,
+        layout: 'wide',
+        attributes: { 'data-care-form-field': 'productName' },
+      },
+      {
+        label: 'Cantidad',
+        name: 'quantity',
+        type: 'number',
+        value: quantityRaw,
+        min: '0',
+        step: 'any',
+        placeholder: '4',
+        required: isConsumption,
+        hint: isConsumption ? 'Cuánto se consumió' : 'Opcional, para calcular stock y total',
+        attributes: { 'data-care-form-field': 'quantity' },
+      },
+      {
+        label: 'Unidad',
+        name: 'unit',
+        type: 'text',
+        value: unit,
+        placeholder: 'bolsas, kg, fardos...',
+        hint: 'Opcional',
+        attributes: { 'data-care-form-field': 'unit' },
+      },
+    ];
+
+    if (!isConsumption) {
+      fields.push(
+        {
+          label: 'Precio unitario ($)',
+          name: 'unitPrice',
+          type: 'number',
+          value: unitPriceRaw,
+          min: '0',
+          step: 'any',
+          placeholder: '420',
+          hint: 'Opcional',
+          attributes: { 'data-care-form-field': 'unitPrice' },
+        },
+        {
+          label: 'Monto total ($)',
+          name: 'amount',
+          type: 'number',
+          value: amount,
+          min: '0',
+          step: 'any',
+          placeholder: '1680',
+          hint: computedAmount != null
+            ? `Calculado: ${parsedQuantity} × $${parsedUnitPrice.toLocaleString('es-AR')}`
+            : 'Opcional: dejalo vacío si no sabés el precio (ej: lo compraste hace mucho, o lo produjiste en el campo).',
+          attributes: { 'data-care-form-field': 'amount' },
+        }
+      );
+    }
+
+    fields.push(
+      {
+        label: 'Fecha',
+        name: 'purchaseDate',
+        type: 'date',
+        value: payload?.purchaseDate || todayDateString(),
+        required: true,
+        attributes: { 'data-care-form-field': 'purchaseDate' },
+      },
+      {
+        label: 'Notas',
+        name: 'notes',
+        type: 'textarea',
+        rows: 2,
+        value: payload?.notes || '',
+        placeholder: 'Observaciones...',
+        layout: 'wide',
+        attributes: { 'data-care-form-field': 'notes' },
+      }
+    );
+
+    return renderFormModal({
+      key: 'owner-feed-purchase-form',
+      title: isConsumption ? `Registrar consumo de ${owner.name}` : `Compra de alimento de ${owner.name}`,
+      subtitle: isConsumption
+        ? 'Descontá del stock lo que tus caballos ya consumieron.'
+        : 'Registrá lo que compraste por tu cuenta para tus caballos. Si cargás cantidad y precio unitario, calculamos el total solos.',
+      columns: 2,
+      fields,
+      extraBody: `<input type="hidden" name="ownerId" value="${escapeHtml(String(owner.id))}" />`,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: isConsumption ? 'Guardar consumo' : 'Guardar compra', tone: 'primary', icon: 'cart', submit: true },
+      ],
+    });
+  }
+
+  function renderOwnerExpenseSplitFormModal(state, payload) {
+    const owners = (state.ownersDashboard?.owners || [])
+      .slice()
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
+
+    const alreadyLogged = Boolean(payload?.alreadyLogged);
+
+    // Horse-level selection: not every horse an owner has necessarily
+    // grazes/eats from this particular gasto (e.g. some of Loli's horses
+    // are elsewhere), so we derive who consumes this and how much from
+    // exactly which horses are ticked, instead of "all of this owner's
+    // horses or none".
+    // NOTE: real horse rows only carry owner_id (no owner name string), so
+    // we resolve the display name ourselves from the owners list.
+    const ownerNameById = new Map(owners.map((o) => [o.id, o.name]));
+    const allHorses = (getRealHorseDashboard(state)?.horses || [])
+      .filter((h) => h.owner_id)
+      .map((h) => ({ ...h, ownerName: ownerNameById.get(h.owner_id) || '(propietario desconocido)' }))
+      .slice()
+      .sort((a, b) => {
+        const ownerCompare = String(a.ownerName || '').localeCompare(String(b.ownerName || ''), 'es');
+        return ownerCompare !== 0 ? ownerCompare : String(a.name || '').localeCompare(String(b.name || ''), 'es');
+      });
+
+    const includedHorseIds = new Set(
+      (Array.isArray(payload?.includeHorseIds) ? payload.includeHorseIds : allHorses.map((h) => h.id))
+        .map((id) => parsePositiveInt(id))
+        .filter(Boolean)
+    );
+
+    const horseCountByOwnerId = new Map();
+    for (const horse of allHorses) {
+      if (!includedHorseIds.has(horse.id)) continue;
+      horseCountByOwnerId.set(horse.owner_id, (horseCountByOwnerId.get(horse.owner_id) || 0) + 1);
+    }
+
+    const consumingOwners = owners
+      .filter((o) => horseCountByOwnerId.has(o.id))
+      .map((o) => ({ ...o, horse_count: horseCountByOwnerId.get(o.id) }));
+    const totalHorses = consumingOwners.reduce((sum, o) => sum + (o.horse_count || 0), 0);
+
+    // Available regardless of how this modal was opened: if it wasn't
+    // triggered from a project's "Repartir este gasto" button (no
+    // payload.insumos yet), try to match the typed/selected Descripción
+    // against an existing Stock project so the insumos + total still load.
+    const stockGroups = state.stockDashboard?.stock_dashboard?.accounting_panel?.general_expenses?.groups || [];
+    const descriptionValue = payload?.description || '';
+    const matchedGroup = !Array.isArray(payload?.insumos) && descriptionValue
+      ? stockGroups.find((g) => g.group_name === descriptionValue)
+      : null;
+    const insumos = Array.isArray(payload?.insumos)
+      ? payload.insumos
+      : matchedGroup
+        ? matchedGroup.entries.map((e) => ({
+            id: e.id,
+            description: e.description,
+            amount: e.amount,
+            currency: e.currency,
+            buyerOwnerId: e.buyer_owner_id || null,
+            buyerOwnerName: e.buyer_owner_name || '',
+          }))
+        : null;
+
+    const includedInsumoIds = new Set(
+      (Array.isArray(payload?.includeInsumoIds) ? payload.includeInsumoIds : (insumos || []).map((i) => i.id))
+        .map((id) => parsePositiveInt(id))
+        .filter(Boolean)
+    );
+
+    // Default the amount from the (matched or passed-in) insumos total the
+    // first time we have them and the user hasn't typed/edited anything yet.
+    let defaultAmount = '';
+    let defaultCurrencyHint = 'UYU';
+    if (insumos && insumos.length > 0) {
+      const included = insumos.filter((ins) => includedInsumoIds.has(ins.id));
+      const sumUYU = included.filter((ins) => ins.currency !== 'USD').reduce((sum, ins) => sum + (Number(ins.amount) || 0), 0);
+      const sumUSD = included.filter((ins) => ins.currency === 'USD').reduce((sum, ins) => sum + (Number(ins.amount) || 0), 0);
+      if (sumUYU > 0) {
+        defaultAmount = String(Number(sumUYU.toFixed(2)));
+        defaultCurrencyHint = 'UYU';
+      } else if (sumUSD > 0) {
+        defaultAmount = String(Number(sumUSD.toFixed(2)));
+        defaultCurrencyHint = 'USD';
+      }
+    }
+
+    const amountRaw = payload?.amount !== undefined ? payload.amount : defaultAmount;
+    const amountCurrencyHint = payload?.amountCurrencyHint
+      ? (payload.amountCurrencyHint === 'USD' ? 'USD' : 'UYU')
+      : defaultCurrencyHint;
+    // The "Moneda" select can override the auto-detected hint (e.g. if she
+    // already converted a dollar total to pesos by hand, or vice versa).
+    const previewCurrency = payload?.currency === 'USD' || payload?.currency === 'UYU'
+      ? payload.currency
+      : amountCurrencyHint;
+    const totalAmount = parseFloat(amountRaw);
+    const hasValidAmount = Number.isFinite(totalAmount) && totalAmount > 0 && totalHorses > 0;
+    const costPerHorse = hasValidAmount ? totalAmount / totalHorses : 0;
+
+    // Mirror the backend's netting: whatever an owner already fronted (via
+    // insumos tagged with their name) offsets their fair share instead of
+    // just zeroing it out, so the preview matches what actually happens.
+    const includedInsumos = (insumos || []).filter((ins) => includedInsumoIds.has(ins.id));
+    const totalInsumosOriginal = includedInsumos.reduce((sum, ins) => sum + (Number(ins.amount) || 0), 0);
+    const frontedByOwnerId = new Map();
+    if (totalInsumosOriginal > 0) {
+      const originalByOwner = new Map();
+      for (const ins of includedInsumos) {
+        if (!ins.buyerOwnerId) continue;
+        originalByOwner.set(ins.buyerOwnerId, (originalByOwner.get(ins.buyerOwnerId) || 0) + (Number(ins.amount) || 0));
+      }
+      for (const [ownerId, originalSum] of originalByOwner.entries()) {
+        frontedByOwnerId.set(ownerId, (originalSum / totalInsumosOriginal) * (totalAmount || 0));
+      }
+    }
+
+    const previewRows = consumingOwners.map((o) => {
+      const fairShare = hasValidAmount ? costPerHorse * o.horse_count : 0;
+      const fronted = frontedByOwnerId.get(o.id) || 0;
+      const net = Number((fairShare - fronted).toFixed(2));
+      const entryType = !hasValidAmount
+        ? 'none'
+        : net > 0.01
+          ? 'charge'
+          : net < -0.01
+            ? 'credit'
+            : 'none';
+      return {
+        owner: o,
+        fairShare,
+        fronted,
+        share: entryType === 'charge' ? net : 0,
+        credit: entryType === 'credit' ? Math.abs(net) : 0,
+        entryType,
+      };
+    });
+    const previewTotal = previewRows.reduce((sum, row) => sum + row.share, 0);
+    const previewCreditTotal = previewRows.reduce((sum, row) => sum + row.credit, 0);
+
+    return renderFormModal({
+      key: 'owner-expense-split-form',
+      size: 'wide',
+      title: 'Repartir gasto entre propietarios',
+      subtitle: 'Prorratea un gasto compartido (pradera, fertilizante, cancha, etc.) según cantidad de caballos, y le genera un cargo a cada propietario que corresponda.',
+      columns: 2,
+      fields: [
+        {
+          label: 'Descripción',
+          name: 'description',
+          type: 'text',
+          value: descriptionValue,
+          placeholder: 'Ej: Siembra otoño/invierno 2026',
+          required: true,
+          layout: 'wide',
+          hint: 'Si escribís el nombre exacto de un proyecto ya cargado en Stock, sus insumos y el total se cargan solos.',
+          attributes: { 'data-care-form-field': 'description', list: 'owner-split-projects' },
+        },
+        {
+          label: 'Monto total a repartir',
+          name: 'amount',
+          type: 'number',
+          value: amountRaw,
+          min: '0',
+          step: 'any',
+          placeholder: '100000',
+          required: true,
+          hint: amountCurrencyHint === 'USD'
+            ? 'Sumó los insumos tildados en dólares. Los cargos se van a generar en dólares (podés ajustar el monto o la moneda de al lado a mano si hace falta).'
+            : insumos
+              ? 'Se recalcula solo según los insumos que dejes tildados abajo. Podés ajustarlo a mano.'
+              : 'Es lo que se le va a cobrar a cada propietario en su cuenta corriente.',
+          attributes: { 'data-care-form-field': 'amount' },
+        },
+        {
+          label: 'Moneda',
+          name: 'currency',
+          type: 'select',
+          value: amountCurrencyHint,
+          options: [
+            { value: 'UYU', label: 'Pesos (UYU)' },
+            { value: 'USD', label: 'Dólares (USD)' },
+          ],
+          hint: 'En qué moneda quedan los cargos en la cuenta corriente de cada propietario.',
+          attributes: { 'data-care-form-field': 'currency' },
+        },
+      ],
+      extraBody: `
+        <input type="hidden" name="draftId" value="${escapeHtml(String(payload?.draftId || ''))}" />
+        <datalist id="owner-split-projects">
+          ${stockGroups.map((g) => `<option value="${escapeHtml(g.group_name)}"></option>`).join('')}
+        </datalist>
+        ${
+          insumos && insumos.length > 0
+            ? `
+              <div class="modal-field modal-field--wide">
+                <span>¿Qué insumos de este proyecto se reparten?</span>
+                <div class="modal-check-grid">
+                  ${insumos.map((ins) => `
+                    <label class="modal-check-row">
+                      <input
+                        type="checkbox"
+                        name="includeInsumoId"
+                        value="${escapeHtml(String(ins.id))}"
+                        data-amount="${escapeHtml(String(ins.amount))}"
+                        data-currency="${escapeHtml(ins.currency)}"
+                        ${includedInsumoIds.has(ins.id) ? 'checked' : ''}
+                      />
+                      <span>${escapeHtml(ins.description)} (${escapeHtml(formatMoneyLabel(ins.amount, ins.currency))}${ins.buyerOwnerName ? ` · pagó ${escapeHtml(ins.buyerOwnerName)}` : ''})</span>
+                    </label>
+                  `).join('')}
+                </div>
+                <small>Destildá los que ya cubrió el establecimiento directamente (ej: el gasoil) o cualquiera que no corresponda repartir. El monto de arriba se recalcula solo.</small>
+              </div>
+            `
+            : ''
+        }
+
+        ${
+          allHorses.length > 0
+            ? `
+              <div class="modal-field modal-field--wide">
+                <span>¿Qué caballos consumen este gasto? (elegí uno o varios)</span>
+                <div class="modal-check-grid">
+                  ${(() => {
+                    const groups = [];
+                    const groupByOwnerId = new Map();
+                    for (const horse of allHorses) {
+                      let g = groupByOwnerId.get(horse.owner_id);
+                      if (!g) {
+                        g = { ownerName: horse.ownerName, horses: [] };
+                        groupByOwnerId.set(horse.owner_id, g);
+                        groups.push(g);
+                      }
+                      g.horses.push(horse);
+                    }
+                    return groups.map((g) => `
+                      <div class="modal-check-subgroup">
+                        <small><strong>${escapeHtml(g.ownerName)}</strong></small>
+                        <div class="modal-check-subgroup-rows">
+                          ${g.horses.map((h) => `
+                            <label class="modal-check-row">
+                              <input
+                                type="checkbox"
+                                name="includeHorseId"
+                                value="${escapeHtml(String(h.id))}"
+                                ${includedHorseIds.has(h.id) ? 'checked' : ''}
+                              />
+                              <span>${escapeHtml(h.name)}</span>
+                            </label>
+                          `).join('')}
+                        </div>
+                      </div>
+                    `).join('');
+                  })()}
+                </div>
+                <small>Están todos tildados por defecto. Destildá los caballos que no comen/usan este recurso puntual (ej: los que están en otro potrero). El propietario y su cantidad de caballos participantes se calculan solos según lo que dejes tildado acá.</small>
+              </div>
+            `
+            : `<div class="empty-state-card"><strong>Todavía no hay caballos con propietario cargado.</strong></div>`
+        }
+
+
+        <div class="modal-field">
+          <span>Fecha</span>
+          <input type="date" name="expenseDate" value="${escapeHtml(payload?.expenseDate || todayDateString())}" required />
+        </div>
+
+        <div class="modal-field">
+          <span>Categoría (opcional)</span>
+          <input type="text" name="category" value="${escapeHtml(payload?.category || '')}" placeholder="Ej: Pradera, mantenimiento..." />
+        </div>
+
+        ${
+          alreadyLogged
+            ? `<input type="hidden" name="logGeneralExpense" value="false" />`
+            : `
+              <label class="modal-field modal-field--checkbox modal-field--wide">
+                <input type="checkbox" name="logGeneralExpense" value="true" checked />
+                <span class="modal-field-checkbox-label">
+                  <span>¿También registrar como gasto general del campo?</span>
+                  <small>Deja el monto total documentado en Stock, además de los cargos individuales. Destildalo si este gasto ya está cargado ahí (ej: viene de un proyecto).</small>
+                </span>
+              </label>
+            `
+        }
+
+        <div class="modal-field modal-field--wide">
+          <span>Vista previa del prorrateo</span>
+          ${
+            hasValidAmount
+              ? `
+                <div class="mini-list" style="margin-top:8px">
+                  <div class="mini-list-row">
+                    <div><strong>Costo por caballo</strong><span>${consumingOwners.length} propietario(s) · ${totalHorses} caballo(s) en total</span></div>
+                    <strong>${formatMoneyLabel(costPerHorse, previewCurrency)}</strong>
+                  </div>
+                  ${previewRows.map((row) => {
+                    const statusLabel = row.entryType === 'credit'
+                      ? `A favor ${formatMoneyLabel(row.credit, previewCurrency)}`
+                      : row.entryType === 'charge'
+                        ? formatMoneyLabel(row.share, previewCurrency)
+                        : 'Al día';
+                    const isPositiveTone = row.entryType === 'credit' || row.entryType === 'none';
+                    return `
+                      <div class="mini-list-row">
+                        <div>
+                          <strong>${escapeHtml(row.owner.name)}</strong>
+                          <span>${row.owner.horse_count} caballo(s) · cuota ${formatMoneyLabel(row.fairShare, previewCurrency)}${row.fronted > 0 ? ` · ya puso ${formatMoneyLabel(row.fronted, previewCurrency)}` : ''}</span>
+                        </div>
+                        <strong class="${isPositiveTone ? 'text-green' : 'text-critical'}">${statusLabel}</strong>
+                      </div>
+                    `;
+                  }).join('')}
+                  <div class="mini-list-row">
+                    <div><strong>Total a cobrar</strong></div>
+                    <strong>${formatMoneyLabel(previewTotal, previewCurrency)}</strong>
+                  </div>
+                  ${previewCreditTotal > 0 ? `
+                    <div class="mini-list-row">
+                      <div><strong>Total a favor (créditos)</strong></div>
+                      <strong class="text-green">${formatMoneyLabel(previewCreditTotal, previewCurrency)}</strong>
+                    </div>
+                  ` : ''}
+                </div>
+              `
+              : `<p class="text-muted" style="font-size:13px;margin-top:8px">Cargá un monto para ver cómo queda el reparto.</p>`
+          }
+        </div>
+      `,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        {
+          label: 'Guardar borrador',
+          tone: 'secondary',
+          icon: 'records',
+          trigger: { action: 'save-expense-split-draft', meta: { draftId: payload?.draftId || null } },
+        },
+        { label: 'Generar cargos', tone: 'primary', icon: 'cart', submit: true },
+      ],
+    });
+  }
+  function getQuarterStartDateString() {
+    const now = new Date();
+    const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+    const start = new Date(now.getFullYear(), quarterStartMonth, 1);
+    const yyyy = start.getFullYear();
+    const mm = String(start.getMonth() + 1).padStart(2, '0');
+    const dd = String(start.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  function renderOwnerStatementFormModal(state, payload) {
+    const ownerId = parsePositiveInt(payload?.ownerId);
+    const owner = getRealOwnerById(state, ownerId);
+    if (!owner) {
+      return '';
+    }
+
+    return renderFormModal({
+      key: 'owner-statement-form',
+      title: `Estado de cuenta de ${owner.name}`,
+      subtitle: 'Elegí el período: se arma el detalle de esos movimientos, con el saldo que traía antes y el saldo final.',
+      columns: 2,
+      fields: [
+        {
+          label: 'Desde',
+          name: 'startDate',
+          type: 'date',
+          value: getQuarterStartDateString(),
+          required: true,
+        },
+        {
+          label: 'Hasta',
+          name: 'endDate',
+          type: 'date',
+          value: todayDateString(),
+          required: true,
+        },
+      ],
+      extraBody: `<input type="hidden" name="ownerId" value="${escapeHtml(String(owner.id))}" />`,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Generar', tone: 'primary', icon: 'records', submit: true },
+      ],
+    });
+  }
+
+  function renderOwnerStatementViewModal(state) {
+    const statement = state.ownerStatement;
+
+    if (!statement) {
+      return renderInfoModal({
+        title: 'Estado de cuenta',
+        body: '<div class="empty-state-card"><strong>No pudimos generar el estado de cuenta.</strong></div>',
+        footerButtons: [{ label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } }],
+      });
+    }
+
+    const owner = statement.owner || {};
+    const isFamily = owner.owner_type === 'family';
+    const typeLabel = isFamily ? 'Familia' : 'Pensionado';
+    const entries = Array.isArray(statement.entries) ? statement.entries : [];
+    const opening = statement.opening_balance || 0;
+    const closing = statement.closing_balance || 0;
+    const closingLabel = closing > 0
+      ? `Debe ${formatCurrencyLabel(closing)}`
+      : closing < 0
+        ? `A favor ${formatCurrencyLabel(Math.abs(closing))}`
+        : 'Al día';
+    const closingTone = closing > 0 ? 'critical' : closing < 0 ? 'green' : 'gray';
+    const usdStatement = (statement.balances_by_currency || {}).USD;
+    const hasUsdStatement = usdStatement && (
+      Math.abs(usdStatement.opening_balance || 0) > 0.001 ||
+      Math.abs(usdStatement.period_charged || 0) > 0.001 ||
+      Math.abs(usdStatement.period_paid || 0) > 0.001 ||
+      Math.abs(usdStatement.closing_balance || 0) > 0.001
+    );
+    const usdClosingLabel = hasUsdStatement
+      ? (usdStatement.closing_balance > 0
+          ? `Debe ${formatMoneyLabel(usdStatement.closing_balance, 'USD')}`
+          : usdStatement.closing_balance < 0
+            ? `A favor ${formatMoneyLabel(Math.abs(usdStatement.closing_balance), 'USD')}`
+            : 'Al día en USD')
+      : '';
+
+    return renderInfoModal({
+      size: 'wide',
+      title: 'Estado de cuenta',
+      subtitle: `${escapeHtml(owner.name)} · ${escapeHtml(formatDateLabel(statement.period.start))} al ${escapeHtml(formatDateLabel(statement.period.end))}`,
+      body: `
+        <div class="statement-print-area">
+          <div class="statement-header">
+            <h2>${escapeHtml(owner.name)}</h2>
+            <div class="chip-row">
+              ${renderBadge(typeLabel, isFamily ? 'purple' : 'blue')}
+            </div>
+            <div class="stacked-info stacked-info--tight">
+              ${owner.phone ? `<span>${renderIcon('phone')} ${escapeHtml(owner.phone)}</span>` : ''}
+              ${owner.email ? `<span>${renderIcon('mail')} ${escapeHtml(owner.email)}</span>` : ''}
+              <span>${renderIcon('calendar')} Período: ${escapeHtml(formatDateLabel(statement.period.start))} al ${escapeHtml(formatDateLabel(statement.period.end))}</span>
+            </div>
+          </div>
+
+          <div class="modal-summary-grid">
+            <article class="modal-stat-card">
+              <span>Saldo inicial</span>
+              <strong>${formatCurrencyLabel(Math.abs(opening))}</strong>
+              <small>${opening > 0 ? 'Debía' : opening < 0 ? 'A favor' : 'Al día'} antes del período</small>
+            </article>
+            <article class="modal-stat-card">
+              <span>Cargos del período</span>
+              <strong>${formatCurrencyLabel(statement.period_charged || 0)}</strong>
+              <small>Pagos del período: ${formatCurrencyLabel(statement.period_paid || 0)}</small>
+            </article>
+            <article class="modal-stat-card">
+              <span>Saldo final</span>
+              <strong>${formatCurrencyLabel(Math.abs(closing))}</strong>
+              <small>${escapeHtml(closingLabel)}</small>
+            </article>
+          </div>
+
+          <div class="modal-detail-card">
+            <strong>Movimientos del período</strong>
+            ${
+              entries.length > 0
+                ? `
+                  <div class="mini-list" style="margin-top:10px">
+                    ${entries.map((entry) => `
+                      <div class="mini-list-row">
+                        <div>
+                          <strong>${entry.entry_type === 'payment' ? 'Pago' : 'Cargo'} · ${escapeHtml(formatCompactDateLabel(entry.entry_date))}</strong>
+                          <span>${escapeHtml(entry.description || (entry.entry_type === 'payment' ? 'Pago registrado' : 'Cargo registrado'))}</span>
+                        </div>
+                        <strong class="${entry.entry_type === 'payment' ? 'text-green' : 'text-critical'}">
+                          ${entry.entry_type === 'payment' ? '+' : '-'}${formatMoneyLabel(entry.amount, entry.currency)}
+                        </strong>
+                      </div>
+                    `).join('')}
+                  </div>
+                `
+                : `<p class="text-muted" style="font-size:13px;margin-top:8px">No hubo movimientos en este período.</p>`
+            }
+          </div>
+
+          <div class="owner-ledger-head">
+            <span>Saldo final</span>
+            ${renderBadge(closingLabel, closingTone)}
+          </div>
+          ${hasUsdStatement ? `
+            <div class="owner-ledger-head">
+              <span>Saldo final (USD)</span>
+              ${renderBadge(usdClosingLabel, usdStatement.closing_balance > 0 ? 'critical' : usdStatement.closing_balance < 0 ? 'green' : 'gray')}
+            </div>
+          ` : ''}
+        </div>
+      `,
+      footerButtons: [
+        { label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Copiar texto', tone: 'secondary', icon: 'records', trigger: { action: 'copy-owner-statement' } },
+        { label: 'Imprimir / PDF', tone: 'primary', icon: 'check', trigger: { action: 'print-statement' } },
+      ],
     });
   }
 
@@ -6030,7 +7362,7 @@
 
         <section class="home-layout">
           <article class="panel">
-            <div class="panel-head">
+            <div class="panel-head estado-de-potreros">
               <h2>Estado de Potreros</h2>
               <button type="button" class="text-action" data-nav-key="paddocks">Ver todos</button>
             </div>
@@ -6069,7 +7401,7 @@
 
           <div class="side-stack">
             <article class="panel">
-              <div class="panel-head">
+              <div class="panel-head proximas-tareas">
                 <h2>Próximas Tareas</h2>
               </div>
               ${
@@ -6102,7 +7434,7 @@
             </article>
 
             <article class="panel">
-              <div class="panel-head">
+              <div class="panel-head actividad-reciente">
                 <h2>Actividad Reciente</h2>
               </div>
               ${
@@ -6194,7 +7526,7 @@
 
         <section class="home-layout">
           <article class="panel">
-            <div class="panel-head">
+            <div class="panel-head estado-de-potreros">
               <h2>Estado de Potreros</h2>
               <button type="button" class="text-action" data-nav-key="paddocks">Ver todos</button>
             </div>
@@ -6222,7 +7554,7 @@
 
           <div class="side-stack">
             <article class="panel">
-              <div class="panel-head">
+              <div class="panel-head proximas-tareas">
                 <h2>Próximas Tareas</h2>
               </div>
               <div class="mini-list">
@@ -6244,7 +7576,7 @@
             </article>
 
             <article class="panel">
-              <div class="panel-head">
+              <div class="panel-head actividad-reciente">
                 <h2>Actividad Reciente</h2>
               </div>
               <div class="activity-list">
@@ -6943,7 +8275,7 @@
       <div class="page-stack">
         ${renderRealHorseSearchRow(state, dashboard)}
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head herrero">
             <div>
               <h2>Herrero</h2>
               <span class="subtle-text">Registrá desvasados y herrados desde acá. Cada evento se guarda en la base del caballo y recalcula su próximo control.</span>
@@ -7113,7 +8445,7 @@
       <div class="page-stack">
         ${renderRealHorseSearchRow(state, dashboard)}
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head veterinaria">
             <div>
               <h2>Veterinaria</h2>
               <span class="subtle-text">Desparasitá varios caballos juntos o abrí tratamiento/veterinaria por caballo. Todo queda guardado en su historial real.</span>
@@ -7632,7 +8964,7 @@
   function renderOwnersDistribution() {
     return `
       <section class="panel">
-        <div class="panel-head">
+        <div class="panel-head distribucion-de-gastos-mensual">
           <h2>Distribución de Gastos Mensual</h2>
         </div>
         <p class="panel-copy">Los gastos del campo se distribuyen proporcionalmente según la cantidad de caballos de cada propietario.</p>
@@ -7686,7 +9018,7 @@
   function renderOwnersPayments() {
     return `
       <section class="panel">
-        <div class="panel-head">
+        <div class="panel-head historial-de-pagos">
           <h2>Historial de Pagos - Mayo 2026</h2>
         </div>
         <div class="payment-list">
@@ -7726,15 +9058,32 @@
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
 
     const monthLabel = state.ownersDashboard?.meta?.month || '';
-    const totalFeedCost = owners.reduce((sum, o) => sum + (o.current_month?.feed_cost || 0), 0);
+    const totalRealCost = owners.reduce((sum, o) => sum + (o.current_month?.total_cost || 0), 0);
+    const totalBalanceDue = owners.reduce((sum, o) => sum + Math.max(0, o.ledger?.balance || 0), 0);
 
     const ownerCards = owners.length > 0
       ? owners.map((owner) => {
           const cm = owner.current_month || {};
-          const feedCost = cm.feed_cost || 0;
-          const farrierCount = cm.farrier_count || 0;
-          const dewormCount = cm.deworm_count || 0;
-          const hasServices = farrierCount > 0 || dewormCount > 0;
+          const totalCost = cm.total_cost || 0;
+
+          const ledger = owner.ledger || {};
+          const balancesByCurrency = ledger.balances_by_currency || { UYU: { balance: ledger.balance || 0 } };
+          const balance = balancesByCurrency.UYU?.balance || 0;
+          const balanceTone = balance > 0 ? 'critical' : balance < 0 ? 'green' : 'gray';
+          const balanceLabel = balance > 0
+            ? `Debe ${formatCurrencyLabel(balance)}`
+            : balance < 0
+              ? `A favor ${formatCurrencyLabel(Math.abs(balance))}`
+              : 'Al día';
+          const usdBalance = balancesByCurrency.USD?.balance;
+          const hasUsdBalance = typeof usdBalance === 'number' && Math.abs(usdBalance) > 0.001;
+          const usdBalanceLabel = hasUsdBalance
+            ? (usdBalance > 0 ? `Debe ${formatMoneyLabel(usdBalance, 'USD')}` : `A favor ${formatMoneyLabel(Math.abs(usdBalance), 'USD')}`)
+            : '';
+          const isFamily = owner.owner_type === 'family';
+          const typeBadgeLabel = isFamily ? 'Familia' : 'Pensionado';
+          const typeBadgeTone = isFamily ? 'purple' : 'blue';
+          const rateStatLabel = isFamily ? 'Aporte mantenimiento / caballo' : 'Tarifa / caballo';
 
           return `
             <article class="owner-card">
@@ -7742,7 +9091,10 @@
                 <div class="avatar">${escapeHtml(owner.name.slice(0, 2).toUpperCase())}</div>
                 <div>
                   <h2>${escapeHtml(owner.name)}</h2>
-                  ${renderBadge(`${owner.horse_count} ${owner.horse_count === 1 ? 'caballo' : 'caballos'}`, 'neutral')}
+                  <div class="chip-row">
+                    ${renderBadge(typeBadgeLabel, typeBadgeTone)}
+                    ${renderBadge(`${owner.horse_count} ${owner.horse_count === 1 ? 'caballo' : 'caballos'}`, 'neutral')}
+                  </div>
                 </div>
               </div>
 
@@ -7760,28 +9112,34 @@
 
               <dl class="owner-stats">
                 <div>
-                  <dt>Alimento ${monthLabel ? escapeHtml(monthLabel) : 'este mes'}</dt>
-                  <dd>${feedCost > 0 ? `$${feedCost.toLocaleString('es-AR')}` : '—'}</dd>
+                  <dt>Costo real ${monthLabel ? escapeHtml(monthLabel) : 'este mes'}</dt>
+                  <dd>${totalCost > 0 ? formatCurrencyLabel(totalCost) : '—'}</dd>
                 </div>
-                ${hasServices ? `
-                  <div>
-                    <dt>Servicios este mes</dt>
-                    <dd>${[
-                      farrierCount > 0 ? `${farrierCount} herrado${farrierCount > 1 ? 's' : ''}` : '',
-                      dewormCount > 0 ? `${dewormCount} desparasitado${dewormCount > 1 ? 's' : ''}` : '',
-                    ].filter(Boolean).join(' · ')}</dd>
-                  </div>
-                ` : ''}
                 ${owner.rate_per_horse > 0 ? `
                   <div>
-                    <dt>Tarifa / caballo</dt>
+                    <dt>${escapeHtml(rateStatLabel)}</dt>
                     <dd>$${owner.rate_per_horse.toLocaleString('es-AR')}</dd>
                   </div>
                 ` : ''}
-                ${owner.notes ? `<div><dt>Notas</dt><dd>${escapeHtml(owner.notes)}</dd></div>` : ''}
+                <div>
+                  <dt>Cuenta corriente</dt>
+                  <dd>${renderBadge(balanceLabel, balanceTone)}${hasUsdBalance ? ` <span style="font-size:12px;color:var(--text-muted,#667)">${escapeHtml(usdBalanceLabel)}</span>` : ''}</dd>
+                </div>
               </dl>
 
               <div class="split-actions">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-grow"
+                  ${renderActionAttributes({
+                    action: 'open-modal',
+                    value: 'owner-detail',
+                    meta: { ownerId: owner.id },
+                  })}
+                >
+                  ${renderIcon('search')}
+                  <span>Ver detalle</span>
+                </button>
                 <button
                   type="button"
                   class="btn btn-secondary btn-grow"
@@ -7816,8 +9174,12 @@
             <strong class="metric-value">${owners.reduce((sum, o) => sum + o.horse_count, 0)}</strong>
           </article>
           <article class="metric-card">
-            <span class="metric-label">Costo alimento ${monthLabel}</span>
-            <strong class="metric-value">${totalFeedCost > 0 ? `$${totalFeedCost.toLocaleString('es-AR')}` : '—'}</strong>
+            <span class="metric-label">Costo real ${monthLabel}</span>
+            <strong class="metric-value">${totalRealCost > 0 ? formatCurrencyLabel(totalRealCost) : '—'}</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Saldo pendiente de cobro</span>
+            <strong class="metric-value">${totalBalanceDue > 0 ? formatCurrencyLabel(totalBalanceDue) : '—'}</strong>
           </article>
         </section>
 
@@ -8051,6 +9413,17 @@
                     ${renderIcon('cart')}
                     <span>Ingresar stock</span>
                   </button>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    title="Eliminar producto (no es del establecimiento)"
+                    ${renderActionAttributes({
+                      action: 'delete-feed-item',
+                      meta: { itemId: item.id, itemName: item.name },
+                    })}
+                  >
+                    ${renderIcon('close')}
+                  </button>
                 </div>
               </article>
             `;
@@ -8067,7 +9440,7 @@
 
     return `
       <section class="panel">
-        <div class="panel-head">
+        <div class="panel-head ${escapeHtml(movementPanel?.title || '').trim().toLowerCase().replace(/\s+/g, '-')}">
           <div>
             <h2>${escapeHtml(movementPanel.title || 'Movimientos de stock')}</h2>
             ${
@@ -8138,12 +9511,151 @@
     `;
   }
 
+  function formatMoneyLabel(amount, currency) {
+    if (String(currency || '').trim().toUpperCase() === 'USD') {
+      const parsed = Number(amount);
+      if (!Number.isFinite(parsed)) {
+        return 'Sin datos';
+      }
+      return `US$${new Intl.NumberFormat('es-UY', { maximumFractionDigits: 0 }).format(parsed)}`;
+    }
+    return formatCurrencyLabel(amount);
+  }
+
+  function renderGeneralExpenseGroupCard(group) {
+    const totals = group.totals_by_currency || { UYU: 0, USD: 0 };
+    const totalParts = [];
+    if (totals.UYU > 0) totalParts.push(formatCurrencyLabel(totals.UYU));
+    if (totals.USD > 0) totalParts.push(formatMoneyLabel(totals.USD, 'USD'));
+    const totalLabel = totalParts.length ? totalParts.join(' + ') : '—';
+
+    return `
+      <div class="modal-detail-card" style="margin-top:16px">
+        <div class="owner-ledger-head">
+          <strong>${escapeHtml(group.group_name)}</strong>
+          <span>${escapeHtml(totalLabel)} · ${group.entries.length} insumo${group.entries.length === 1 ? '' : 's'}</span>
+        </div>
+        <div class="split-actions" style="margin-top:10px">
+          <button
+            type="button"
+            class="btn btn-secondary btn-grow"
+            ${renderActionAttributes({
+              action: 'open-modal',
+              value: 'general-expense-form',
+              meta: { groupName: group.group_name },
+            })}
+          >
+            ${renderIcon('plus')}
+            <span>Agregar insumo</span>
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-grow"
+            ${renderActionAttributes({
+              action: 'open-modal',
+              value: 'owner-expense-split-form',
+              meta: {
+                description: group.group_name,
+                amountCurrencyHint: totals.UYU > 0 ? 'UYU' : 'USD',
+                alreadyLogged: true,
+                insumos: group.entries.map((e) => ({
+                  id: e.id,
+                  description: e.description,
+                  amount: e.amount,
+                  currency: e.currency,
+                  buyerOwnerId: e.buyer_owner_id || null,
+                  buyerOwnerName: e.buyer_owner_name || '',
+                })),
+              },
+            })}
+          >
+            ${renderIcon('cart')}
+            <span>Repartir este gasto</span>
+          </button>
+        </div>
+        ${(() => {
+          const drafts = (store.getState().expenseSplitDrafts || []).filter(
+            (d) => d.group_name === group.group_name
+          );
+          if (drafts.length === 0) {
+            return '';
+          }
+          return `
+            <div class="mini-list" style="margin-top:10px">
+              ${drafts.map((draft) => `
+                <div class="mini-list-row">
+                  <div>
+                    <strong>Borrador guardado</strong>
+                    <span>${draft.amount != null ? escapeHtml(formatMoneyLabel(draft.amount, draft.currency)) : 'Sin monto todavía'} · ${draft.include_horse_ids.length} caballo(s) tildado(s)${draft.expense_date ? ` · ${escapeHtml(formatCompactDateLabel(draft.expense_date))}` : ''}</span>
+                  </div>
+                  <div class="owner-ledger-entry-actions">
+                    <button
+                      type="button"
+                      class="btn btn-secondary"
+                      ${renderActionAttributes({ action: 'continue-expense-split-draft', meta: { draftId: draft.id } })}
+                    >
+                      <span>Continuar</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="icon-button"
+                      title="Eliminar borrador"
+                      ${renderActionAttributes({ action: 'delete-expense-split-draft', meta: { draftId: draft.id } })}
+                    >
+                      ${renderIcon('close')}
+                    </button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `;
+        })()}
+        <div class="mini-list" style="margin-top:10px">${group.entries.map(renderGeneralExpenseRow).join('')}</div>
+      </div>
+    `;
+  }
+
+  function renderGeneralExpenseRow(entry) {
+    return `
+      <div class="mini-list-row">
+        <div>
+          <strong>${escapeHtml(entry.description || 'Gasto general')}</strong>
+          <span>${escapeHtml(formatCompactDateLabel(entry.expense_date))}${entry.quantity_label ? ` · ${escapeHtml(entry.quantity_label)}` : ''}${entry.category ? ` · ${escapeHtml(entry.category)}` : ''}${entry.buyer_owner_name ? ` · Pagó ${escapeHtml(entry.buyer_owner_name)}` : ''}</span>
+        </div>
+        <div class="owner-ledger-entry-actions">
+          <strong class="text-critical">${formatMoneyLabel(entry.amount, entry.currency)}</strong>
+          <button
+            type="button"
+            class="icon-button"
+            title="Editar gasto"
+            ${renderActionAttributes({
+              action: 'open-modal',
+              value: 'general-expense-form',
+              meta: { mode: 'edit', expenseId: entry.id },
+            })}
+          >
+            ${renderIcon('edit')}
+          </button>
+          <button
+            type="button"
+            class="icon-button"
+            title="Eliminar gasto"
+            ${renderActionAttributes({
+              action: 'delete-general-expense',
+              meta: { expenseId: entry.id },
+            })}
+          >
+            ${renderIcon('close')}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
   function renderRealAccountingView(state, dashboard) {
     const accountingPanel = dashboard?.accounting_panel || {};
-    const statusMeta = getStockPanelStatusMeta(accountingPanel.status);
     const readinessRows = buildRealStockAccountingRows(dashboard);
-    const stockActions = getRealStockActions(state);
-    const periodLabel = formatMonthLabel(accountingPanel?.period?.month);
+    const generalExpenses = accountingPanel.general_expenses || { period: {}, total_month: 0, month_entries: [], recent_entries: [] };
     const summaryCards = Array.isArray(accountingPanel.summary_cards)
       ? accountingPanel.summary_cards.map((card) => ({
           ...card,
@@ -8156,9 +9668,9 @@
         ${summaryCards.length ? renderMetricGrid(summaryCards) : ''}
 
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head ${escapeHtml(accountingPanel?.title || '').trim().toLowerCase().replace(/\s+/g, '-')}">
             <div>
-              <h2>${escapeHtml(accountingPanel.title || 'Contabilidad operativa')}</h2>
+              <h2>${escapeHtml(accountingPanel.title || 'Gastos generales del campo')}</h2>
               ${
                 accountingPanel.message
                   ? `<span class="subtle-text">${escapeHtml(accountingPanel.message)}</span>`
@@ -8166,21 +9678,42 @@
               }
             </div>
             <div class="action-row">
-              ${renderBadge(statusMeta.label, statusMeta.tone)}
-              ${stockActions
-                .map(
-                  (action) => `
-                    <button
-                      type="button"
-                      class="btn btn-${escapeHtml(action.tone)}"
-                      ${renderActionAttributes(action.trigger)}
-                    >
-                      ${renderIcon(action.icon)}
-                      <span>${escapeHtml(action.label)}</span>
-                    </button>
-                  `
-                )
-                .join('')}
+              <button
+                type="button"
+                class="btn btn-primary"
+                ${renderActionAttributes({ action: 'open-modal', value: 'general-expense-form' })}
+              >
+                ${renderIcon('plus')}
+                <span>Agregar gasto</span>
+              </button>
+            </div>
+          </div>
+
+          ${
+            generalExpenses.recent_entries.length
+              ? `
+                <span class="subtle-text">Últimos ${generalExpenses.recent_entries.length} gasto(s) cargado(s), de cualquier fecha.</span>
+                ${(generalExpenses.groups || []).map(renderGeneralExpenseGroupCard).join('')}
+                ${
+                  (generalExpenses.ungrouped_entries || []).length > 0
+                    ? `<div class="mini-list" style="margin-top:${(generalExpenses.groups || []).length ? '16px' : '10px'}">${generalExpenses.ungrouped_entries.map(renderGeneralExpenseRow).join('')}</div>`
+                    : ''
+                }
+              `
+              : `
+                <div class="empty-state-card">
+                  <strong>Todavía no hay gastos generales cargados.</strong>
+                  <span>Usá "Agregar gasto" para cargar compras del campo que no son de un caballo o propietario puntual (mantenimiento, herramientas, combustible, etc.).</span>
+                </div>
+              `
+          }
+        </section>
+
+        <section class="panel panel--soft">
+          <div class="panel-head cobertura-del-inventario">
+            <div>
+              <h2>Cobertura del inventario</h2>
+              <span class="subtle-text">Qué tan completos están los costos de compra cargados en el inventario.</span>
             </div>
           </div>
 
@@ -8197,14 +9730,6 @@
               .join('')}
           </div>
         </section>
-
-        <div class="bar-grid">
-          ${renderAccountingChartPanel(accountingPanel.monthly_cost_chart, periodLabel)}
-          ${renderAccountingServiceGapPanel(accountingPanel.service_gaps, periodLabel)}
-        </div>
-
-        ${renderAccountingHorseCostPanel(accountingPanel.horse_costs, periodLabel)}
-        ${renderAccountingProductCostPanel(accountingPanel.product_costs, periodLabel)}
       </div>
     `;
   }
@@ -8295,7 +9820,7 @@
   function renderDemoMovementsView() {
     return `
       <section class="panel">
-        <div class="panel-head">
+        <div class="panel-head ultimos-movimientos">
           <h2>Últimos Movimientos</h2>
           <button
             type="button"
@@ -8347,7 +9872,7 @@
     return `
       <div class="accounting-grid">
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head ingresos-por-categoria">
             <h2>Ingresos por Categoría</h2>
           </div>
           <div class="bar-stack">
@@ -8371,7 +9896,7 @@
         </section>
 
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head gastos-por-categoria">
             <h2>Gastos por Categoría</h2>
           </div>
           <div class="bar-stack">
@@ -8486,7 +10011,7 @@
 
         <section class="calendar-layout">
           <article class="panel panel--calendar">
-            <div class="panel-head">
+            <div class="panel-head calendario">
               <h2>Calendario</h2>
             </div>
             <div class="calendar-box">
@@ -8567,7 +10092,7 @@
 
           <div class="side-stack">
             <article class="panel">
-              <div class="panel-head">
+              <div class="panel-head proximas-tareas">
                 <h2>Próximas Tareas</h2>
               </div>
               ${
@@ -8607,7 +10132,7 @@
             </article>
 
             <article class="panel">
-              <div class="panel-head">
+              <div class="panel-head resumen">
                 <h2>Resumen</h2>
               </div>
               <div class="summary-list">
@@ -8631,7 +10156,7 @@
         </section>
 
         <section id="calendar-task-list" class="panel calendar-task-section">
-          <div class="panel-head">
+          <div class="panel-head todas-las-tareas">
             <h2>Todas las Tareas</h2>
           </div>
           <div class="wide-segments">
@@ -8712,7 +10237,7 @@
 
         <section class="calendar-layout">
           <article class="panel panel--calendar">
-            <div class="panel-head">
+            <div class="panel-head calendario">
               <h2>Calendario</h2>
             </div>
             <div class="calendar-box">
@@ -8742,7 +10267,7 @@
 
           <div class="side-stack">
             <article class="panel">
-              <div class="panel-head">
+              <div class="panel-head proximas-tareas">
                 <h2>Próximas Tareas</h2>
               </div>
               <div class="agenda-list">
@@ -8771,7 +10296,7 @@
             </article>
 
             <article class="panel">
-              <div class="panel-head">
+              <div class="panel-head resumen">
                 <h2>Resumen</h2>
               </div>
               <div class="summary-list">
@@ -8791,7 +10316,7 @@
         </section>
 
         <section id="calendar-task-list" class="panel calendar-task-section">
-          <div class="panel-head">
+          <div class="panel-head todas-las-tareas">
             <h2>Todas las Tareas</h2>
           </div>
           <div class="wide-segments">
@@ -8876,7 +10401,7 @@
           .map(
             (group) => `
               <section class="panel">
-                <div class="panel-head">
+                <div class="panel-head ${escapeHtml(group?.name || '').trim().toLowerCase().replace(/\s+/g, '-')}">
                   <h2>${escapeHtml(group.name)}</h2>
                 </div>
                 <div class="category-records">
@@ -8898,7 +10423,114 @@
     `;
   }
 
-  function renderRealRecordsTimeline(events) {
+  function buildHorseTimeline(historyPayload) {
+    const events = [];
+
+    for (const row of (historyPayload?.grazing_history || [])) {
+      const isActive = !row.exited_at;
+      const sortDate = String(row.exited_at || row.entered_at || '').slice(0, 10);
+      const enteredLabel = formatCompactDateLabel(String(row.entered_at || '').slice(0, 10));
+      const exitedLabel = row.exited_at ? formatCompactDateLabel(String(row.exited_at).slice(0, 10)) : null;
+      const days = row.days || row.grazing_days || 0;
+      const groupNote = row.source_group_name ? `Grupo: ${row.source_group_name}` : '';
+      events.push({
+        sortDate,
+        title: row.paddock_name || 'Sin potrero',
+        subtitle: exitedLabel
+          ? `${enteredLabel} → ${exitedLabel} · ${days} día(s)${groupNote ? ` · ${groupNote}` : ''}`
+          : `Desde ${enteredLabel} · ${days} día(s)${groupNote ? ` · ${groupNote}` : ''}`,
+        label: isActive ? 'Activo' : 'Potrero',
+        tone: 'green',
+        icon: 'pin',
+        isActive,
+      });
+    }
+
+    for (const row of (historyPayload?.deworming_history || [])) {
+      const date = String(row.event_date || '').slice(0, 10);
+      const repaso = row.second_dose_date
+        ? `Repaso: ${formatCompactDateLabel(row.second_dose_date)}`
+        : row.next_due_date
+        ? `Próximo ciclo: ${formatCompactDateLabel(row.next_due_date)}`
+        : '';
+      events.push({
+        sortDate: date,
+        title: row.product_name || 'Desparasitación',
+        subtitle: repaso,
+        label: 'Desparasitación',
+        tone: 'purple',
+        icon: 'shield',
+        isActive: false,
+      });
+    }
+
+    for (const row of (historyPayload?.farrier_history || [])) {
+      const date = String(row.event_date || '').slice(0, 10);
+      events.push({
+        sortDate: date,
+        title: row.service_type || 'Herrero',
+        subtitle: row.next_due_date ? `Próximo: ${formatCompactDateLabel(row.next_due_date)}` : '',
+        label: 'Herrero',
+        tone: 'orange',
+        icon: 'work',
+        isActive: false,
+      });
+    }
+
+    for (const row of (historyPayload?.health_history || [])) {
+      const date = String(row.event_date || '').slice(0, 10);
+      events.push({
+        sortDate: date,
+        title: row.event_type || 'Salud',
+        subtitle: row.description || '',
+        label: 'Salud',
+        tone: 'red',
+        icon: 'health',
+        isActive: false,
+      });
+    }
+
+    for (const row of (historyPayload?.group_history || [])) {
+      const date = String(row.started_at || '').slice(0, 10);
+      const isActive = row.active;
+      const endedLabel = row.ended_at ? formatCompactDateLabel(String(row.ended_at).slice(0, 10)) : null;
+      events.push({
+        sortDate: date,
+        title: row.group_name || 'Grupo',
+        subtitle: endedLabel ? `Hasta ${endedLabel} · ${row.group_days || 0} día(s)` : `${row.group_days || 0} día(s)`,
+        label: isActive ? 'Grupo actual' : 'Grupo',
+        tone: 'blue',
+        icon: 'horses',
+        isActive,
+      });
+    }
+
+    return events.sort((a, b) => (b.sortDate || '').localeCompare(a.sortDate || ''));
+  }
+
+  function collapseGrazingGroups(events) {
+    const grazingBuckets = new Map();
+    const rest = [];
+
+    for (const e of events) {
+      if (e.category === 'grazing') {
+        const key = `${e.title}|||${String(e.event_date || '')}`;
+        if (!grazingBuckets.has(key)) grazingBuckets.set(key, { rep: e, horses: [] });
+        if (e.subtitle) grazingBuckets.get(key).horses.push(e.subtitle);
+      } else {
+        rest.push(e);
+      }
+    }
+
+    const collapsed = Array.from(grazingBuckets.values()).map(({ rep, horses }) => {
+      if (horses.length <= 1) return rep;
+      return { ...rep, subtitle: `${horses.length} caballos`, detail: 'Movimiento de grupo' };
+    });
+
+    return [...rest, ...collapsed];
+  }
+
+  function renderRealRecordsTimeline(events, isFiltered) {
     const sorted = events.slice().sort((a, b) => {
       const ta = a.event_at || a.event_date || '';
       const tb = b.event_at || b.event_date || '';
@@ -8906,7 +10538,8 @@
     });
 
     if (sorted.length === 0) {
-      return `<section class="panel"><div class="empty-state"><p>No hay registros este mes.</p></div></section>`;
+      const emptyMsg = isFiltered ? 'No hay registros para los filtros aplicados.' : 'No hay registros este mes.';
+      return `<section class="panel"><div class="empty-state"><p>${emptyMsg}</p></div></section>`;
     }
 
     return `
@@ -8936,9 +10569,10 @@
     `;
   }
 
-  function renderRealRecordsByCategory(events) {
+  function renderRealRecordsByCategory(events, isFiltered) {
     if (events.length === 0) {
-      return `<section class="panel"><div class="empty-state"><p>No hay registros este mes.</p></div></section>`;
+      const emptyMsg = isFiltered ? 'No hay registros para los filtros aplicados.' : 'No hay registros este mes.';
+      return `<section class="panel"><div class="empty-state"><p>${emptyMsg}</p></div></section>`;
     }
 
     const groups = {};
@@ -8954,7 +10588,7 @@
       <div class="stack-gap">
         ${Object.values(groups).map((group) => `
           <section class="panel">
-            <div class="panel-head">
+            <div class="panel-head ${escapeHtml(group?.tag || '').trim().toLowerCase().replace(/\s+/g, '-')}">
               <h2>${escapeHtml(group.tag)}</h2>
               ${renderBadge(String(group.items.length), group.tone)}
             </div>
@@ -8983,13 +10617,37 @@
     if (isRealSession(state)) {
       // Collect events from all loaded calendar months, newest-first across months
       const allMonthStates = Object.values(state.calendarEventsByMonth || {});
+      const loadingMonths = allMonthStates.filter((ms) => ms && ms.loading && !ms.data).length;
       const loaded = allMonthStates.filter((ms) => ms && ms.data && Array.isArray(ms.data.events));
 
       if (allMonthStates.length === 0) {
         return `<div class="page-stack"><div class="empty-state"><p>Cargando registros…</p></div></div>`;
       }
 
-      const events = loaded.flatMap((ms) => ms.data.events);
+      const allEvents = loaded.flatMap((ms) => ms.data.events);
+
+      const rf = state.recordsFilters || {};
+      const moduleFilter = (rf.module && rf.module !== 'Todos') ? rf.module : '';
+      const typeFilter = (rf.type && rf.type !== 'Todos') ? rf.type : '';
+      const fromFilter = String(rf.from || '').trim();
+      const toFilter = String(rf.to || '').trim();
+      const channelFilter = (rf.channel && rf.channel !== 'Todos') ? rf.channel : '';
+
+      const MODULE_TO_NAVKEY = { Potreros: 'paddocks', Caballos: 'horses', Clima: 'records', Stock: 'stock' };
+
+      const filtered = allEvents.filter((e) => {
+        const cm = getCalendarCategoryMeta(e.category);
+        if (moduleFilter && MODULE_TO_NAVKEY[moduleFilter] && cm.navKey !== MODULE_TO_NAVKEY[moduleFilter]) return false;
+        if (typeFilter && cm.tag !== typeFilter) return false;
+        const evDate = String(e.event_date || '').trim();
+        if (fromFilter && evDate && evDate < fromFilter) return false;
+        if (toFilter && evDate && evDate > toFilter) return false;
+        return true;
+      });
+
+      const events = collapseGrazingGroups(filtered);
+
+      const isFiltered = !!(moduleFilter || typeFilter || fromFilter || toFilter || channelFilter);
 
       const byCategory = {};
       for (const e of events) {
@@ -8998,19 +10656,52 @@
       }
       const topCategories = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 3);
 
+      const totalDetail = isFiltered ? 'filtrados' : 'este mes';
       const metrics = [
-        { label: 'Total registros', value: String(events.length), detail: 'este mes', tone: 'neutral', icon: 'records' },
+        { label: 'Total registros', value: String(events.length), detail: totalDetail, tone: 'neutral', icon: 'records' },
         ...topCategories.map(([tag, count]) => ({
           label: tag, value: String(count), detail: 'registros', tone: 'neutral', icon: 'records',
         })),
       ].slice(0, 4);
 
+      const filterChips = [
+        moduleFilter ? { label: `Módulo: ${moduleFilter}`, key: 'module' } : null,
+        typeFilter ? { label: `Tipo: ${typeFilter}`, key: 'type' } : null,
+        fromFilter ? { label: `Desde: ${formatCompactDateLabel(fromFilter)}`, key: 'from' } : null,
+        toFilter ? { label: `Hasta: ${formatCompactDateLabel(toFilter)}`, key: 'to' } : null,
+        channelFilter ? { label: `Canal: ${channelFilter}`, key: 'channel' } : null,
+      ].filter(Boolean);
+
+      const filterBar = isFiltered ? `
+        <div class="records-filter-bar">
+          ${filterChips.map((chip) => `
+            <span class="records-filter-chip">
+              ${escapeHtml(chip.label)}
+              <button type="button" class="records-chip-remove" ${renderActionAttributes({ action: 'remove-records-filter', value: chip.key })} aria-label="Quitar filtro">
+                ${renderIcon('close')}
+              </button>
+            </span>
+          `).join('')}
+          <button type="button" class="records-filter-clear" ${renderActionAttributes({ action: 'clear-records-filters' })}>
+            Limpiar todo
+          </button>
+        </div>
+      ` : '';
+
+      const loadingBanner = loadingMonths > 0 ? `
+        <div class="records-loading-bar">
+          ${renderIcon('refresh')} Cargando ${loadingMonths} ${loadingMonths > 1 ? 'meses' : 'mes'} de historial…
+        </div>
+      ` : '';
+
       const activeView = getActiveView(state, 'records');
       return `
         <div class="page-stack">
           ${renderMetricGrid(metrics)}
+          ${filterBar}
+          ${loadingBanner}
           ${renderSegmentedTabs(state, 'records', RECORDS_TABS)}
-          ${activeView === 'categories' ? renderRealRecordsByCategory(events) : renderRealRecordsTimeline(events)}
+          ${activeView === 'categories' ? renderRealRecordsByCategory(events, isFiltered) : renderRealRecordsTimeline(events, isFiltered)}
         </div>
       `;
     }
@@ -9079,7 +10770,7 @@
         </section>
 
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head datos-de-la-cuenta">
             <h2>Datos de la cuenta</h2>
           </div>
           <div class="form-stack">
@@ -9103,7 +10794,7 @@
         </section>
 
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head accesos-rapidos">
             <h2>Accesos rápidos</h2>
           </div>
           <div class="toggle-list">
@@ -9144,7 +10835,7 @@
     return `
       <div class="stack-gap">
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head seguridad-de-acceso">
             <h2>Seguridad de acceso</h2>
           </div>
           <div class="toggle-list">
@@ -9175,7 +10866,7 @@
         </section>
 
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head zona-de-peligro">
             <h2>Zona de peligro</h2>
           </div>
           <article class="danger-card">
@@ -9242,7 +10933,7 @@
         </section>
 
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head configuracion-del-bot">
             <h2>Configuración del Bot</h2>
           </div>
           <div class="form-stack">
@@ -9282,7 +10973,7 @@
         </section>
 
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head comandos-disponibles">
             <h2>Comandos Disponibles</h2>
           </div>
           <div class="command-list">
@@ -9309,7 +11000,7 @@
     return `
       <div class="stack-gap">
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head informacion-del-campo">
             <h2>Información del Campo</h2>
           </div>
           <div class="form-stack">
@@ -9351,7 +11042,7 @@
         </section>
 
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head clima">
             <h2>Clima</h2>
           </div>
           <article class="toggle-card">
@@ -9374,7 +11065,7 @@
     return `
       <div class="stack-gap">
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head alertas">
             <h2>Alertas</h2>
           </div>
           <div class="toggle-list">
@@ -9398,7 +11089,7 @@
         </section>
 
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head canal-de-notificaciones">
             <h2>Canal de Notificaciones</h2>
           </div>
           <div class="toggle-list">
@@ -9426,7 +11117,7 @@
     return `
       <div class="stack-gap">
         <section class="panel">
-          <div class="panel-head">
+          <div class="panel-head usuarios-autorizados">
             <h2>Usuarios Autorizados</h2>
           </div>
           <div class="user-list">
@@ -10330,6 +12021,23 @@
             >
               <span>Cerrar</span>
             </button>
+            ${
+              paddock.ready_to_graze_on
+                ? `
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    ${renderActionAttributes({
+                      action: 'open-modal',
+                      value: 'paddock-extend-rest-form',
+                      meta: { paddockId: paddock.id },
+                    })}
+                  >
+                    <span>Extender descanso</span>
+                  </button>
+                `
+                : ''
+            }
             <button
               type="button"
               class="btn btn-primary"
@@ -10344,6 +12052,46 @@
           </div>
         </div>
       `,
+    });
+  }
+
+  function renderPaddockExtendRestFormModal(state, payload) {
+    const paddock = getRealPaddockById(state, payload.paddockId);
+    if (!paddock) {
+      return '';
+    }
+
+    const currentReadyDate = paddock.ready_to_graze_on || '';
+
+    return renderFormModal({
+      key: 'paddock-extend-rest-form',
+      title: `Extender descanso de ${paddock.name}`,
+      subtitle: currentReadyDate
+        ? `Hoy está previsto listo desde ${formatDateLabel(currentReadyDate)}. Poné la nueva fecha.`
+        : 'Elegí la nueva fecha en la que el potrero va a estar listo.',
+      columns: 1,
+      fields: [
+        {
+          label: 'Nueva fecha lista para pastorear',
+          name: 'readyToGrazeOn',
+          type: 'date',
+          value: currentReadyDate || todayDateString(),
+          required: true,
+        },
+        {
+          label: 'Motivo (opcional)',
+          name: 'notes',
+          type: 'textarea',
+          rows: 2,
+          value: '',
+          placeholder: 'Ej: No llovió, se extiende 30 días más.',
+        },
+      ],
+      extraBody: `<input type="hidden" name="paddockId" value="${escapeHtml(String(paddock.id))}" />`,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Guardar nueva fecha', tone: 'primary', icon: 'check', submit: true },
+      ],
     });
   }
 
@@ -10406,7 +12154,7 @@
         type: 'number',
         value: '',
         min: '0',
-        step: '0.1',
+        step: 'any',
         placeholder: '5.2',
       },
       {
@@ -10432,7 +12180,7 @@
         type: 'number',
         value: paddock?.size_ha != null ? String(paddock.size_ha) : '',
         min: '0',
-        step: '0.1',
+        step: 'any',
         placeholder: '5.2',
       },
       {
@@ -10462,7 +12210,7 @@
         type: 'number',
         value: paddock?.manual_rest_days != null ? String(paddock.manual_rest_days) : '',
         min: '0',
-        step: '1',
+        step: 'any',
         placeholder: '14',
       },
       {
@@ -10511,6 +12259,23 @@
                     ${renderActionAttributes({ action: 'close-modal' })}
                   >
                     <span>Cancelar</span>
+                  </button>
+                `
+                : ''
+            }
+            ${
+              isEdit && paddock?.ready_to_graze_on
+                ? `
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    ${renderActionAttributes({
+                      action: 'open-modal',
+                      value: 'paddock-extend-rest-form',
+                      meta: { paddockId: paddock.id },
+                    })}
+                  >
+                    <span>Extender descanso</span>
                   </button>
                 `
                 : ''
@@ -10975,11 +12740,15 @@
 
     return `
       <section class="horse-history-block horse-feed-calendar-block">
-        <div class="horse-history-block-head horse-feed-block-head">
-          <div>
-            <strong>Calendario de Alimentación</strong>
-            <span>Marcá mañana, tarde o noche en borrador y guardá todo junto cuando termines.</span>
-          </div>
+        <details class="feed-calendar-details" open>
+          <summary class="horse-history-block-head horse-feed-block-head feed-calendar-summary">
+            <div>
+              <strong>Calendario de Alimentación</strong>
+              <span>Marcá mañana, tarde o noche en borrador y guardá todo junto cuando termines.</span>
+            </div>
+            <div class="feed-calendar-chevron">${renderIcon('chevronDown')}</div>
+          </summary>
+
           <div class="horse-feed-calendar-controls">
             <button
               type="button"
@@ -11022,33 +12791,33 @@
               ${renderIcon('chevronRight')}
             </button>
           </div>
-        </div>
 
-        ${
-          validPlanRows.length
-            ? ''
-            : `
-              <div class="horse-feed-empty-slot">
-                <strong>Guardá al menos un ingrediente en el plan.</strong>
-                <span>Cuando haya mezcla en mañana, tarde o noche, el calendario se habilita para ese slot.</span>
-              </div>
-            `
-        }
+          ${
+            validPlanRows.length
+              ? ''
+              : `
+                <div class="horse-feed-empty-slot">
+                  <strong>Guardá al menos un ingrediente en el plan.</strong>
+                  <span>Cuando haya mezcla en mañana, tarde o noche, el calendario se habilita para ese slot.</span>
+                </div>
+              `
+          }
 
-        <div class="horse-feed-calendar-shell">
-          <div class="horse-feed-calendar-header">
-            <strong>${escapeHtml(formatMonthLabel(selectedMonth))}</strong>
-            <span>${escapeHtml(
-              validPlanRows.length
-                ? `${pendingChangesLabel}. Solo se activan los slots con mezcla guardada.`
-                : 'Todavía no hay slots disponibles para marcar.'
-            )}</span>
+          <div class="horse-feed-calendar-shell">
+            <div class="horse-feed-calendar-header">
+              <strong>${escapeHtml(formatMonthLabel(selectedMonth))}</strong>
+              <span>${escapeHtml(
+                validPlanRows.length
+                  ? `${pendingChangesLabel}. Solo se activan los slots con mezcla guardada.`
+                  : 'Todavía no hay slots disponibles para marcar.'
+              )}</span>
+            </div>
+            <div class="horse-feed-calendar-grid">
+              <div class="horse-feed-calendar-weekdays">${weekdayHeaders}</div>
+              <div class="horse-feed-calendar-days">${leadingSpacers}${dayCards.join('')}</div>
+            </div>
           </div>
-          <div class="horse-feed-calendar-grid">
-            <div class="horse-feed-calendar-weekdays">${weekdayHeaders}</div>
-            <div class="horse-feed-calendar-days">${leadingSpacers}${dayCards.join('')}</div>
-          </div>
-        </div>
+        </details>
       </section>
     `;
   }
@@ -11175,6 +12944,16 @@
           readonly: true,
           disabled: true,
           hint: 'Este repaso se registra después, cuando realmente lo des.',
+        },
+        {
+          label: 'Costo ($)',
+          name: 'costAmount',
+          type: 'number',
+          value: payload?.costAmount || '',
+          min: '0',
+          step: 'any',
+          placeholder: 'Opcional',
+          hint: 'Si lo cargás, entra al costo mensual del propietario.',
         },
       ],
       extraBody: `
@@ -11325,6 +13104,16 @@
             'data-care-form-field': 'nextDueDate',
           },
         },
+        {
+          label: 'Costo ($)',
+          name: 'costAmount',
+          type: 'number',
+          value: payload?.costAmount || '',
+          min: '0',
+          step: 'any',
+          placeholder: 'Opcional',
+          hint: 'Si lo cargás, entra al costo mensual del propietario.',
+        },
       ],
       extraBody: `
         <input type="hidden" name="horseId" value="${escapeHtml(String(horseId))}" />
@@ -11402,6 +13191,16 @@
           attributes: {
             'data-care-form-field': 'notes',
           },
+        },
+        {
+          label: 'Costo ($)',
+          name: 'costAmount',
+          type: 'number',
+          value: payload?.costAmount || '',
+          min: '0',
+          step: 'any',
+          placeholder: 'Opcional',
+          hint: 'Si lo cargás, entra al costo mensual del propietario.',
         },
       ],
       extraBody: `
@@ -11874,50 +13673,61 @@
           </div>
         </section>
 
-        ${renderHorseFeedSaveBar(state, horse, payload, historyPayload, historyState)}
-        ${renderHorseFeedPlanEditor(state, horse, payload, historyPayload, historyState)}
-        ${renderHorseFeedCalendar(state, horse, payload, historyPayload, historyState)}
-        ${renderHorseFeedRecentHistory(state, payload, historyPayload)}
+        ${(() => {
+          const feedEnabled = Boolean(horse?.feed_enabled);
+          return `
+            ${feedEnabled ? renderHorseFeedSaveBar(state, horse, payload, historyPayload, historyState) : ''}
+            ${feedEnabled ? renderHorseFeedPlanEditor(state, horse, payload, historyPayload, historyState) : ''}
+            ${feedEnabled ? renderHorseFeedCalendar(state, horse, payload, historyPayload, historyState) : ''}
+            ${feedEnabled ? renderHorseFeedRecentHistory(state, payload, historyPayload) : ''}
+          `;
+        })()}
 
         <section class="horse-history-block">
           <div class="horse-history-block-head">
-            <strong>Historial de Movimientos</strong>
+            <strong>Historial Completo</strong>
           </div>
-          <div class="horse-history-timeline">
-            ${
-              movementRows.length
-                ? movementRows
-                    .map((row) => {
-                      const periodLabel = row.exited_at
-                        ? `${row.days || row.grazing_days || 0} día(s) · ${formatDateLabel(row.entered_at)} - ${formatDateLabel(row.exited_at)}`
-                        : `${row.days || row.grazing_days || 0} día(s) · Desde ${formatDateLabel(row.entered_at)}`;
-                      const notes = [row.source_group_name ? `Grupo: ${row.source_group_name}` : '', row.entry_notes || '', row.exit_notes || '']
-                        .filter(Boolean)
-                        .join(' · ');
-
-                      return `
-                        <article class="horse-history-timeline-row">
-                          <div class="horse-history-timeline-dot${row.exited_at ? '' : ' is-current'}"></div>
-                          <div class="horse-history-timeline-copy">
-                            <div class="horse-history-timeline-title">
-                              <strong>${escapeHtml(row.paddock_name || 'Sin potrero')}</strong>
-                              ${row.exited_at ? '' : renderBadge('Actual', 'gray')}
-                            </div>
-                            <span>${escapeHtml(periodLabel)}</span>
-                            ${notes ? `<small>${escapeHtml(notes)}</small>` : ''}
-                          </div>
-                        </article>
-                      `;
-                    })
-                    .join('')
-                : `
-                  <div class="group-manage-empty">
-                    <strong>Este caballo todavía no tiene movimientos cargados.</strong>
-                    <span>Cuando se mueva entre potreros, la línea temporal va a aparecer acá.</span>
-                  </div>
-                `
+          ${(() => {
+            const timelineEvents = buildHorseTimeline(historyPayload);
+            if (!timelineEvents.length) {
+              return `
+                <div class="group-manage-empty">
+                  <strong>Este caballo todavía no tiene historial registrado.</strong>
+                  <span>Los movimientos, tratamientos y registros de salud van a aparecer acá.</span>
+                </div>
+              `;
             }
-          </div>
+            const byMonth = {};
+            for (const ev of timelineEvents) {
+              const monthKey = (ev.sortDate || '').slice(0, 7);
+              if (!byMonth[monthKey]) byMonth[monthKey] = [];
+              byMonth[monthKey].push(ev);
+            }
+            return `
+              <div class="horse-history-timeline">
+                ${Object.entries(byMonth).map(([monthKey, evs]) => `
+                  <div class="horse-timeline-month-group">
+                    <div class="horse-timeline-month-label">${escapeHtml(formatMonthLabel(monthKey))}</div>
+                    ${evs.map((ev) => `
+                      <article class="horse-history-timeline-row">
+                        <div class="horse-history-timeline-dot horse-history-timeline-dot--${escapeHtml(ev.tone)}${ev.isActive ? ' is-current' : ''}">
+                          ${renderIcon(ev.icon)}
+                        </div>
+                        <div class="horse-history-timeline-copy">
+                          <div class="horse-history-timeline-title">
+                            <strong>${escapeHtml(ev.title)}</strong>
+                            ${renderBadge(ev.label, ev.tone)}
+                          </div>
+                          ${ev.subtitle ? `<span>${escapeHtml(ev.subtitle)}</span>` : ''}
+                        </div>
+                        <div class="horse-timeline-date">${escapeHtml(formatCompactDateLabel(ev.sortDate))}</div>
+                      </article>
+                    `).join('')}
+                  </div>
+                `).join('')}
+              </div>
+            `;
+          })()}
         </section>
       `,
       footerButtons: [
@@ -12025,6 +13835,21 @@
           value: isEdit ? String(horse.current_group?.id || '') : '',
           options: groupOptions,
           hint: 'Si elegís otro grupo, actualizamos la membresía activa.',
+        },
+        {
+          label: 'Fecha de movimiento',
+          name: 'eventDate',
+          type: 'date',
+          value: payload?.eventDate || todayDateString(),
+          hint: 'Fecha efectiva del ingreso al potrero o grupo.',
+        },
+        {
+          label: 'Activar alimentación',
+          name: 'feedEnabled',
+          type: 'checkbox',
+          checked: isEdit ? Boolean(horse.feed_enabled) : false,
+          hint: 'Muestra el calendario y plan de alimentación para este caballo.',
+          layout: 'wide',
         },
       ],
       extraBody:
@@ -12142,6 +13967,14 @@
           required: true,
         },
         {
+          label: 'Fecha del movimiento',
+          name: 'eventDate',
+          type: 'date',
+          value: payload?.eventDate || todayDateString(),
+          hint: 'Podés cargar una fecha anterior si registrás la movida unos días más tarde.',
+          required: true,
+        },
+        {
           label: 'Notas (opcional)',
           name: 'notes',
           type: 'textarea',
@@ -12150,12 +13983,6 @@
           layout: 'wide',
         },
       ],
-      extraBody: `
-        <div class="modal-detail-card modal-field--wide">
-          <strong>Fecha del movimiento</strong>
-          <span>Se registra con fecha de hoy: ${escapeHtml(formatDateLabel(todayDateString()))}</span>
-        </div>
-      `,
     });
   }
 
@@ -12245,7 +14072,7 @@
           type: 'number',
           value: payload?.rainMm || '',
           min: '0',
-          step: '0.1',
+          step: 'any',
           placeholder: '12',
           required: true,
         },
@@ -13060,7 +14887,7 @@
             detail: 'La lluvia se guarda a nivel campo, no por potrero individual.',
           },
           fields: [
-            { label: 'Cantidad (mm)', name: 'rainMm', type: 'number', value: '12', min: '0', step: '0.1', required: true },
+            { label: 'Cantidad (mm)', name: 'rainMm', type: 'number', value: '12', min: '0', step: 'any', required: true },
             { label: 'Fecha', name: 'eventDate', type: 'date', value: '2026-05-22', required: true },
             { label: 'Notas (opcional)', name: 'notes', type: 'textarea', rows: 4, placeholder: 'Ejemplo: lluvia continua durante la noche.', layout: 'wide' },
           ],
@@ -13178,6 +15005,13 @@
             },
           ],
         });
+      }
+
+      case 'paddock-extend-rest-form': {
+        if (isRealSession(state)) {
+          return renderPaddockExtendRestFormModal(state, payload);
+        }
+        return '';
       }
 
       case 'paddock-form': {
@@ -13323,12 +15157,57 @@
             { label: 'Nombre', name: 'ownerName', type: 'text', placeholder: 'Ej: Juan García', required: true },
             { label: 'Teléfono', name: 'phone', type: 'tel', placeholder: '+54 9 11 1234-5678' },
             { label: 'Email', name: 'email', type: 'email', placeholder: 'juan@email.com' },
-            { label: 'Tarifa / caballo / mes ($)', name: 'ratePerHorse', type: 'number', min: '0', step: '100', placeholder: '2500' },
+            { label: 'Tarifa / caballo / mes ($)', name: 'ratePerHorse', type: 'number', min: '0', step: 'any', placeholder: '2500' },
           ],
         });
       }
 
+      case 'owner-ledger-form': {
+        if (isRealSession(state)) {
+          return renderOwnerLedgerFormModal(state, payload);
+        }
+        return '';
+      }
+
+      case 'general-expense-form': {
+        if (isRealSession(state)) {
+          return renderGeneralExpenseFormModal(state, payload);
+        }
+        return '';
+      }
+
+      case 'owner-statement-form': {
+        if (isRealSession(state)) {
+          return renderOwnerStatementFormModal(state, payload);
+        }
+        return '';
+      }
+
+      case 'owner-feed-purchase-form': {
+        if (isRealSession(state)) {
+          return renderOwnerFeedPurchaseFormModal(state, payload);
+        }
+        return '';
+      }
+
+      case 'owner-expense-split-form': {
+        if (isRealSession(state)) {
+          return renderOwnerExpenseSplitFormModal(state, payload);
+        }
+        return '';
+      }
+
+      case 'owner-statement-view': {
+        if (isRealSession(state)) {
+          return renderOwnerStatementViewModal(state);
+        }
+        return '';
+      }
+
       case 'owner-detail': {
+        if (isRealSession(state)) {
+          return renderRealOwnerDetailModal(state, payload);
+        }
         const owner = getOwnerByName(payload.name);
         return renderInfoModal({
           size: 'wide',
@@ -13466,21 +15345,25 @@
         });
       }
 
-      case 'advanced-filters':
+      case 'advanced-filters': {
+        const rf = state.recordsFilters || {};
         return renderFormModal({
           key: 'advanced-filters',
-          title: 'Filtros Avanzados',
-          subtitle: 'Ajusta cómo quieres revisar los registros',
-          submitLabel: 'Aplicar filtros',
-          submitIcon: 'filter',
+          title: 'Filtros de Registros',
+          subtitle: 'Filtrá por módulo, tipo o rango de fechas. Se cargan los meses necesarios.',
+          footerButtons: [
+            { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+            { label: 'Aplicar filtros', tone: 'primary', icon: 'filter', trigger: { action: 'apply-records-filters' } },
+          ],
           fields: [
-            { label: 'Módulo', name: 'module', type: 'select', value: 'Todos', options: ['Todos', 'Potreros', 'Caballos', 'Clima', 'Telegram'] },
-            { label: 'Tipo', name: 'type', type: 'select', value: 'Todos', options: ['Todos', 'Movimiento', 'Trabajo', 'Salud', 'Clima'] },
-            { label: 'Desde', name: 'from', type: 'date', value: '2026-05-01' },
-            { label: 'Hasta', name: 'to', type: 'date', value: '2026-05-22' },
-            { label: 'Canal', name: 'channel', type: 'select', value: 'Todos', options: ['Todos', 'Manual', 'Telegram', 'Sistema'] },
+            { label: 'Módulo', name: 'module', type: 'select', value: rf.module || 'Todos', options: ['Todos', 'Potreros', 'Caballos', 'Clima', 'Stock'] },
+            { label: 'Tipo', name: 'type', type: 'select', value: rf.type || 'Todos', options: ['Todos', 'Movimiento', 'Trabajo', 'Salud', 'Clima', 'Stock'] },
+            { label: 'Desde', name: 'from', type: 'date', value: rf.from || '' },
+            { label: 'Hasta', name: 'to', type: 'date', value: rf.to || '' },
+            { label: 'Canal', name: 'channel', type: 'select', value: rf.channel || 'Todos', options: ['Todos', 'Manual', 'Telegram', 'Sistema'] },
           ],
         });
+      }
 
       case 'task-detail':
         if (isRealSession(state)) {
@@ -13837,6 +15720,7 @@
     paddocksDashboard: null,
     stockDashboard: null,
     ownersDashboard: null,
+    ownerStatement: null,
     calendarEventsByMonth: {},
     horseHistoryById: {},
     paddockDetailById: {},
@@ -14293,6 +16177,18 @@
       refreshedAt: payload?.meta?.refreshed_at || new Date().toISOString(),
       ...(options.closeModal ? { modal: null } : {}),
     });
+    loadExpenseSplitDrafts().catch(() => {});
+    return payload;
+  }
+
+  async function loadExpenseSplitDrafts() {
+    if (!isRealSession(store.getState())) {
+      setState({ expenseSplitDrafts: null });
+      return null;
+    }
+
+    const payload = await requestJson(OWNER_EXPENSE_SPLIT_DRAFTS_API_URL);
+    setState({ expenseSplitDrafts: payload?.drafts || [] });
     return payload;
   }
 
@@ -14650,6 +16546,7 @@
     horseId,
     currentPaddockId = null,
     nextPaddockId = null,
+    eventDate = null,
     notes = '',
   }) {
     const normalizedHorseId = parsePositiveInt(horseId);
@@ -14659,6 +16556,7 @@
         : getRealHorseById(state, normalizedHorseId)?.current_location?.paddock_id
     );
     const resolvedNextPaddockId = parsePositiveInt(nextPaddockId);
+    const resolvedEventDate = eventDate || todayDateString();
 
     if (resolvedCurrentPaddockId === resolvedNextPaddockId) {
       return { changed: false };
@@ -14669,7 +16567,7 @@
         action: 'grazing_move_out',
         horseId: normalizedHorseId,
         paddockId: resolvedCurrentPaddockId,
-        eventDate: todayDateString(),
+        eventDate: resolvedEventDate,
         notes: notes || undefined,
       });
     }
@@ -14679,7 +16577,7 @@
         action: 'grazing_move_in',
         horseId: normalizedHorseId,
         paddockId: resolvedNextPaddockId,
-        eventDate: todayDateString(),
+        eventDate: resolvedEventDate,
         notes: notes || undefined,
       });
 
@@ -14775,6 +16673,39 @@
     }
   }
 
+  async function submitPaddockExtendRestForm(formData) {
+    const values = formDataToObject(formData);
+    const paddockId = parsePositiveInt(values.paddockId);
+    const readyToGrazeOn = String(values.readyToGrazeOn || '').trim();
+
+    if (!paddockId) {
+      showToast('No encontramos el potrero para extender el descanso.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(readyToGrazeOn)) {
+      showToast('Elegí una fecha válida.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await postMutation({
+        action: 'paddock_ready_date_set',
+        paddockId,
+        readyToGrazeOn,
+        notes: values.notes || '',
+      });
+
+      await loadAdminDashboards({ closeModal: true });
+      showToast(`Descanso extendido. Listo desde ${formatDateLabel(readyToGrazeOn)}.`);
+    } catch (error) {
+      showToast(error.message || 'No pudimos extender el descanso.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
   async function submitHorseForm(formData) {
     const currentState = store.getState();
     const isEdit = currentState.modal?.payload?.mode === 'edit';
@@ -14783,6 +16714,7 @@
     const currentHorse = isEdit ? getRealHorseById(currentState, horseId) : null;
     const selectedGroupId = parsePositiveInt(values.groupId);
     const selectedPaddockId = parsePositiveInt(values.paddockId);
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
 
     setState({ loading: true });
 
@@ -14798,6 +16730,7 @@
           sex: values.sex || '',
           trainingStatus: values.trainingStatus || '',
           ownerId: values.ownerId || '',
+          feedEnabled: values.feedEnabled === 'true',
         }),
       });
 
@@ -14832,6 +16765,7 @@
         horseId: savedHorseId,
         currentPaddockId: currentHorse?.current_location?.paddock_id || null,
         nextPaddockId: resolvedPaddockId,
+        eventDate,
       });
 
       await loadAdminDashboards({ closeModal: true });
@@ -14903,6 +16837,7 @@
         body: JSON.stringify({
           ownerId: isEdit ? ownerId : undefined,
           name: ownerName,
+          ownerType: values.ownerType || 'pension',
           phone: values.phone || '',
           email: values.email || '',
           notes: values.notes || '',
@@ -15214,11 +17149,16 @@
     setState({ loading: true });
 
     try {
+      const costAmount = values.costAmount !== undefined && values.costAmount !== ''
+        ? parseFloat(values.costAmount)
+        : undefined;
+
       const payload = await postMutation({
         action: 'deworm_event_add',
         horseId,
         productName,
         eventDate,
+        costAmount,
       });
 
       await restoreHorseHistoryModalAfterSave(formData, horseId);
@@ -15310,12 +17250,17 @@
     setState({ loading: true });
 
     try {
+      const costAmount = values.costAmount !== undefined && values.costAmount !== ''
+        ? parseFloat(values.costAmount)
+        : undefined;
+
       const payload = await postMutation({
         action: 'farrier_event_add',
         horseId,
         serviceType,
         eventDate,
         nextDueDate: nextDueDate || undefined,
+        costAmount,
       });
 
       await restoreHorseHistoryModalAfterSave(formData, horseId);
@@ -15366,6 +17311,10 @@
     setState({ loading: true });
 
     try {
+      const costAmount = values.costAmount !== undefined && values.costAmount !== ''
+        ? parseFloat(values.costAmount)
+        : undefined;
+
       const payload = await postMutation({
         action: 'health_event_add',
         horseId,
@@ -15373,6 +17322,7 @@
         description,
         notes: notes || undefined,
         eventDate,
+        costAmount,
       });
 
       await restoreHorseHistoryModalAfterSave(formData, horseId);
@@ -16018,6 +17968,7 @@
     const values = formDataToObject(formData);
     const horseId = parsePositiveInt(values.horseId);
     const paddockId = parsePositiveInt(values.paddockId);
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
     const notes = String(values.notes || '').trim();
     const horse = horseId ? getRealHorseById(currentState, horseId) : null;
     const paddock = paddockId ? getRealPaddockCatalogById(currentState, paddockId) : null;
@@ -16032,7 +17983,12 @@
       return;
     }
 
-    const paddockError = getPaddockSelectionError(paddock);
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida para registrar el movimiento.', 'critical');
+      return;
+    }
+
+    const paddockError = getPaddockSelectionError(paddock, eventDate);
     if (paddockError) {
       showToast(paddockError, 'critical');
       return;
@@ -16045,6 +18001,7 @@
         state: currentState,
         horseId,
         nextPaddockId: paddockId,
+        eventDate,
         notes,
       });
 
@@ -16323,6 +18280,7 @@
     }
 
     const nextGroupName = String(values.groupName || values.groupNameOriginal || modalState.name).trim();
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
     if (!nextGroupName) {
       showToast('El grupo necesita un nombre.', 'critical');
       return;
@@ -16366,7 +18324,7 @@
             action: 'grazing_group_move_in',
             groupId: savedGroupId,
             paddockId: parsePositiveInt(modalState.current_location_id),
-            eventDate: todayDateString(),
+            eventDate,
             notes: `Alineación automática después de actualizar miembros de ${savedGroupName}.`,
           });
         } catch (error) {
@@ -16477,6 +18435,561 @@
     }
   }
 
+  async function submitOwnerLedgerForm(formData) {
+    const values = formDataToObject(formData);
+    const ownerId = parsePositiveInt(values.ownerId);
+    const entryType = values.entryType === 'charge' ? 'charge' : 'payment';
+    const amount = parseFloat(values.amount);
+
+    if (!ownerId) {
+      showToast('No encontramos el propietario para registrar el movimiento.', 'critical');
+      return;
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast('Cargá un monto mayor a cero.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await requestJson(OWNER_LEDGER_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          ownerId,
+          entryType,
+          amount,
+          currency: values.currency === 'USD' ? 'USD' : 'UYU',
+          entryDate: values.entryDate || todayDateString(),
+          description: values.description || '',
+          notes: values.notes || '',
+        }),
+      });
+
+      await loadOwnersDashboard({ closeModal: true });
+      showToast(entryType === 'payment' ? 'Pago registrado.' : 'Cargo registrado.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar el movimiento.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function generateOwnerChargeForOwner(ownerId) {
+    const id = parsePositiveInt(ownerId);
+    const owner = getRealOwnerById(store.getState(), id);
+    if (!owner) {
+      showToast('No encontramos ese propietario en la lectura actual.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await requestJson(OWNER_LEDGER_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'generate_monthly_charge', ownerId: id }),
+      });
+      await loadOwnersDashboard();
+      showToast(`Cargo mensual generado para ${owner.name}.`);
+    } catch (error) {
+      showToast(error.message || 'No pudimos generar el cargo mensual.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function deleteOwnerLedgerEntryById(entryId) {
+    const id = parsePositiveInt(entryId);
+    if (!id) {
+      showToast('No encontramos ese movimiento en la lectura actual.', 'critical');
+      return;
+    }
+
+    const confirmed = window.confirm('Vas a eliminar este movimiento de la cuenta corriente.');
+    if (!confirmed) {
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await requestJson(OWNER_LEDGER_API_URL, {
+        method: 'DELETE',
+        body: JSON.stringify({ entryId: id }),
+      });
+      await loadOwnersDashboard();
+      showToast('Movimiento eliminado.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos eliminar el movimiento.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitOwnerFeedPurchaseForm(formData) {
+    const values = formDataToObject(formData);
+    const ownerId = parsePositiveInt(values.ownerId);
+    const productName = String(values.productName || '').trim();
+    const movementType = values.movementType === 'consumption' ? 'consumption' : 'purchase';
+    const isConsumption = movementType === 'consumption';
+    const amount = parseFloat(values.amount);
+    const quantity = parseFloat(values.quantity);
+    const quantityLabel = [values.quantity, values.unit]
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(' ');
+
+    if (!ownerId) {
+      showToast('No encontramos el propietario para registrar el movimiento.', 'critical');
+      return;
+    }
+
+    if (!productName) {
+      showToast('Cargá el producto (avena, maíz, semitín, etc.).', 'critical');
+      return;
+    }
+
+    const hasValidQuantity = Number.isFinite(quantity) && quantity > 0;
+    const hasValidAmount = Number.isFinite(amount) && amount > 0;
+
+    if (isConsumption && !hasValidQuantity) {
+      showToast('Cargá la cantidad consumida.', 'critical');
+      return;
+    }
+
+    if (!isConsumption && !hasValidQuantity && !hasValidAmount) {
+      showToast('Cargá el monto o al menos la cantidad (si no tenés el precio).', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await requestJson(OWNER_FEED_PURCHASES_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          ownerId,
+          productName,
+          movementType,
+          quantityLabel,
+          quantity: values.quantity || undefined,
+          unit: values.unit || '',
+          amount: isConsumption ? undefined : (hasValidAmount ? amount : undefined),
+          purchaseDate: values.purchaseDate || todayDateString(),
+          notes: values.notes || '',
+        }),
+      });
+
+      await loadOwnersDashboard({ closeModal: true });
+      showToast(isConsumption ? 'Consumo registrado.' : 'Compra de alimento registrada.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar la compra.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function deleteOwnerFeedPurchaseById(purchaseId) {
+    const id = parsePositiveInt(purchaseId);
+    if (!id) {
+      showToast('No encontramos esa compra en la lectura actual.', 'critical');
+      return;
+    }
+
+    const confirmed = window.confirm('Vas a eliminar esta compra de alimento.');
+    if (!confirmed) {
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await requestJson(OWNER_FEED_PURCHASES_API_URL, {
+        method: 'DELETE',
+        body: JSON.stringify({ purchaseId: id }),
+      });
+      await loadOwnersDashboard();
+      showToast('Compra eliminada.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos eliminar la compra.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitOwnerExpenseSplitForm(formData) {
+    const values = formDataToObject(formData);
+    const description = String(values.description || '').trim();
+    const amount = parseFloat(values.amount);
+    const logGeneralExpense = values.logGeneralExpense === 'true';
+    const includeHorseIds = formData.getAll('includeHorseId').map((v) => parsePositiveInt(v)).filter(Boolean);
+    const insumoIds = formData.getAll('includeInsumoId').map((v) => parsePositiveInt(v)).filter(Boolean);
+
+    if (!description) {
+      showToast('Cargá una descripción para el gasto.', 'critical');
+      return;
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast('Cargá un monto mayor a cero.', 'critical');
+      return;
+    }
+
+    if (includeHorseIds.length === 0) {
+      showToast('Tildá al menos un caballo que consuma este gasto.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      const payload = await requestJson(OWNER_EXPENSE_SPLIT_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          description,
+          amount,
+          expenseDate: values.expenseDate || todayDateString(),
+          currency: values.currency || 'UYU',
+          includeHorseIds,
+          insumoIds,
+          logGeneralExpense,
+          category: values.category || '',
+        }),
+      });
+
+      await Promise.all([
+        loadOwnersDashboard({ closeModal: true }),
+        loadStockDashboard(),
+      ]);
+
+      // If this reparto came from a saved borrador, it's now been billed -
+      // clear the draft so it doesn't linger in the project's list.
+      const draftId = parsePositiveInt(values.draftId);
+      if (draftId) {
+        requestJson(OWNER_EXPENSE_SPLIT_DRAFTS_API_URL, {
+          method: 'DELETE',
+          body: JSON.stringify({ draftId }),
+        }).then(() => loadExpenseSplitDrafts()).catch(() => {});
+      }
+
+      const result = payload?.result;
+      showToast(
+        result
+          ? `Se generaron ${result.charges.length} cargo(s) por un total de ${formatMoneyLabel(result.total_charged, result.currency)}.`
+          : 'Gasto repartido entre propietarios.'
+      );
+    } catch (error) {
+      showToast(error.message || 'No pudimos repartir el gasto.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function saveExpenseSplitDraftFromForm(formData, meta) {
+    const values = formDataToObject(formData);
+    const description = String(values.description || '').trim();
+
+    if (!description) {
+      showToast('Cargá una descripción para el gasto antes de guardar el borrador.', 'critical');
+      return;
+    }
+
+    const includeHorseIds = formData.getAll('includeHorseId').map((v) => parsePositiveInt(v)).filter(Boolean);
+    const insumoIds = formData.getAll('includeInsumoId').map((v) => parsePositiveInt(v)).filter(Boolean);
+    const draftId = parsePositiveInt(values.draftId) || parsePositiveInt(meta?.draftId) || undefined;
+
+    setState({ loading: true });
+    try {
+      const payload = await requestJson(OWNER_EXPENSE_SPLIT_DRAFTS_API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          draftId,
+          groupName: description,
+          description,
+          amount: values.amount || null,
+          currency: values.currency || 'UYU',
+          expenseDate: values.expenseDate || todayDateString(),
+          category: values.category || '',
+          includeHorseIds,
+          insumoIds,
+        }),
+      });
+
+      await loadExpenseSplitDrafts();
+
+      // Keep the modal open (this isn't a final action), but let the saved
+      // draft's id stick around so re-saving updates it in place instead of
+      // creating a duplicate every time she clicks "Guardar borrador".
+      updateActiveModalPayload((currentPayload) => ({
+        ...currentPayload,
+        draftId: payload?.draft?.id || draftId,
+      }));
+
+      showToast('Borrador guardado. Lo vas a encontrar junto al proyecto en Stock.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar el borrador.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  function continueExpenseSplitDraft(draftId) {
+    const id = parsePositiveInt(draftId);
+    const draft = (store.getState().expenseSplitDrafts || []).find((d) => d.id === id);
+    if (!draft) {
+      showToast('No encontramos ese borrador en la lectura actual.', 'critical');
+      return;
+    }
+
+    const stockGroups = store.getState().stockDashboard?.stock_dashboard?.accounting_panel?.general_expenses?.groups || [];
+    const matchedGroup = stockGroups.find((g) => g.group_name === draft.group_name);
+    const insumos = matchedGroup
+      ? matchedGroup.entries.map((e) => ({
+          id: e.id,
+          description: e.description,
+          amount: e.amount,
+          currency: e.currency,
+          buyerOwnerId: e.buyer_owner_id || null,
+          buyerOwnerName: e.buyer_owner_name || '',
+        }))
+      : null;
+
+    openModal('owner-expense-split-form', {
+      draftId: draft.id,
+      description: draft.description,
+      amount: draft.amount != null ? String(draft.amount) : '',
+      amountCurrencyHint: draft.currency,
+      currency: draft.currency,
+      expenseDate: draft.expense_date || todayDateString(),
+      category: draft.category || '',
+      includeHorseIds: draft.include_horse_ids || [],
+      includeInsumoIds: draft.insumo_ids && draft.insumo_ids.length > 0 ? draft.insumo_ids : undefined,
+      insumos,
+    });
+
+    if (!store.getState().ownersDashboard) {
+      loadOwnersDashboard().catch(() => {});
+    }
+    if (!store.getState().horsesDashboard) {
+      loadHorsesDashboard().catch(() => {});
+    }
+  }
+
+  async function deleteExpenseSplitDraftById(draftId) {
+    const id = parsePositiveInt(draftId);
+    if (!id) {
+      showToast('No encontramos ese borrador en la lectura actual.', 'critical');
+      return;
+    }
+
+    const confirmed = window.confirm('Vas a eliminar este borrador de reparto (no afecta ningún cargo ya generado).');
+    if (!confirmed) {
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await requestJson(OWNER_EXPENSE_SPLIT_DRAFTS_API_URL, {
+        method: 'DELETE',
+        body: JSON.stringify({ draftId: id }),
+      });
+      await loadExpenseSplitDrafts();
+      showToast('Borrador eliminado.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos eliminar el borrador.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitGeneralExpenseForm(formData) {
+    const values = formDataToObject(formData);
+    const isEdit = Boolean(values.expenseId);
+    const amount = parseFloat(values.amount);
+    const quantityLabel = [values.quantity, values.unit]
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(' ');
+
+    if (!values.description || !String(values.description).trim()) {
+      showToast('Cargá una descripción para el gasto.', 'critical');
+      return;
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast('Cargá un monto mayor a cero.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await requestJson(GENERAL_EXPENSES_API_URL, {
+        method: isEdit ? 'PATCH' : 'POST',
+        body: JSON.stringify({
+          expenseId: isEdit ? parsePositiveInt(values.expenseId) : undefined,
+          description: values.description,
+          amount,
+          currency: values.currency || 'UYU',
+          quantityLabel,
+          groupName: values.groupName || '',
+          buyerOwnerId: values.buyerOwnerId || '',
+          expenseDate: values.expenseDate || todayDateString(),
+          category: values.category || '',
+          notes: values.notes || '',
+        }),
+      });
+
+      await loadStockDashboard({ closeModal: true });
+      showToast(isEdit ? 'Gasto general actualizado.' : 'Gasto general registrado.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar el gasto.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function deleteGeneralExpenseById(expenseId) {
+    const id = parsePositiveInt(expenseId);
+    if (!id) {
+      showToast('No encontramos ese gasto en la lectura actual.', 'critical');
+      return;
+    }
+
+    const confirmed = window.confirm('Vas a eliminar este gasto general.');
+    if (!confirmed) {
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await requestJson(GENERAL_EXPENSES_API_URL, {
+        method: 'DELETE',
+        body: JSON.stringify({ expenseId: id }),
+      });
+      await loadStockDashboard();
+      showToast('Gasto eliminado.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos eliminar el gasto.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitOwnerStatementForm(formData) {
+    const values = formDataToObject(formData);
+    const ownerId = parsePositiveInt(values.ownerId);
+    const startDate = String(values.startDate || '').trim();
+    const endDate = String(values.endDate || '').trim();
+
+    if (!ownerId) {
+      showToast('No encontramos el propietario para generar el estado de cuenta.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(startDate) || !isValidDateString(endDate)) {
+      showToast('Elegí fechas válidas para el período.', 'critical');
+      return;
+    }
+
+    if (startDate > endDate) {
+      showToast('La fecha "desde" tiene que ser anterior a la fecha "hasta".', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      const query = new URLSearchParams({ ownerId: String(ownerId), startDate, endDate }).toString();
+      const payload = await requestJson(`${OWNER_STATEMENT_API_URL}?${query}`);
+      setState({ ownerStatement: payload.statement });
+      openModal('owner-statement-view', { ownerId });
+    } catch (error) {
+      showToast(error.message || 'No pudimos generar el estado de cuenta.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  function copyOwnerStatementToClipboard() {
+    const statement = store.getState().ownerStatement;
+    if (!statement) {
+      showToast('No hay un estado de cuenta generado todavía.', 'critical');
+      return;
+    }
+
+    const owner = statement.owner || {};
+    const entries = Array.isArray(statement.entries) ? statement.entries : [];
+    const opening = statement.opening_balance || 0;
+    const closing = statement.closing_balance || 0;
+    const closingLabel = closing > 0
+      ? `Debe ${formatCurrencyLabel(closing)}`
+      : closing < 0
+        ? `A favor ${formatCurrencyLabel(Math.abs(closing))}`
+        : 'Al día';
+
+    const lines = [];
+    lines.push(`Estado de cuenta - ${owner.name}`);
+    lines.push(`Período: ${formatDateLabel(statement.period.start)} al ${formatDateLabel(statement.period.end)}`);
+    lines.push('');
+    lines.push(`Saldo inicial: ${formatCurrencyLabel(Math.abs(opening))} ${opening > 0 ? '(debía)' : opening < 0 ? '(a favor)' : ''}`.trim());
+    lines.push('');
+    if (entries.length > 0) {
+      lines.push('Movimientos:');
+      entries.forEach((entry) => {
+        const sign = entry.entry_type === 'payment' ? '+' : '-';
+        const label = entry.entry_type === 'payment' ? 'Pago' : 'Cargo';
+        const desc = entry.description ? ` (${entry.description})` : '';
+        lines.push(`- ${formatCompactDateLabel(entry.entry_date)} ${label}${desc}: ${sign}${formatMoneyLabel(entry.amount, entry.currency)}`);
+      });
+    } else {
+      lines.push('Sin movimientos en este período.');
+    }
+    lines.push('');
+    lines.push(`Total cargos del período: ${formatCurrencyLabel(statement.period_charged || 0)}`);
+    lines.push(`Total pagos del período: ${formatCurrencyLabel(statement.period_paid || 0)}`);
+    lines.push(`Saldo final: ${closingLabel}`);
+
+    const usdStatement = (statement.balances_by_currency || {}).USD;
+    const hasUsdStatement = usdStatement && (
+      Math.abs(usdStatement.opening_balance || 0) > 0.001 ||
+      Math.abs(usdStatement.period_charged || 0) > 0.001 ||
+      Math.abs(usdStatement.period_paid || 0) > 0.001 ||
+      Math.abs(usdStatement.closing_balance || 0) > 0.001
+    );
+    if (hasUsdStatement) {
+      const usdClosingLabel = usdStatement.closing_balance > 0
+        ? `Debe ${formatMoneyLabel(usdStatement.closing_balance, 'USD')}`
+        : usdStatement.closing_balance < 0
+          ? `A favor ${formatMoneyLabel(Math.abs(usdStatement.closing_balance), 'USD')}`
+          : 'Al día';
+      lines.push('');
+      lines.push(`Saldo final (USD): ${usdClosingLabel}`);
+    }
+
+    const text = lines.join('\n');
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => showToast('Estado de cuenta copiado al portapapeles.'))
+        .catch(() => showToast('No pudimos copiar automáticamente. Seleccioná el texto manualmente.', 'critical'));
+    } else {
+      showToast('Tu navegador no permite copiar automáticamente.', 'critical');
+    }
+  }
+
+  function printOwnerStatement() {
+    const source = appRoot.querySelector('.statement-print-area');
+    if (!source) {
+      window.print();
+      return;
+    }
+
+    let printRoot = document.getElementById('print-root');
+    if (!printRoot) {
+      printRoot = document.createElement('div');
+      printRoot.id = 'print-root';
+      document.body.appendChild(printRoot);
+    }
+    printRoot.innerHTML = source.innerHTML;
+
+    window.print();
+  }
+
   async function deleteStockMovementById(stockEventId) {
     const currentState = store.getState();
     const movement = getRealStockMovementById(currentState, stockEventId);
@@ -16519,6 +19032,37 @@
       );
     } catch (error) {
       showToast(error.message || 'No pudimos borrar ese movimiento de stock.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function deleteFeedItemById(itemId, itemName) {
+    const id = parsePositiveInt(itemId);
+    if (!id) {
+      showToast('No encontramos ese producto en la lectura actual.', 'critical');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Vas a eliminar "${itemName || 'este producto'}" del catálogo de Stock. Esto también borra su historial de movimientos y de consumo asociado en caballos. Usalo solo si este producto no es del establecimiento (por ejemplo, si es una compra personal ya cargada en Propietarios).`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      await postMutation({
+        action: 'feed_item_delete',
+        itemId: id,
+      });
+
+      await loadAdminDashboards();
+      showToast(`${itemName || 'Producto'} eliminado del catálogo de Stock.`);
+    } catch (error) {
+      showToast(error.message || 'No pudimos eliminar ese producto.', 'critical');
     } finally {
       setState({ loading: false });
     }
@@ -16635,8 +19179,18 @@
         nextPatch = { ...nextPatch, activeNav: 'stock', views: { ...store.getState().views, stock: 'movements' } };
         break;
       case 'advanced-filters':
-        message = 'Filtros aplicados en demo.';
-        nextPatch = { ...nextPatch, activeNav: 'records' };
+        nextPatch = {
+          ...nextPatch,
+          activeNav: 'records',
+          recordsFilters: {
+            module: values.module || 'Todos',
+            type: values.type || 'Todos',
+            from: values.from || '',
+            to: values.to || '',
+            channel: values.channel || 'Todos',
+          },
+        };
+        message = 'Filtros aplicados.';
         break;
       case 'user-form':
         message = `Usuario ${values.name} guardado en demo.`;
@@ -16747,6 +19301,12 @@
           stockDashboard?.meta?.refreshed_at ||
           new Date().toISOString(),
       });
+
+      if (session && session.authenticated && !session.demo) {
+        loadCalendarMonthData(getCalendarMonthKeyFromOffset(-1)).catch(() => {});
+        loadCalendarMonthData(getCalendarMonthKeyFromOffset(-2)).catch(() => {});
+        loadExpenseSplitDrafts().catch(() => {});
+      }
     } catch (_error) {
       setState({
         booting: false,
@@ -16824,6 +19384,9 @@
           stockDashboard?.meta?.refreshed_at ||
           new Date().toISOString(),
       });
+      if (session && session.authenticated && !session.demo) {
+        loadExpenseSplitDrafts().catch(() => {});
+      }
     } catch (error) {
       setState({
         loginPending: false,
@@ -16851,6 +19414,47 @@
     } finally {
       setState({ loading: false });
     }
+  }
+
+  function getMonthsBetween(fromMonthKey, toMonthKey) {
+    const months = [];
+    let [y, m] = String(fromMonthKey || '').split('-').map(Number);
+    const [ty, tm] = String(toMonthKey || '').split('-').map(Number);
+    if (!y || !m || !ty || !tm) return months;
+    while (y < ty || (y === ty && m <= tm)) {
+      months.push(`${y}-${String(m).padStart(2, '0')}`);
+      if (m === 12) { y += 1; m = 1; } else { m += 1; }
+      if (months.length >= 13) break;
+    }
+    return months;
+  }
+
+  async function submitRecordsFilters(formData) {
+    const values = formDataToObject(formData);
+    const filters = {
+      module: values.module || 'Todos',
+      type: values.type || 'Todos',
+      from: String(values.from || '').trim(),
+      to: String(values.to || '').trim(),
+      channel: values.channel || 'Todos',
+    };
+
+    setState({ modal: null, activeNav: 'records', recordsFilters: filters });
+
+    const fromMonth = filters.from ? filters.from.slice(0, 7) : null;
+    const toMonth = filters.to ? filters.to.slice(0, 7) : null;
+
+    if (fromMonth && toMonth) {
+      const months = getMonthsBetween(fromMonth, toMonth);
+      const currentState = store.getState();
+      const missing = months.filter((mk) => !getRealCalendarMonthState(currentState, mk)?.data);
+      if (missing.length > 0) {
+        showToast(`Cargando historial de ${missing.length} mes${missing.length > 1 ? 'es' : ''}…`, 'info');
+        await Promise.allSettled(missing.map((mk) => loadCalendarMonthData(mk)));
+      }
+    }
+
+    showToast('Filtros aplicados.');
   }
 
   async function submitLogout() {
@@ -16995,6 +19599,18 @@
         loadCalendarMonthData(nextMonth).catch(() => {});
       }
 
+      if (navKey === 'records' && isRealSession(store.getState())) {
+        const prevMonth = getCalendarMonthKeyFromOffset(-1);
+        const twoMonthsAgo = getCalendarMonthKeyFromOffset(-2);
+        const st = store.getState();
+        if (!getRealCalendarMonthState(st, prevMonth)?.data) {
+          loadCalendarMonthData(prevMonth).catch(() => {});
+        }
+        if (!getRealCalendarMonthState(st, twoMonthsAgo)?.data) {
+          loadCalendarMonthData(twoMonthsAgo).catch(() => {});
+        }
+      }
+
       if (navKey === 'owners' && isRealSession(store.getState()) && !store.getState().ownersDashboard) {
         loadOwnersDashboard().catch(() => {});
       }
@@ -17053,6 +19669,23 @@
       if (actionValue === 'paddock-detail' && isRealSession(store.getState()) && payload.paddockId) {
         openModal(actionValue, payload);
         loadPaddockDetail(payload.paddockId).catch(() => {});
+        return;
+      }
+
+      if (
+        (actionValue === 'owner-expense-split-form' || actionValue === 'general-expense-form') &&
+        isRealSession(store.getState())
+      ) {
+        openModal(actionValue, payload);
+        // Both of these can be opened from Stock, where the owners
+        // dashboard (horse counts, names) may not be loaded yet - without
+        // it the participant checkboxes / comprador selector render empty.
+        if (!store.getState().ownersDashboard) {
+          loadOwnersDashboard().catch(() => {});
+        }
+        if (actionValue === 'owner-expense-split-form' && !store.getState().horsesDashboard) {
+          loadHorsesDashboard().catch(() => {});
+        }
         return;
       }
 
@@ -17124,6 +19757,36 @@
       return;
     }
 
+    if (action === 'clear-records-filters') {
+      setState({ recordsFilters: {} });
+      showToast('Filtros eliminados.');
+      return;
+    }
+
+    if (action === 'remove-records-filter') {
+      const defaults = { module: 'Todos', type: 'Todos', from: '', to: '', channel: 'Todos' };
+      if (actionValue && actionValue in defaults) {
+        setState((currentState) => ({
+          recordsFilters: { ...(currentState.recordsFilters || {}), [actionValue]: defaults[actionValue] },
+        }));
+      }
+      return;
+    }
+
+    if (action === 'apply-records-filters') {
+      const form = appRoot.querySelector('[data-modal-form][data-modal-key="advanced-filters"]');
+      if (form) {
+        if (isRealSession(store.getState())) {
+          submitRecordsFilters(new FormData(form));
+        } else {
+          const values = formDataToObject(new FormData(form));
+          setState({ modal: null, activeNav: 'records', recordsFilters: { module: values.module || 'Todos', type: values.type || 'Todos', from: values.from || '', to: values.to || '', channel: values.channel || 'Todos' } });
+          showToast('Filtros aplicados.');
+        }
+      }
+      return;
+    }
+
     if (action === 'mark-visit-status') {
       markVisitStatus(parsePositiveInt(payload.visitId), actionValue);
       return;
@@ -17139,8 +19802,61 @@
       return;
     }
 
+    if (action === 'generate-owner-charge') {
+      generateOwnerChargeForOwner(payload.ownerId);
+      return;
+    }
+
+    if (action === 'delete-owner-ledger-entry') {
+      deleteOwnerLedgerEntryById(payload.entryId);
+      return;
+    }
+
+    if (action === 'delete-owner-feed-purchase') {
+      deleteOwnerFeedPurchaseById(payload.purchaseId);
+      return;
+    }
+
+    if (action === 'delete-general-expense') {
+      deleteGeneralExpenseById(payload.expenseId);
+      return;
+    }
+
+    if (action === 'save-expense-split-draft') {
+      const modalForm = button.closest('form[data-modal-form]');
+      if (modalForm) {
+        saveExpenseSplitDraftFromForm(new FormData(modalForm), payload);
+      }
+      return;
+    }
+
+    if (action === 'continue-expense-split-draft') {
+      continueExpenseSplitDraft(payload.draftId);
+      return;
+    }
+
+    if (action === 'delete-expense-split-draft') {
+      deleteExpenseSplitDraftById(payload.draftId);
+      return;
+    }
+
+    if (action === 'print-statement') {
+      printOwnerStatement();
+      return;
+    }
+
+    if (action === 'copy-owner-statement') {
+      copyOwnerStatementToClipboard();
+      return;
+    }
+
     if (action === 'delete-stock-movement') {
       deleteStockMovementById(payload.stockEventId);
+      return;
+    }
+
+    if (action === 'delete-feed-item') {
+      deleteFeedItemById(payload.itemId, payload.itemName);
       return;
     }
 
@@ -17437,6 +20153,11 @@
           return;
         }
 
+        if (modalKey === 'paddock-extend-rest-form') {
+          submitPaddockExtendRestForm(new FormData(modalForm));
+          return;
+        }
+
         if (modalKey === 'horse-form') {
           submitHorseForm(new FormData(modalForm));
           return;
@@ -17479,6 +20200,36 @@
 
         if (modalKey === 'owner-form') {
           submitOwnerForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'owner-ledger-form') {
+          submitOwnerLedgerForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'general-expense-form') {
+          submitGeneralExpenseForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'owner-statement-form') {
+          submitOwnerStatementForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'owner-feed-purchase-form') {
+          submitOwnerFeedPurchaseForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'owner-expense-split-form') {
+          submitOwnerExpenseSplitForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'advanced-filters') {
+          submitRecordsFilters(new FormData(modalForm));
           return;
         }
 
@@ -17639,6 +20390,52 @@
 
         return nextPayload;
       });
+      return;
+    }
+
+    if (target.name === 'includeHorseId' && target.type === 'checkbox') {
+      if (event.type !== 'change') {
+        return;
+      }
+
+      // Multiple checkboxes share this name (one per caballo). A plain
+      // formDataToObject() merge only ever sees whichever box happens to be
+      // last, and unchecked boxes are omitted from FormData entirely, so a
+      // naive merge can never "learn" that one got unchecked. Read the
+      // whole checked set explicitly instead, so the live vista previa
+      // actually reflects which caballos (and therefore which propietarios)
+      // are ticked.
+      const modalForm = target.closest('[data-modal-form]');
+      const includeHorseIds = modalForm
+        ? new FormData(modalForm).getAll('includeHorseId').map((v) => parsePositiveInt(v)).filter(Boolean)
+        : [];
+
+      updateActiveModalPayload((currentPayload) => ({
+        ...currentPayload,
+        includeHorseIds,
+      }));
+      return;
+    }
+
+
+    if (target.name === 'includeInsumoId' && target.type === 'checkbox') {
+      if (event.type !== 'change') {
+        return;
+      }
+
+      const modalForm = target.closest('[data-modal-form]');
+      const includeInsumoIds = modalForm
+        ? new FormData(modalForm).getAll('includeInsumoId').map((v) => parsePositiveInt(v)).filter(Boolean)
+        : [];
+
+      updateActiveModalPayload((currentPayload) => ({
+        ...currentPayload,
+        includeInsumoIds,
+        // Un-set any manually typed amount so it recalculates from the
+        // newly-checked set of insumos instead of keeping a stale number.
+        amount: undefined,
+        amountCurrencyHint: undefined,
+      }));
       return;
     }
 

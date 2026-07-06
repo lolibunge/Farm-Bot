@@ -1,10 +1,12 @@
 const { pool } = require('../../lib/db');
 const { ensureHorseProfileColumns, normalizeTrainingStatus } = require('../../lib/horse-profile');
+const { ensureOwnersSchema } = require('../../lib/owners');
 const {
   ensurePaddockTables,
   savePaddock,
   savePaddockWorkEvent,
   updatePaddockWorkEvent,
+  extendPaddockReadyDate,
   saveHorseGroup,
   setHorseGroupMembers,
   moveHorseIntoPaddock,
@@ -927,6 +929,37 @@ module.exports = async (req, res) => {
       return;
     }
 
+    if (action === 'paddock_ready_date_set') {
+      const paddockId = parsePositiveInt(body.paddockId);
+      const readyToGrazeOnRaw = String(body.readyToGrazeOn || '').trim();
+      const notes = String(body.notes || '').trim();
+
+      if (!paddockId) {
+        res.status(400).json({ ok: false, error: 'paddockId is required' });
+        return;
+      }
+
+      if (!isValidDateString(readyToGrazeOnRaw)) {
+        res.status(400).json({ ok: false, error: 'readyToGrazeOn is invalid' });
+        return;
+      }
+
+      const data = await extendPaddockReadyDate({
+        paddockId,
+        readyToGrazeOn: readyToGrazeOnRaw,
+        notes: notes || null,
+        telegramUserId: 'admin_panel',
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        paddock: data.paddock,
+        paddock_work_event: data.paddock_work_event,
+      });
+      return;
+    }
+
     if (action === 'horse_group_save') {
       const groupId = parsePositiveInt(body.groupId);
       const groupName = String(body.groupName || '').trim();
@@ -1407,6 +1440,57 @@ module.exports = async (req, res) => {
                 ? null
                 : Number(insertResult.rows[0].purchase_unit_size),
           },
+        });
+        return;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    if (action === 'feed_item_delete') {
+      const itemId = parsePositiveInt(body.itemId);
+
+      if (!itemId) {
+        res.status(400).json({ ok: false, error: 'itemId is required' });
+        return;
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await ensureStockInventoryTables(client);
+
+        const existingResult = await client.query(
+          `SELECT id, name FROM feed_items WHERE id = $1 LIMIT 1`,
+          [itemId]
+        );
+
+        if (existingResult.rows.length === 0) {
+          await client.query('ROLLBACK');
+          res.status(404).json({ ok: false, error: 'Feed item not found' });
+          return;
+        }
+
+        // Explicitly clean up everything that references this product
+        // first. We don't rely on ON DELETE CASCADE here because the FK
+        // constraints on some of these tables were created before cascade
+        // was added to the schema definitions, so the live constraint may
+        // not actually cascade. Deleting all this history is intentional:
+        // this action is for products that were never real shared
+        // inventory to begin with (e.g. an owner's personal purchases).
+        await client.query(`DELETE FROM feed_events WHERE feed_item_id = $1`, [itemId]);
+        await client.query(`DELETE FROM horse_feed_plan_items WHERE feed_item_id = $1`, [itemId]);
+        await client.query(`DELETE FROM stock_events WHERE feed_item_id = $1`, [itemId]);
+        await client.query(`DELETE FROM feed_items WHERE id = $1`, [itemId]);
+
+        await client.query('COMMIT');
+        res.status(200).json({
+          ok: true,
+          action,
+          feed_item: { id: existingResult.rows[0].id, name: existingResult.rows[0].name },
         });
         return;
       } catch (error) {
@@ -1999,6 +2083,7 @@ module.exports = async (req, res) => {
     }
 
     if (action === 'deworm_event_add') {
+      await ensureOwnersSchema();
       const horseId = parsePositiveInt(body.horseId);
       const productName = String(body.productName || '').trim();
       const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
@@ -2006,6 +2091,7 @@ module.exports = async (req, res) => {
         ? String(body.secondDoseDate).trim()
         : '';
       const nextDueDateRaw = body.nextDueDate ? String(body.nextDueDate).trim() : '';
+      const costAmount = parseNonNegativeNumber(body.costAmount);
 
       if (!horseId) {
         res.status(400).json({ ok: false, error: 'horseId is required' });
@@ -2097,11 +2183,12 @@ module.exports = async (req, res) => {
           SET
             product_name = $1,
             second_dose_date = $2,
-            next_due_date = $3
-          WHERE id = $4
-          RETURNING id, event_date, second_dose_date, next_due_date
+            next_due_date = $3,
+            cost_amount = COALESCE($4, cost_amount)
+          WHERE id = $5
+          RETURNING id, event_date, second_dose_date, next_due_date, cost_amount::float AS cost_amount
           `,
-          [productName, mergedSecondDose, mergedNextDue, primary.id]
+          [productName, mergedSecondDose, mergedNextDue, costAmount, primary.id]
         );
 
         const duplicateIds = existingCycleResult.rows
@@ -2127,10 +2214,11 @@ module.exports = async (req, res) => {
             telegram_user_id,
             event_date,
             second_dose_date,
-            next_due_date
+            next_due_date,
+            cost_amount
           )
-          VALUES ($1, $2, $3, $4, $5, $6)
-          RETURNING id, event_date, second_dose_date, next_due_date
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING id, event_date, second_dose_date, next_due_date, cost_amount::float AS cost_amount
           `,
           [
             horseId,
@@ -2139,6 +2227,7 @@ module.exports = async (req, res) => {
             eventDateRaw,
             secondDoseDateRaw || null,
             nextDueDate,
+            costAmount,
           ]
         );
       }
@@ -2156,6 +2245,7 @@ module.exports = async (req, res) => {
           event_date: toIsoDateString(saveResult.rows[0].event_date),
           second_dose_date: toIsoDateString(saveResult.rows[0].second_dose_date),
           next_due_date: toIsoDateString(saveResult.rows[0].next_due_date),
+          cost_amount: saveResult.rows[0].cost_amount,
         },
       });
       return;
@@ -2263,10 +2353,12 @@ module.exports = async (req, res) => {
     }
 
     if (action === 'farrier_event_add') {
+      await ensureOwnersSchema();
       const horseId = parsePositiveInt(body.horseId);
       const serviceType = String(body.serviceType || '').trim();
       const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
       const nextDueDateRaw = body.nextDueDate ? String(body.nextDueDate).trim() : '';
+      const costAmount = parseNonNegativeNumber(body.costAmount);
 
       if (!horseId) {
         res.status(400).json({ ok: false, error: 'horseId is required' });
@@ -2320,12 +2412,13 @@ module.exports = async (req, res) => {
           service_type,
           telegram_user_id,
           event_date,
-          next_due_date
+          next_due_date,
+          cost_amount
         )
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, event_date, next_due_date
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, event_date, next_due_date, cost_amount::float AS cost_amount
         `,
-        [horseId, serviceType, 'admin_panel', eventDateRaw, nextDueDate]
+        [horseId, serviceType, 'admin_panel', eventDateRaw, nextDueDate, costAmount]
       );
 
       res.status(200).json({
@@ -2340,17 +2433,20 @@ module.exports = async (req, res) => {
           service_type: serviceType,
           event_date: toIsoDateString(insertResult.rows[0].event_date),
           next_due_date: toIsoDateString(insertResult.rows[0].next_due_date),
+          cost_amount: insertResult.rows[0].cost_amount,
         },
       });
       return;
     }
 
     if (action === 'health_event_add') {
+      await ensureOwnersSchema();
       const horseId = parsePositiveInt(body.horseId);
       const eventType = String(body.eventType || '').trim().toLowerCase();
       const description = String(body.description || '').trim();
       const notes = body.notes ? String(body.notes).trim() : '';
       const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const costAmount = parseNonNegativeNumber(body.costAmount);
 
       if (!horseId) {
         res.status(400).json({ ok: false, error: 'horseId is required' });
@@ -2395,12 +2491,13 @@ module.exports = async (req, res) => {
           description,
           event_date,
           notes,
-          telegram_user_id
+          telegram_user_id,
+          cost_amount
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, event_date
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, event_date, cost_amount::float AS cost_amount
         `,
-        [horseId, eventType, description, eventDateRaw, notes || null, 'admin_panel']
+        [horseId, eventType, description, eventDateRaw, notes || null, 'admin_panel', costAmount]
       );
 
       res.status(200).json({
@@ -2416,6 +2513,7 @@ module.exports = async (req, res) => {
           description,
           notes: notes || null,
           event_date: toIsoDateString(insertResult.rows[0].event_date),
+          cost_amount: insertResult.rows[0].cost_amount,
         },
       });
       return;
@@ -2956,6 +3054,7 @@ module.exports = async (req, res) => {
       const color = body.color ? String(body.color).trim() : '';
       const activity = body.activity ? String(body.activity).trim().toLowerCase() : '';
       const sex = body.sex ? String(body.sex).trim().toLowerCase() : '';
+      const feedEnabled = body.feedEnabled === true || body.feedEnabled === 'true';
       const trainingModuleEnabled = isAdminModuleEnabled('training', enabledModules);
       const trainingStatusRaw = body.trainingStatus == null ? '' : String(body.trainingStatus);
       const trainingStatus = normalizeTrainingStatus(trainingStatusRaw);
@@ -3046,11 +3145,12 @@ module.exports = async (req, res) => {
             color = $3,
             activity = $4,
             sex = $5,
+            feed_enabled = $6,
             training_status = CASE
-              WHEN $6 THEN $7
+              WHEN $7 THEN $8
               ELSE training_status
             END
-        WHERE id = $8
+        WHERE id = $9
         RETURNING
           id,
           name,
@@ -3058,6 +3158,7 @@ module.exports = async (req, res) => {
           color,
           activity,
           sex,
+          feed_enabled,
           training_status,
           CASE
             WHEN date_of_birth IS NULL THEN NULL
@@ -3070,6 +3171,7 @@ module.exports = async (req, res) => {
           color || null,
           activity || null,
           sex || null,
+          feedEnabled,
           trainingModuleEnabled,
           trainingModuleEnabled ? trainingStatus || null : null,
           horseId,
@@ -3094,6 +3196,7 @@ module.exports = async (req, res) => {
           color: horse.color || null,
           activity: horse.activity || null,
           sex: horse.sex || null,
+          feed_enabled: Boolean(horse.feed_enabled),
           training_status:
             trainingModuleEnabled && normalizeTrainingStatus(horse.training_status)
               ? normalizeTrainingStatus(horse.training_status)
@@ -3106,7 +3209,7 @@ module.exports = async (req, res) => {
       res.status(400).json({
         ok: false,
         error:
-        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
+        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, paddock_ready_date_set, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, feed_item_delete, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
       });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);
