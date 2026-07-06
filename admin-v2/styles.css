@@ -1193,6 +1193,11 @@ button {
   margin-top: 16px;
 }
 
+.product-card .split-actions {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -2200,6 +2205,12 @@ button {
   padding: 40px 24px;
   display: grid;
   place-items: center;
+  /* This box fully overlaps .modal-scrim underneath, so without this,
+     clicking the "empty" gutter around the panel hits this element (which
+     has no close action) instead of the scrim. Letting clicks pass through
+     here, then re-enabling them on the panel itself, makes "click outside
+     to close" actually work. */
+  pointer-events: none;
 }
 
 .modal-panel {
@@ -2212,6 +2223,7 @@ button {
   box-shadow: 0 32px 60px rgba(15, 23, 42, 0.22);
   position: relative;
   padding: 26px 24px 24px;
+  pointer-events: auto;
 }
 
 .modal-panel--wide {
@@ -2359,6 +2371,33 @@ button {
   grid-column: 1 / -1;
 }
 
+.modal-field--checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface-muted);
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.modal-field--checkbox input[type="checkbox"] {
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.modal-field-checkbox-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .modal-field span {
   font-size: 14px;
   font-weight: 600;
@@ -2420,6 +2459,31 @@ button {
   accent-color: var(--brand);
   cursor: pointer;
   flex: 0 0 auto;
+}
+
+.modal-check-subgroup {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.modal-check-subgroup:first-child {
+  margin-top: 0;
+}
+
+.modal-check-subgroup small {
+  color: var(--text-muted, #667);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 11px;
+}
+
+.modal-check-subgroup-rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .modal-footer {
@@ -3024,9 +3088,9 @@ button {
 .horse-history-summary-head span,
 .horse-history-block-head span,
 .horse-history-summary-meta span,
-.horse-history-health-copy span,
 .horse-history-health-copy dt,
 .horse-history-timeline-copy span,
+.horse-history-health-copy span,
 .horse-history-timeline-copy small {
   color: var(--muted);
 }
@@ -3034,6 +3098,11 @@ button {
 .horse-history-summary-meta {
   flex-wrap: wrap;
   justify-content: flex-start;
+}
+
+.horse-history-summary-meta span {
+  display: flex;
+  gap: 5px;
 }
 
 .horse-history-block {
@@ -3207,9 +3276,48 @@ button {
   gap: 16px;
 }
 
+.feed-calendar-details {
+  display: block;
+}
+
+.feed-calendar-details > .horse-feed-calendar-controls,
+.feed-calendar-details > .horse-feed-empty-slot,
+.feed-calendar-details > .horse-feed-calendar-shell {
+  margin-top: 16px;
+}
+
+.feed-calendar-summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.feed-calendar-summary::-webkit-details-marker {
+  display: none;
+}
+
+.feed-calendar-chevron {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.feed-calendar-details[open] .feed-calendar-chevron {
+  transform: rotate(180deg);
+}
+
+.horse-feed-calendar-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
 .horse-feed-block-head {
   align-items: flex-start;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .horse-feed-block-head > div {
@@ -3384,11 +3492,10 @@ button {
   gap: 4px;
 }
 
-.horse-feed-calendar-controls {
+.horse-feed-block-head .horse-feed-calendar-controls {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
 .horse-feed-calendar-shell {
@@ -3713,6 +3820,10 @@ button {
 
 .toast-banner--critical {
   background: #b42318;
+}
+
+.btn-primary span {
+  color: var(--surface);
 }
 
 @media (max-width: 1180px) {
@@ -4109,4 +4220,236 @@ button {
   .command-card {
     grid-template-columns: 1fr;
   }
+}
+
+.horse-feed-calendar-controls {
+  display: flex;
+  gap: 8px; 
+}
+
+/* Records filter bar */
+.records-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--surface-raised, #f0f4ff);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.records-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--accent, #1e7a3c);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.records-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px 10px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  cursor: pointer;
+}
+
+.records-filter-clear:hover {
+  background: var(--surface-hover, #eee);
+}
+
+.records-filter-clear .app-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.records-loading-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-2, #f5f5f5);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+}
+
+.records-loading-bar .app-icon {
+  width: 14px;
+  height: 14px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.records-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 4px;
+  cursor: pointer;
+  opacity: 0.7;
+  color: inherit;
+  line-height: 1;
+}
+
+.records-chip-remove:hover {
+  opacity: 1;
+}
+
+.records-chip-remove .app-icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* Horse full timeline — colored dots + month groups */
+.horse-history-timeline-row {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+
+.horse-history-timeline-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--surface-2, #f1f5f9);
+  margin-top: 0;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.horse-history-timeline-dot .app-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.horse-history-timeline-dot--green  { background: #dcfce7; color: #16a34a; }
+.horse-history-timeline-dot--purple { background: #f3e8ff; color: #9333ea; }
+.horse-history-timeline-dot--orange { background: #ffedd5; color: #ea580c; }
+.horse-history-timeline-dot--red    { background: #fee2e2; color: #dc2626; }
+.horse-history-timeline-dot--blue   { background: #dbeafe; color: #2563eb; }
+.horse-history-timeline-dot--gray   { background: #f1f5f9; color: #64748b; }
+.horse-history-timeline-dot--green .app-icon,
+.horse-history-timeline-dot--blue .app-icon {
+  stroke: rgb(222 235 37);
+}
+
+.horse-history-timeline-dot.is-current {
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.2);
+}
+
+.horse-timeline-month-group {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.horse-timeline-month-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 0 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.horse-timeline-date {
+  font-size: 12px;
+  color: var(--text-secondary, #64748b);
+  white-space: nowrap;
+  padding-top: 6px;
+}
+
+.owner-ledger {
+  margin: 16px 0;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--surface-muted, #f8fafc);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+}
+
+.owner-ledger-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 600;
+}
+
+.owner-ledger .mini-list-row {
+  justify-content: space-between;
+}
+
+.owner-ledger-entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.owner-ledger-entry-actions .icon-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.statement-header {
+  margin-bottom: 16px;
+}
+
+.statement-header h2 {
+  margin: 0 0 8px;
+}
+
+#print-root {
+  display: none;
+}
+
+@media print {
+  /* Everything else on the page (sidebar, modal chrome, scrollable
+     panels) is removed from the DOM flow entirely for printing, and we
+     print a plain clone of the statement content instead. This avoids
+     fighting the modal's max-height/overflow/position:fixed pagination
+     quirks altogether. See printOwnerStatement() in app.js. */
+  body > *:not(#print-root) {
+    display: none !important;
+  }
+
+  #print-root {
+    display: block !important;
+    position: static;
+    padding: 24px;
+    background: #fff;
+  }
+}
+
+.modal-divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 16px 0;
+}
+
+.feed-purchase-month-group:first-child .owner-ledger-head {
+  margin-top: 0 !important;
 }

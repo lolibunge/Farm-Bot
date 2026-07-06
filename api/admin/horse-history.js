@@ -92,6 +92,7 @@ module.exports = async (req, res) => {
         activity,
         sex,
         training_status,
+        feed_enabled,
         CASE
           WHEN date_of_birth IS NULL THEN NULL
           ELSE DATE_PART('year', AGE(CURRENT_DATE, date_of_birth))::int
@@ -278,6 +279,7 @@ module.exports = async (req, res) => {
         activity: horseResult.rows[0].activity || null,
         sex: horseResult.rows[0].sex || null,
         training_status: trainingModuleEnabled ? normalizeTrainingStatus(horseResult.rows[0].training_status) : null,
+        feed_enabled: Boolean(horseResult.rows[0].feed_enabled),
       },
       history: timelineRows,
       feed_history: (feedModuleEnabled ? feedHistoryResult.rows : []).map((row) => ({

@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node index.js",
     "start:benteveo": "node --env-file=.env.benteveo index.js",
+    "start:ercilia": "node --env-file=.env.ercilia index.js",
+    "dev:benteveo": "node --env-file=.env.benteveo scripts/dev-local.js",
+    "dev:ercilia": "node --env-file=.env.ercilia scripts/dev-local.js",
     "build": "esbuild admin-v2/app.js --minify --legal-comments=none --outfile=admin-v2/app.min.js && esbuild admin-v2/styles.css --minify --outfile=admin-v2/styles.min.css",
+    "watch": "esbuild admin-v2/app.js --minify --legal-comments=none --outfile=admin-v2/app.min.js --watch & esbuild admin-v2/styles.css --minify --outfile=admin-v2/styles.min.css --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
