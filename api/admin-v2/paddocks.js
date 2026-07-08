@@ -4,6 +4,7 @@ const {
   getAdminV2PaddockDetail,
   createAdminV2Paddock,
   updateAdminV2Paddock,
+  deleteAdminV2Paddock,
 } = require('../../lib/admin-v2/paddocks');
 
 async function getJsonBody(req) {
@@ -33,7 +34,7 @@ async function getJsonBody(req) {
 }
 
 module.exports = async (req, res) => {
-  if (!['GET', 'POST', 'PATCH'].includes(req.method || '')) {
+  if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(req.method || '')) {
     res.status(405).json({ ok: false, error: 'Method Not Allowed' });
     return;
   }
@@ -67,7 +68,13 @@ module.exports = async (req, res) => {
       return;
     }
 
-    const payload = await updateAdminV2Paddock(body.paddockId, body);
+    if (req.method === 'PATCH') {
+      const payload = await updateAdminV2Paddock(body.paddockId, body);
+      res.status(200).json(payload);
+      return;
+    }
+
+    const payload = await deleteAdminV2Paddock(body.paddockId);
     res.status(200).json(payload);
   } catch (error) {
     console.error('ADMIN V2 PADDOCKS ERROR:', error);

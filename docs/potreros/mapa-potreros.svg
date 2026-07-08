@@ -1,0 +1,124 @@
+<svg viewBox="0 0 1850 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ttl desc">
+<title id="ttl">Mapa esquemático del campo La Ercilia</title>
+<desc id="desc">Croquis de los potreros de La Ercilia, de oeste a este, versión actual (sin la nueva distribución 2026). Editable en Affinity Designer.</desc>
+
+<style>
+  .lbl { font-family: -apple-system, sans-serif; fill: #ffffff; font-weight: 600; paint-order: stroke; stroke: rgba(0,0,0,0.55); stroke-width: 3px; stroke-linejoin: round; text-anchor: middle; }
+  .lblsm { font-size: 10px; }
+  .lblmd { font-size: 12.5px; }
+  .lbllg { font-size: 16px; }
+  .lblxs { font-size: 9px; }
+</style>
+
+<rect x="0" y="0" width="1850" height="700" fill="#efe9d8" />
+<rect x="0" y="0" width="1850" height="18" fill="#c9c3a8" />
+<line x1="0" y1="30" x2="1850" y2="15" stroke="#b7b096" stroke-width="10" stroke-dasharray="2 10" />
+
+<!-- Pistas / Cuadrilatero -->
+<polygon points="40,40 180,35 175,150 45,155" fill="#d97a4d" stroke="#8a4a29" stroke-width="2"/>
+<text x="112" y="90" class="lbl lblsm">Cuadrilátero</text>
+
+<polygon points="45,155 175,150 170,260 50,265" fill="#e08a5c" stroke="#8a4a29" stroke-width="2"/>
+<text x="108" y="205" class="lbl lblsm">Pista Vieja</text>
+<text x="108" y="218" class="lbl lblsm">1.1</text>
+
+<polygon points="50,265 170,260 165,370 55,375" fill="#d97a4d" stroke="#8a4a29" stroke-width="2"/>
+<text x="108" y="315" class="lbl lblsm">Pista Vieja</text>
+<text x="108" y="328" class="lbl lblsm">1.2</text>
+
+<polygon points="55,375 165,370 160,480 60,485" fill="#e08a5c" stroke="#8a4a29" stroke-width="2"/>
+<text x="105" y="425" class="lbl lblsm">Pista Vieja</text>
+<text x="105" y="438" class="lbl lblsm">1.3</text>
+
+<polygon points="60,485 160,480 155,595 65,600" fill="#d97a4d" stroke="#8a4a29" stroke-width="2"/>
+<text x="102" y="535" class="lbl lblsm">Pista Vieja</text>
+<text x="102" y="548" class="lbl lblsm">1.4</text>
+
+<polygon points="160,377 205,382 200,597 155,597" fill="#c9633a" stroke="#8a4a29" stroke-width="2"/>
+<text x="180" y="490" class="lbl lblsm" transform="rotate(90 180 490)">1.5</text>
+
+<!-- Semicircular -->
+<polygon points="345,50 445,42 448,150 345,158" fill="#6fae6a" stroke="#3f7a3c" stroke-width="2"/>
+<text x="396" y="98" class="lbl lblsm">Semicircular</text>
+<text x="396" y="112" class="lbl lblxs">(Potrero 5.5)</text>
+
+<!-- Plazoleta -->
+<polygon points="345,178 445,182 448,290 345,295" fill="#8fc37f" stroke="#3f7a3c" stroke-width="2"/>
+<text x="396" y="240" class="lbl lblsm">Plazoleta</text>
+
+<!-- Potrero 5.4 -->
+<polygon points="448,120 545,100 548,290 448,290" fill="#4fa08f" stroke="#2c6b5e" stroke-width="2"/>
+<text x="497" y="205" class="lbl lblsm">5.4</text>
+
+<!-- Potrero 5.3 -->
+<polygon points="545,95 612,42 616,345 550,295" fill="#cdbf7a" stroke="#8a7c3f" stroke-width="2"/>
+<text x="580" y="195" class="lbl lblsm">Potrero 5.3</text>
+
+<!-- Potrero 5.1 -->
+<polygon points="616,45 940,35 955,235 665,268 616,190" fill="#3f8f81" stroke="#255c53" stroke-width="2"/>
+<text x="760" y="140" class="lbl lbllg">Potrero 5.1</text>
+
+<!-- Potrero 5.2 -->
+<polygon points="665,268 955,235 960,355 805,390 670,340" fill="#4fa08f" stroke="#255c53" stroke-width="2"/>
+<text x="800" y="320" class="lbl lblmd">Potrero 5.2</text>
+
+<!-- Parque + Polygon 30 -->
+<polygon points="328,340 562,338 560,558 330,562" fill="none" stroke="#9c8621" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="445" y="332" class="lbl lblmd">Parque</text>
+
+<polygon points="340,350 425,346 420,403 342,406" fill="#e0c23c" stroke="#9c8621" stroke-width="2"/>
+<text x="380" y="380" class="lbl lblsm">1</text>
+
+<polygon points="425,347 520,352 512,406 420,405" fill="#d98a3a" stroke="#9c5f21" stroke-width="2"/>
+<text x="468" y="380" class="lbl lblsm">4</text>
+
+<polygon points="340,408 420,405 415,462 345,465" fill="#e39fc2" stroke="#a1547f" stroke-width="2"/>
+<text x="378" y="438" class="lbl lblsm">2</text>
+
+<polygon points="420,405 512,406 505,462 415,462" fill="#c98fd0" stroke="#7a4a80" stroke-width="2"/>
+<text x="463" y="438" class="lbl lblsm">5</text>
+
+<polygon points="340,468 505,464 498,548 348,552" fill="#8a2f4a" stroke="#5c1f31" stroke-width="2"/>
+<text x="420" y="512" class="lbl lblsm">Polygon 30</text>
+
+<!-- Potrero 7 -->
+<polygon points="590,560 645,412 735,405 850,430 895,470 900,560 845,635 620,655 588,610" fill="#6fae5a" stroke="#3f7a3c" stroke-width="2"/>
+<text x="740" y="530" class="lbl lbllg">Potrero 7</text>
+
+<!-- Alfalfa Vieja / Potrero 2 -->
+<polygon points="900,430 985,425 978,645 898,648" fill="#8a2f4a" stroke="#5c1f31" stroke-width="2"/>
+<text x="940" y="535" class="lbl lblmd" transform="rotate(-90 940 535)">Alfalfa Vieja</text>
+
+<polygon points="985,418 1060,414 1055,470 978,474" fill="#cdbf7a" stroke="#8a7c3f" stroke-width="2"/>
+<text x="1018" y="447" class="lbl lblsm">2.5</text>
+
+<polygon points="985,474 1150,462 1145,570 980,580" fill="#7fb15a" stroke="#3f7a3c" stroke-width="2"/>
+<text x="1060" y="525" class="lbl lblmd">Potrero 2.3</text>
+
+<polygon points="980,580 1145,570 1140,648 978,648" fill="#e0cf5a" stroke="#8a7c3f" stroke-width="2"/>
+<text x="1060" y="615" class="lbl lblsm">Potrero 2.4</text>
+
+<!-- Potrero 4 -->
+<polygon points="1170,45 1255,40 1250,400 1165,400" fill="#3a3f7a" stroke="#20234a" stroke-width="2"/>
+<text x="1210" y="220" class="lbl lblmd" transform="rotate(-90 1210 220)">Potrero 4.1</text>
+
+<polygon points="1255,38 1350,45 1348,400 1250,400" fill="#b04fa8" stroke="#722f6d" stroke-width="2"/>
+<text x="1300" y="220" class="lbl lblmd" transform="rotate(-90 1300 220)">Potrero 4.4</text>
+
+<!-- Potrero 1 -->
+<polygon points="1370,40 1560,32 1555,330 1375,335" fill="#6f89b8" stroke="#3f5480" stroke-width="2"/>
+<text x="1465" y="185" class="lbl lblmd">Potrero 1.2</text>
+
+<polygon points="1555,32 1700,40 1730,170 1710,320 1555,330" fill="#7a6fb0" stroke="#4a4180" stroke-width="2"/>
+<text x="1630" y="185" class="lbl lblmd">Potrero 1.3</text>
+
+<polygon points="1700,42 1755,90 1760,215 1730,170" fill="#b04fa8" stroke="#722f6d" stroke-width="2"/>
+<text x="1728" y="120" class="lbl lblxs">1.4</text>
+
+<polygon points="1375,335 1710,320 1730,430 1695,640 1400,650" fill="#8fae5a" stroke="#5a7a35" stroke-width="2"/>
+<text x="1545" y="490" class="lbl lbllg">Potrero 1.1</text>
+
+<!-- arroyo -->
+<path d="M 1060,470 C 1120,510 1150,560 1210,590 C 1300,630 1380,420 1470,320 C 1560,230 1650,270 1740,210" fill="none" stroke="#5a8fc4" stroke-width="3" opacity="0.7" />
+
+</svg>
