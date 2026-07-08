@@ -7601,6 +7601,154 @@
     `;
   }
 
+
+  const PADDOCK_MAP_BOUNDARY_D = 'M922,1005L2535,1159L2555,1314L2494,1346L2304,1446L2303,1472L2275,1493L1043,1526L1040,1195L914,1037L922,1005Z';
+
+  const PADDOCK_MAP_SHAPES = [
+    { name: 'Parque 1.3', d: 'M1372,1463L1244,1458L1247,1394L1351,1407L1348,1444L1359,1449L1373,1449L1372,1463Z' },
+    { name: 'Parque 1.2', d: 'M1384,1373L1354,1352L1281,1331L1278,1397L1350,1408L1357,1392L1369,1390L1380,1399L1384,1373Z' },
+    { name: 'Parque 1.1', d: 'M1250,1235L1285,1264L1278,1399L1247,1394L1250,1235Z' },
+    { name: 'Parque 1.5', d: 'M1358,1270L1351,1341L1387,1368L1395,1290L1389,1286L1393,1271L1358,1270Z' },
+    { name: 'Parque 1.6', d: 'M1343,1262L1337,1311L1319,1320L1281,1315L1286,1264L1343,1262Z' },
+    { name: 'Pista Vieja 1.1', d: 'M1034,1230L1035,1298L1070,1300L1074,1234L1034,1230Z' },
+    { name: 'Pista Vieja 1.2', d: 'M1036,1379L1035,1298L1070,1300L1075,1379L1036,1379Z' },
+    { name: 'Pista Vieja 1.3', d: 'M1038,1452L1036,1379L1075,1379L1080,1453L1038,1452Z' },
+    { name: 'Pista Vieja 1.4', d: 'M1040,1528L1038,1452L1080,1453L1079,1524L1040,1528Z' },
+    { name: 'Pista Vieja 1.5', d: 'M1101,1359L1074,1364L1081,1454L1079,1525L1097,1523L1101,1359Z' },
+    { name: 'Parque 1.4', d: 'M1240,1516L1364,1515L1366,1495L1350,1495L1345,1485L1339,1478L1340,1471L1352,1467L1358,1472L1371,1467L1372,1462L1244,1457L1240,1516Z' },
+    { name: 'Cuadrilatero', d: 'M1034,1195L1034,1230L1075,1235L1077,1200L1034,1195Z' },
+    { name: 'Potrero 7', d: 'M1364,1516L1403,1261L1515,1257L1677,1330L1635,1511L1364,1516Z' },
+    { name: 'Potrero 5.1', d: 'M1678,1324L1517,1250L1505,1247L1506,1159L1711,1167L1678,1324Z' },
+    { name: 'Potrero 5.2', d: 'M1507,1065L1729,1086L1711,1168L1508,1160L1507,1065Z' },
+    { name: 'Potrero 5.3', d: 'M1428,1251L1436,1059L1508,1067L1504,1246L1428,1251Z' },
+    { name: 'Potrero 5.4', d: 'M1301,1151L1431.571,1165.288L1428,1250L1295,1252L1301,1151Z' },
+    { name: 'Semicircular', d: 'M1294,1141L1315,1142L1343,1136L1368,1126L1380,1112L1388,1090L1387,1069L1385,1050L1329,1045L1328,1054L1320,1055L1298,1061L1294,1141Z' },
+    { name: 'Plazoleta', d: 'M1248,1227L1287,1254L1293,1160L1282,1144L1269,1142L1248,1227Z' },
+    { name: 'Potrero 5.5', d: 'M1301,1150L1301.791,1141.371L1316,1142L1343,1136L1368,1126L1380,1112L1389,1091L1388,1068L1386,1049L1435,1056L1432,1166L1301,1150Z' },
+    { name: 'Cuadrilatero 2', d: 'M1676,1329L1689,1276L1779,1287L1753,1366L1676,1329Z' },
+    { name: 'Potrero 4.1', d: 'M1965,1303L1907,1296L1913,1103L1970,1110L1965,1303Z' },
+    { name: 'Potrero 4.2', d: 'M1840,1293L1848,1097L1913,1104L1907,1295L1840,1293Z' },
+    { name: 'Potrero 4.3', d: 'M1761,1285L1794,1090L1849,1096L1841,1292L1761,1285Z' },
+    { name: 'Potrero 4.4', d: 'M1688,1277L1729,1084L1794,1089L1760,1283L1688,1277Z' },
+    { name: 'Alfalfa Vieja', d: 'M1634,1512L1675,1329L1754,1365L1763,1507L1634,1512Z' },
+    { name: 'Potrero 2.1', d: 'M2123,1335L2037,1326L2026,1500L2090,1497L2123,1335Z' },
+    { name: 'Potrero 2.2', d: 'M1961,1315L2037,1326L2025,1500L1949,1502L1961,1315Z' },
+    { name: 'Potrero 2.3', d: 'M1871,1304L1961,1315L1948,1502L1872,1504L1871,1304Z' },
+    { name: 'Potrero 2.4', d: 'M1777,1294L1871,1304L1872,1505L1763,1507L1754,1364L1777,1294Z' },
+    { name: 'Potrero 2', d: 'M2081,1317L2133,1299L2170,1131L1969,1109L1965,1302L2081,1317Z' },
+    { name: 'Potrero 1.1', d: 'M2131,1314L2319,1313L2302,1475L2275,1490L2091,1497L2131,1314Z' },
+    { name: 'Potrero 1.2', d: 'M2170,1130L2331,1143L2319,1313L2131,1313L2170,1130Z' },
+    { name: 'Potrero 1.3', d: 'M2444,1157L2440,1333L2335,1359L2311,1389L2331,1143L2444,1157Z' },
+    { name: 'Potrero 1.4', d: 'M2531,1165L2550,1320L2493,1347L2440,1332L2444,1157L2531,1165Z' },
+  ];
+
+  function normalizePaddockMapName(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+  }
+
+  function getPaddockMapToneColor(tone) {
+    switch (tone) {
+      case 'green':
+        return '#08933a';
+      case 'orange':
+        return '#ff6b1a';
+      case 'blue':
+        return '#2968f4';
+      case 'gray':
+        return '#9aa3ad';
+      case 'teal':
+        return '#12b9c7';
+      default:
+        return '#c7cdd6';
+    }
+  }
+
+  function renderRealPaddockMapView(state, dashboard) {
+    const paddocks = Array.isArray(dashboard?.paddocks) ? dashboard.paddocks : [];
+    const byName = new Map();
+    paddocks.forEach((paddock) => {
+      const key = normalizePaddockMapName(paddock.name);
+      if (key && !byName.has(key)) {
+        byName.set(key, paddock);
+      }
+    });
+
+    const unmatched = [];
+
+    const shapesMarkup = PADDOCK_MAP_SHAPES.map((shape) => {
+      const match = byName.get(normalizePaddockMapName(shape.name));
+      if (!match) {
+        unmatched.push(shape.name);
+        return `
+          <path
+            d="${shape.d}"
+            class="paddock-map-shape paddock-map-shape--unmatched"
+            fill="#e4e7eb"
+            stroke="#b7bec7"
+            stroke-width="2"
+            stroke-dasharray="4 3"
+          ><title>${escapeHtml(shape.name)} - sin datos en el sistema</title></path>
+        `;
+      }
+
+      const stateMeta = getPaddockStateMeta(match);
+      const fillColor = getPaddockMapToneColor(stateMeta.tone);
+      const occupantLabel = String(match.occupied_by || '').trim();
+      const tooltip = occupantLabel
+        ? `${match.name} - ${stateMeta.label}: ${stateMeta.detail} · Ocupa: ${occupantLabel}`
+        : `${match.name} - ${stateMeta.label}: ${stateMeta.detail}`;
+
+      return `
+        <path
+          d="${shape.d}"
+          class="paddock-map-shape"
+          fill="${fillColor}"
+          stroke="#20232a"
+          stroke-width="2"
+          ${renderActionAttributes({ action: 'open-modal', value: 'paddock-detail', meta: { paddockId: match.id } })}
+        ><title>${escapeHtml(tooltip)}</title></path>
+      `;
+    }).join('');
+
+    const legendItems = [
+      { label: 'Ocupado', tone: 'green' },
+      { label: 'Descanso', tone: 'blue' },
+      { label: 'Preparación', tone: 'orange' },
+      { label: 'Listo', tone: 'teal' },
+      { label: 'Inactivo', tone: 'gray' },
+      { label: 'Sin datos', tone: null },
+    ];
+
+    const unmatchedNote = unmatched.length
+      ? `<p class="paddock-map-note">Sin datos para: ${escapeHtml(unmatched.join(', '))}. Revisá que el nombre coincida con el potrero cargado en el sistema.</p>`
+      : '';
+
+    return `
+      <section class="panel">
+        <div class="paddock-map-legend">
+          ${legendItems.map((item) => `
+            <span class="paddock-map-legend-item">
+              <span class="paddock-map-legend-swatch" style="background:${item.tone ? getPaddockMapToneColor(item.tone) : '#e4e7eb'}${item.tone ? '' : ';border:2px dashed #b7bec7'}"></span>
+              ${escapeHtml(item.label)}
+            </span>
+          `).join('')}
+        </div>
+        <div class="paddock-map-wrap">
+          <svg viewBox="880 975 1740 590" class="paddock-map-svg" role="img" aria-label="Mapa de potreros del campo">
+            <path d="${PADDOCK_MAP_BOUNDARY_D}" fill="none" stroke="#8a8f98" stroke-width="2"/>
+            ${shapesMarkup}
+          </svg>
+        </div>
+        ${unmatchedNote}
+      </section>
+    `;
+  }
+
   function renderPaddocksView(state) {
     const realSession = isRealSession(state);
     const realDashboard = realSession ? getRealPaddockDashboard(state) : null;
@@ -7902,6 +8050,17 @@
                   >
                     Editar
                   </button>
+                  <button
+                    type="button"
+                    class="table-icon-button table-icon-button--danger"
+                    ${renderActionAttributes({
+                      action: 'delete-paddock',
+                      meta: { paddockId: paddock.id },
+                    })}
+                    aria-label="Eliminar ${escapeHtml(paddock.name)}"
+                  >
+                    ${renderIcon('trash')}
+                  </button>
                 </div>
               </article>
             `;
@@ -8001,6 +8160,17 @@
                         >
                           ${renderIcon('edit')}
                         </button>
+                        <button
+                          type="button"
+                          class="table-icon-button table-icon-button--danger"
+                          ${renderActionAttributes({
+                            action: 'delete-paddock',
+                            meta: { paddockId: paddock.id },
+                          })}
+                          aria-label="Eliminar ${escapeHtml(paddock.name)}"
+                        >
+                          ${renderIcon('trash')}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -8015,17 +8185,20 @@
 
   function renderRealPaddocksView(state, dashboard) {
     const activeView = getActiveView(state, 'paddocks');
+    const paddockTabs = (dashboard.tabs || []).concat([{ key: 'map', label: 'Mapa' }]);
 
     return `
       <div class="page-stack">
         ${renderMetricGrid(dashboard.summary_cards || [])}
         ${dashboard.notice ? renderNoticeCard(dashboard.notice) : ''}
-        ${renderSegmentedTabs(state, 'paddocks', dashboard.tabs || [])}
-        ${renderRealPaddockSearchRow(state, dashboard)}
+        ${renderSegmentedTabs(state, 'paddocks', paddockTabs)}
+        ${activeView === 'map' ? '' : renderRealPaddockSearchRow(state, dashboard)}
         ${
-          activeView === 'list'
-            ? renderRealPaddockTable(state, dashboard)
-            : renderRealPaddockCards(state, dashboard)
+          activeView === 'map'
+            ? renderRealPaddockMapView(state, dashboard)
+            : activeView === 'list'
+              ? renderRealPaddockTable(state, dashboard)
+              : renderRealPaddockCards(state, dashboard)
         }
       </div>
     `;
@@ -10569,7 +10742,7 @@
     `;
   }
 
-  function renderRealRecordsByCategory(events, isFiltered) {
+  function renderRealRecordsByCategory(events, isFiltered, state) {
     if (events.length === 0) {
       const emptyMsg = isFiltered ? 'No hay registros para los filtros aplicados.' : 'No hay registros este mes.';
       return `<section class="panel"><div class="empty-state"><p>${emptyMsg}</p></div></section>`;
@@ -10584,26 +10757,41 @@
       groups[tag].items.push({ label, date: event.event_date });
     }
 
+    const collapsed = (state && state.collapsedRecordCategories) || {};
+
     return `
       <div class="stack-gap">
-        ${Object.values(groups).map((group) => `
+        ${Object.values(groups).map((group) => {
+          const isCollapsed = Boolean(collapsed[group.tag]);
+          return `
           <section class="panel">
-            <div class="panel-head ${escapeHtml(group?.tag || '').trim().toLowerCase().replace(/\s+/g, '-')}">
+            <button
+              type="button"
+              class="panel-head panel-head-toggle ${escapeHtml(group?.tag || '').trim().toLowerCase().replace(/\s+/g, '-')}"
+              ${renderActionAttributes({ action: 'toggle-record-category', value: group.tag })}
+              aria-expanded="${isCollapsed ? 'false' : 'true'}"
+            >
               <h2>${escapeHtml(group.tag)}</h2>
-              ${renderBadge(String(group.items.length), group.tone)}
-            </div>
-            <div class="category-records">
-              ${group.items
-                .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-                .map((item) => `
-                  <article class="category-record">
-                    <span>${escapeHtml(item.label)}</span>
-                    <span class="subtle-text">${escapeHtml(formatCompactDateLabel(item.date))}</span>
-                  </article>
-                `).join('')}
-            </div>
+              <span class="panel-head-toggle-right">
+                ${renderBadge(String(group.items.length), group.tone)}
+                <span class="panel-head-chevron${isCollapsed ? ' is-collapsed' : ''}">${renderIcon('chevronDown')}</span>
+              </span>
+            </button>
+            ${isCollapsed ? '' : `
+              <div class="category-records">
+                ${group.items
+                  .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+                  .map((item) => `
+                    <article class="category-record">
+                      <span>${escapeHtml(item.label)}</span>
+                      <span class="subtle-text">${escapeHtml(formatCompactDateLabel(item.date))}</span>
+                    </article>
+                  `).join('')}
+              </div>
+            `}
           </section>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
     `;
   }
@@ -10701,7 +10889,7 @@
           ${filterBar}
           ${loadingBanner}
           ${renderSegmentedTabs(state, 'records', RECORDS_TABS)}
-          ${activeView === 'categories' ? renderRealRecordsByCategory(events, isFiltered) : renderRealRecordsTimeline(events, isFiltered)}
+          ${activeView === 'categories' ? renderRealRecordsByCategory(events, isFiltered, state) : renderRealRecordsTimeline(events, isFiltered)}
         </div>
       `;
     }
@@ -12040,6 +12228,17 @@
             }
             <button
               type="button"
+              class="btn btn-danger"
+              ${renderActionAttributes({
+                action: 'delete-paddock',
+                meta: { paddockId: paddock.id },
+              })}
+            >
+              ${renderIcon('trash')}
+              <span>Eliminar</span>
+            </button>
+            <button
+              type="button"
               class="btn btn-primary"
               ${renderActionAttributes({
                 action: 'open-modal',
@@ -12259,6 +12458,17 @@
                     ${renderActionAttributes({ action: 'close-modal' })}
                   >
                     <span>Cancelar</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-danger"
+                    ${renderActionAttributes({
+                      action: 'delete-paddock',
+                      meta: { paddockId: paddock.id },
+                    })}
+                  >
+                    ${renderIcon('trash')}
+                    <span>Eliminar</span>
                   </button>
                 `
                 : ''
@@ -15722,6 +15932,7 @@
     ownersDashboard: null,
     ownerStatement: null,
     calendarEventsByMonth: {},
+    collapsedRecordCategories: {},
     horseHistoryById: {},
     paddockDetailById: {},
     session: null,
@@ -16668,6 +16879,40 @@
       );
     } catch (error) {
       showToast(error.message || 'No pudimos guardar el potrero.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function deletePaddockById(paddockId) {
+    const normalizedPaddockId = parsePositiveInt(paddockId);
+    const paddock = normalizedPaddockId
+      ? getRealPaddockById(store.getState(), normalizedPaddockId)
+      : null;
+    if (!paddock) {
+      showToast('No encontramos ese potrero en la lectura actual.', 'critical');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Vas a eliminar el potrero "${paddock.name}". Esta acción no se puede deshacer.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      await requestJson(PADDOCKS_API_URL, {
+        method: 'DELETE',
+        body: JSON.stringify({ paddockId: normalizedPaddockId }),
+      });
+
+      await loadAdminDashboards({ closeModal: true });
+      showToast(`Potrero eliminado: ${paddock.name}`);
+    } catch (error) {
+      showToast(error.message || 'No pudimos eliminar el potrero.', 'critical');
     } finally {
       setState({ loading: false });
     }
@@ -19763,6 +20008,21 @@
       return;
     }
 
+    if (action === 'toggle-record-category') {
+      if (actionValue) {
+        setState((currentState) => {
+          const current = currentState.collapsedRecordCategories || {};
+          return {
+            collapsedRecordCategories: {
+              ...current,
+              [actionValue]: !current[actionValue],
+            },
+          };
+        });
+      }
+      return;
+    }
+
     if (action === 'remove-records-filter') {
       const defaults = { module: 'Todos', type: 'Todos', from: '', to: '', channel: 'Todos' };
       if (actionValue && actionValue in defaults) {
@@ -19799,6 +20059,11 @@
 
     if (action === 'delete-owner') {
       deleteOwnerById(payload.ownerId);
+      return;
+    }
+
+    if (action === 'delete-paddock') {
+      deletePaddockById(payload.paddockId);
       return;
     }
 
