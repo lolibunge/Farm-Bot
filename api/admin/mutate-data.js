@@ -14,6 +14,7 @@ const {
   moveHorseGroupIntoPaddock,
   correctHorseGroupCurrentPaddock,
   moveHorseGroupOutOfPaddock,
+  setGroupSharedPaddocks,
 } = require('../../lib/paddocks');
 const {
   ensureFeedPlanningTables,
@@ -61,6 +62,7 @@ function getModuleKeyForAdminAction(action) {
       'grazing_group_move_in',
       'grazing_group_correct_current',
       'grazing_group_move_out',
+      'grazing_group_shared_paddocks_set',
     ].includes(action)
   ) {
     return 'paddocks';
@@ -1225,6 +1227,43 @@ module.exports = async (req, res) => {
         horses: data.horses,
         grazing_events: data.grazing_events,
         moved_count: data.moved_count,
+      });
+      return;
+    }
+
+    if (action === 'grazing_group_shared_paddocks_set') {
+      const groupId = parsePositiveInt(body.groupId);
+      const paddockIds = parsePositiveIntArray(body.paddockIds) || [];
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const notes = String(body.notes || '').trim();
+
+      if (!groupId) {
+        res.status(400).json({ ok: false, error: 'groupId is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate is invalid' });
+        return;
+      }
+
+      const data = await setGroupSharedPaddocks({
+        groupId,
+        paddockIds,
+        effectiveDate: eventDateRaw,
+        notes: notes || null,
+        source: 'admin_group',
+      });
+
+      res.status(200).json({
+        ok: true,
+        action,
+        group: data.group,
+        primary_paddock: data.primary_paddock,
+        effective_date: data.effective_date,
+        current_shared_paddocks: data.current_shared_paddocks,
+        added_paddock_ids: data.added_paddock_ids,
+        removed_paddock_ids: data.removed_paddock_ids,
       });
       return;
     }
@@ -3209,7 +3248,7 @@ module.exports = async (req, res) => {
       res.status(400).json({
         ok: false,
         error:
-        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, paddock_ready_date_set, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, feed_item_save, feed_item_delete, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
+        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, paddock_ready_date_set, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, grazing_group_shared_paddocks_set, feed_item_save, feed_item_delete, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
       });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);
