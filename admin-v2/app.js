@@ -10,6 +10,7 @@
   const OWNER_FEED_PURCHASES_API_URL = '/api/admin-v2/owner-feed-purchases';
   const OWNER_EXPENSE_SPLIT_API_URL = '/api/admin-v2/owner-expense-split';
   const OWNER_EXPENSE_SPLIT_DRAFTS_API_URL = '/api/admin-v2/owner-expense-split-drafts';
+  const OVERVIEW_API_URL = '/api/admin/overview';
   const CALENDAR_EVENTS_API_URL = '/api/admin/calendar-events';
   const HORSE_HISTORY_API_URL = '/api/admin/horse-history';
   const DATA_MUTATE_API_URL = '/api/admin/mutate-data';
@@ -96,6 +97,18 @@
     { value: 'heavy', label: 'Fuerte' },
   ];
 
+  const WEATHER_RAIN_TARGET_MM = 20;
+
+  const WEATHER_PERIOD_TYPES = [
+    { key: 'day', label: 'Día', source: 'daily', bucketDays: 1, windowSize: 14 },
+    { key: 'week', label: 'Semana', source: 'daily', bucketDays: 7, windowSize: 12 },
+    { key: 'month', label: 'Mes', source: 'monthly', bucketMonths: 1, windowSize: 12 },
+    { key: 'bimonthly', label: 'Bimestral', source: 'monthly', bucketMonths: 2, windowSize: 6 },
+    { key: 'quarterly', label: 'Trimestral', source: 'monthly', bucketMonths: 3, windowSize: 4 },
+    { key: 'fourmonth', label: 'Cuatrimestral', source: 'monthly', bucketMonths: 4, windowSize: 3 },
+    { key: 'year', label: 'Año', source: 'yearly', windowSize: 6 },
+  ];
+
   const RESPONSIBLE_KIND_OPTIONS = [
     { value: 'unspecified', label: 'Sin especificar' },
     { value: 'field_staff', label: 'Personal del campo' },
@@ -132,6 +145,7 @@
     { key: 'horses', label: 'Caballos', icon: 'horses' },
     { key: 'owners', label: 'Propietarios', icon: 'owners' },
     { key: 'stock', label: 'Stock', icon: 'stock' },
+    { key: 'weather', label: 'Clima', icon: 'rain' },
     { key: 'calendar', label: 'Calendario', icon: 'calendar' },
     { key: 'records', label: 'Registros', icon: 'records' },
     { key: 'settings', label: 'Configuración', icon: 'settings' },
@@ -1262,6 +1276,35 @@
         },
       ],
     },
+    weather: {
+      title: 'Clima',
+      getSubtitle(state) {
+        if (!isRealSession(state)) {
+          return 'Registro de lluvia y heladas del campo.';
+        }
+
+        const summary = state.weatherDashboard?.summary;
+        if (!summary) {
+          return 'Cargando…';
+        }
+
+        return `${formatNumberLabel(summary.rain_7d_mm)} mm en los últimos 7 días · ${formatNumberLabel(summary.rain_days_7)} día(s) de lluvia`;
+      },
+      actions: [
+        {
+          label: 'Registrar Helada',
+          tone: 'secondary',
+          icon: 'snow',
+          trigger: { action: 'open-modal', value: 'register-frost' },
+        },
+        {
+          label: 'Registrar Lluvia',
+          tone: 'primary',
+          icon: 'rain',
+          trigger: { action: 'open-modal', value: 'register-rain' },
+        },
+      ],
+    },
     calendar: {
       title: 'Calendario de Actividades',
       getSubtitle(state) {
@@ -1512,6 +1555,189 @@
     const monthInfo = getMonthDateInfo(yearMonth);
     const date = new Date(Date.UTC(monthInfo.year, monthInfo.month_index + Number(monthDelta || 0), 1));
     return date.toISOString().slice(0, 7);
+  }
+
+  function getWeatherPeriodConfig(periodType) {
+    return WEATHER_PERIOD_TYPES.find((entry) => entry.key === periodType) || WEATHER_PERIOD_TYPES[1];
+  }
+
+  function formatChartDayLabel(eventDate) {
+    const parsed = new Date(`${eventDate}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) {
+      return eventDate;
+    }
+    return new Intl.DateTimeFormat('es-UY', { day: 'numeric', month: 'short' }).format(parsed);
+  }
+
+  const WEATHER_MONTH_SHORT_LABELS = [
+    'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+  ];
+
+  function formatMonthKeyLabel(monthKey) {
+    const [year, month] = monthKey.split('-').map(Number);
+    return `${WEATHER_MONTH_SHORT_LABELS[month - 1]} ${String(year).slice(2)}`;
+  }
+
+
+  function buildMonthKeySequence(endYear, endMonth, count) {
+    const keys = [];
+    let y = endYear;
+    let m = endMonth;
+    for (let i = 0; i < count; i += 1) {
+      keys.unshift(`${y}-${String(m).padStart(2, '0')}`);
+      m -= 1;
+      if (m < 1) {
+        m = 12;
+        y -= 1;
+      }
+    }
+    return keys;
+  }
+
+  function getWeatherDailyBuckets(dailyRows, config, offset) {
+    const rows = Array.isArray(dailyRows) ? dailyRows : [];
+    const bucketDays = config.bucketDays;
+    const windowSize = config.windowSize;
+    const totalBuckets = Math.ceil(rows.length / bucketDays);
+    const maxOffset = Math.max(0, Math.ceil(totalBuckets / windowSize) - 1);
+    const clampedOffset = Math.min(Math.max(0, offset), maxOffset);
+
+    const skipDays = clampedOffset * windowSize * bucketDays;
+    const endIndex = rows.length - skipDays;
+    const startIndex = Math.max(0, endIndex - windowSize * bucketDays);
+    const windowRows = rows.slice(Math.max(0, startIndex), Math.max(0, endIndex));
+
+    const buckets = [];
+    for (let end = windowRows.length; end > 0; end -= bucketDays) {
+      const start = Math.max(0, end - bucketDays);
+      const chunk = windowRows.slice(start, end);
+      if (!chunk.length) continue;
+      const rainMm = chunk.reduce((sum, row) => sum + Number(row.rain_mm || 0), 0);
+      const rangeStartLabel = formatChartDayLabel(chunk[0].event_date);
+      const rangeEndLabel = formatChartDayLabel(chunk[chunk.length - 1].event_date);
+      buckets.unshift({
+        label: rangeStartLabel,
+        range_start_label: rangeStartLabel,
+        range_end_label: rangeEndLabel,
+        rain_mm: rainMm,
+        rainy_days: chunk.filter((row) => Number(row.rain_mm || 0) > 0).length,
+        range_start: chunk[0].event_date,
+        range_end: chunk[chunk.length - 1].event_date,
+      });
+    }
+
+    return {
+      buckets,
+      canGoOlder: clampedOffset < maxOffset,
+      canGoNewer: clampedOffset > 0,
+      offset: clampedOffset,
+    };
+  }
+
+  function getWeatherMonthlyBuckets(monthlyRows, config, offset) {
+    const rows = Array.isArray(monthlyRows) ? monthlyRows : [];
+    const map = new Map();
+    rows.forEach((row) => {
+      map.set(`${row.year}-${String(row.month).padStart(2, '0')}`, row);
+    });
+
+    const bucketMonths = config.bucketMonths;
+    const windowSize = config.windowSize;
+    const totalWindowMonths = windowSize * bucketMonths;
+
+    const now = new Date();
+    let endYear = now.getFullYear();
+    let endMonth = now.getMonth() + 1 - offset * totalWindowMonths;
+    while (endMonth < 1) {
+      endMonth += 12;
+      endYear -= 1;
+    }
+    while (endMonth > 12) {
+      endMonth -= 12;
+      endYear += 1;
+    }
+
+    const monthKeys = buildMonthKeySequence(endYear, endMonth, totalWindowMonths);
+
+    const buckets = [];
+    for (let i = 0; i < monthKeys.length; i += bucketMonths) {
+      const group = monthKeys.slice(i, i + bucketMonths);
+      const rainMm = group.reduce((sum, key) => sum + Number(map.get(key)?.total_mm || 0), 0);
+      const rainyDays = group.reduce((sum, key) => sum + Number(map.get(key)?.rainy_days || 0), 0);
+      const rangeStartLabel = formatMonthKeyLabel(group[0]);
+      const rangeEndLabel = formatMonthKeyLabel(group[group.length - 1]);
+      buckets.push({
+        label: rangeStartLabel,
+        range_start_label: rangeStartLabel,
+        range_end_label: rangeEndLabel,
+        rain_mm: rainMm,
+        rainy_days: rainyDays,
+        month_keys: group,
+      });
+    }
+
+    let maxOffset = 0;
+    if (rows.length) {
+      const earliestKey = rows.reduce((min, row) => {
+        const key = `${row.year}-${String(row.month).padStart(2, '0')}`;
+        return !min || key < min ? key : min;
+      }, null);
+      const [earliestYear, earliestMonth] = earliestKey.split('-').map(Number);
+      const monthsSinceEarliest =
+        (now.getFullYear() * 12 + now.getMonth() + 1) - (earliestYear * 12 + earliestMonth);
+      maxOffset = Math.max(0, Math.ceil((monthsSinceEarliest + 1) / totalWindowMonths) - 1);
+    }
+    const clampedOffset = Math.min(Math.max(0, offset), maxOffset);
+
+    return {
+      buckets,
+      canGoOlder: clampedOffset < maxOffset,
+      canGoNewer: clampedOffset > 0,
+      offset: clampedOffset,
+    };
+  }
+
+  function getWeatherYearlyBuckets(yearlyRows, config, offset) {
+    const rows = Array.isArray(yearlyRows) ? [...yearlyRows].sort((a, b) => a.year - b.year) : [];
+    const windowSize = config.windowSize;
+    const totalBuckets = rows.length;
+    const maxOffset = Math.max(0, Math.ceil(totalBuckets / windowSize) - 1);
+    const clampedOffset = Math.min(Math.max(0, offset), maxOffset);
+
+    const skip = clampedOffset * windowSize;
+    const endIndex = rows.length - skip;
+    const startIndex = Math.max(0, endIndex - windowSize);
+    const windowRows = rows.slice(Math.max(0, startIndex), Math.max(0, endIndex));
+
+    const buckets = windowRows.map((row) => ({
+      label: String(row.year),
+      range_start_label: String(row.year),
+      range_end_label: String(row.year),
+      rain_mm: Number(row.total_mm || 0),
+      rainy_days: Number(row.rainy_days || 0),
+    }));
+
+    return {
+      buckets,
+      canGoOlder: clampedOffset < maxOffset,
+      canGoNewer: clampedOffset > 0,
+      offset: clampedOffset,
+    };
+  }
+
+  function getWeatherBuckets(weatherDashboard, periodType, offset) {
+    const config = getWeatherPeriodConfig(periodType);
+    const rain = weatherDashboard?.rain || {};
+
+    if (config.source === 'daily') {
+      return { ...getWeatherDailyBuckets(rain.daily, config, offset), config };
+    }
+
+    if (config.source === 'monthly') {
+      return { ...getWeatherMonthlyBuckets(rain.monthly, config, offset), config };
+    }
+
+    return { ...getWeatherYearlyBuckets(rain.yearly, config, offset), config };
   }
 
   function getFeedSlotMeta(feedSlot) {
@@ -7699,17 +7925,19 @@
       const stateMeta = getPaddockStateMeta(match);
       const fillColor = getPaddockMapToneColor(stateMeta.tone);
       const occupantLabel = String(match.occupied_by || '').trim();
+      const sharedNote = match.has_shared_access ? ' (acceso compartido)' : '';
       const tooltip = occupantLabel
-        ? `${match.name} - ${stateMeta.label}: ${stateMeta.detail} · Ocupa: ${occupantLabel}`
-        : `${match.name} - ${stateMeta.label}: ${stateMeta.detail}`;
+        ? `${match.name} - ${stateMeta.label}: ${stateMeta.detail}${sharedNote} · Ocupa: ${occupantLabel}`
+        : `${match.name} - ${stateMeta.label}: ${stateMeta.detail}${sharedNote}`;
 
       return `
         <path
           d="${shape.d}"
-          class="paddock-map-shape"
+          class="paddock-map-shape${match.has_shared_access ? ' paddock-map-shape--shared' : ''}"
           fill="${fillColor}"
-          stroke="#20232a"
-          stroke-width="2"
+          stroke="${match.has_shared_access ? '#7c3aed' : '#20232a'}"
+          stroke-width="${match.has_shared_access ? '3' : '2'}"
+          ${match.has_shared_access ? 'stroke-dasharray="6 3"' : ''}
           ${renderActionAttributes({ action: 'open-modal', value: 'paddock-detail', meta: { paddockId: match.id } })}
         ><title>${escapeHtml(tooltip)}</title></path>
       `;
@@ -10388,6 +10616,224 @@
     `;
   }
 
+  function pickWeatherLabelIndexes(count, maxLabels) {
+    if (count <= maxLabels) {
+      return new Set(Array.from({ length: count }, (_, i) => i));
+    }
+
+    const step = (count - 1) / (maxLabels - 1);
+    const indexes = new Set();
+    for (let i = 0; i < maxLabels; i += 1) {
+      indexes.add(Math.round(i * step));
+    }
+    return indexes;
+  }
+
+  function renderWeatherRainChart(buckets) {
+    if (!buckets.length) {
+      return `
+        <div class="empty-state-card">
+          <strong>No hay datos de lluvia en este rango.</strong>
+          <span>Registrá lluvia con el botón "Registrar Lluvia" o navegá a otro período.</span>
+        </div>
+      `;
+    }
+
+    const totalRain = buckets.reduce((sum, bucket) => sum + Number(bucket.rain_mm || 0), 0);
+    const rainyBuckets = buckets.filter((bucket) => bucket.rain_mm > 0).length;
+    const metBuckets = buckets.filter((bucket) => bucket.rain_mm >= WEATHER_RAIN_TARGET_MM).length;
+    const avgRain = buckets.length ? Math.round((totalRain / buckets.length) * 10) / 10 : 0;
+    const maxRain = Math.max(1, ...buckets.map((bucket) => Number(bucket.rain_mm || 0)));
+    const labelIndexes = pickWeatherLabelIndexes(buckets.length, 5);
+
+    return `
+      <div class="weather-chart-summary">
+        <strong>${escapeHtml(formatNumberLabel(totalRain))} mm total</strong>
+        <span>Promedio ${escapeHtml(formatNumberLabel(avgRain))} mm · ${rainyBuckets}/${buckets.length} con lluvia · ${metBuckets} alcanzaron ${WEATHER_RAIN_TARGET_MM} mm</span>
+      </div>
+      <div class="weather-bar-chart" role="img" aria-label="Gráfico de lluvia por período">
+        ${buckets
+          .map((bucket, index) => {
+            const rainMm = Number(bucket.rain_mm || 0);
+            const heightPercent = rainMm > 0 ? Math.max(3, Math.round((rainMm / maxRain) * 100)) : 0;
+            const metTarget = rainMm >= WEATHER_RAIN_TARGET_MM;
+            const rangeText =
+              bucket.range_start_label && bucket.range_end_label && bucket.range_start_label !== bucket.range_end_label
+                ? `${bucket.range_start_label} - ${bucket.range_end_label}`
+                : bucket.label;
+            return `
+              <div class="weather-bar-col" title="${escapeHtml(rangeText)}: ${escapeHtml(formatNumberLabel(rainMm))} mm">
+                <div class="weather-bar-track">
+                  <div class="weather-bar${metTarget ? ' is-target-met' : ''}" style="height:${heightPercent}%"></div>
+                </div>
+                <span class="weather-bar-value">${rainMm > 0 ? escapeHtml(formatNumberLabel(rainMm)) : ''}</span>
+                <span class="weather-bar-label">${labelIndexes.has(index) ? escapeHtml(bucket.label) : ''}</span>
+              </div>
+            `;
+          })
+          .join('')}
+      </div>
+    `;
+  }
+
+  function renderWeatherFrostPanel(frostRows) {
+    const rows = Array.isArray(frostRows) ? frostRows : [];
+    const recentFrost = rows.slice(0, 10);
+    const last30Count = rows.filter((row) => {
+      const parsed = new Date(`${row.event_date}T00:00:00`);
+      if (Number.isNaN(parsed.getTime())) return false;
+      return (Date.now() - parsed.getTime()) / 86400000 <= 30;
+    }).length;
+
+    return `
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Heladas recientes</h2>
+            <span class="subtle-text">${last30Count} en los últimos 30 días</span>
+          </div>
+        </div>
+        ${
+          recentFrost.length
+            ? `
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Intensidad</th>
+                      <th>Notas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${recentFrost
+                      .map((row) => {
+                        const tone =
+                          row.intensity === 'heavy' ? 'critical' : row.intensity === 'moderate' ? 'orange' : 'gray';
+                        return `
+                          <tr>
+                            <td>${escapeHtml(formatDateLabel(row.event_date))}</td>
+                            <td>${renderBadge(formatValueLabel(row.intensity, FROST_INTENSITY_OPTIONS), tone)}</td>
+                            <td>${escapeHtml(row.notes || '-')}</td>
+                          </tr>
+                        `;
+                      })
+                      .join('')}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `
+              <div class="empty-state-card">
+                <strong>Todavía no hay heladas registradas.</strong>
+                <span>Usá "Registrar Helada" para cargar la primera.</span>
+              </div>
+            `
+        }
+      </section>
+    `;
+  }
+
+  function renderWeatherView(state) {
+    if (!isRealSession(state)) {
+      return `
+        <div class="page-stack">
+          <section class="panel">
+            <div class="empty-state-card">
+              <strong>Disponible con tu sesión real.</strong>
+              <span>Iniciá sesión con los datos de tu campo para ver el registro de lluvia y heladas.</span>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
+    const dashboard = state.weatherDashboard;
+    if (!dashboard) {
+      return `
+        <div class="page-stack">
+          <section class="panel">
+            <div class="empty-state-card">
+              <strong>Cargando datos del clima...</strong>
+            </div>
+          </section>
+        </div>
+      `;
+    }
+
+    const periodType = state.weatherPeriodType || 'week';
+    const offset = state.weatherOffset || 0;
+    const result = getWeatherBuckets(dashboard, periodType, offset);
+    const buckets = result.buckets || [];
+    const summary = dashboard.summary || {};
+    const frostRecent = dashboard.frost?.recent || [];
+    const rangeLabel = buckets.length
+      ? buckets[0].range_start_label === buckets[buckets.length - 1].range_end_label
+        ? buckets[0].range_start_label
+        : `${buckets[0].range_start_label} — ${buckets[buckets.length - 1].range_end_label}`
+      : 'Sin datos en este rango';
+
+    return `
+      <div class="page-stack">
+        ${renderMetricGrid([
+          {
+            label: 'Lluvia hoy',
+            value: `${formatNumberLabel(summary.rain_today_mm)} mm`,
+            icon: 'rain',
+            tone: 'blue',
+            detail: 'Registrado para todo el campo',
+          },
+          {
+            label: 'Lluvia (7 días)',
+            value: `${formatNumberLabel(summary.rain_7d_mm)} mm`,
+            icon: 'rain',
+            tone: 'teal',
+            detail: `${formatNumberLabel(summary.rain_days_7)} día(s) con lluvia`,
+          },
+          {
+            label: 'Heladas registradas',
+            value: String(frostRecent.length),
+            icon: 'snow',
+            tone: 'purple',
+            detail: 'Últimos registros del campo',
+          },
+        ])}
+
+        <section class="panel weather-chart-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Registro de lluvia</h2>
+              <span class="subtle-text">${escapeHtml(rangeLabel)}</span>
+            </div>
+            <div class="calendar-month">
+              <button type="button" class="month-button" data-action="weather-shift" data-value="1" ${result.canGoOlder ? '' : 'disabled'}>‹</button>
+              <button type="button" class="month-button" data-action="weather-shift" data-value="-1" ${result.canGoNewer ? '' : 'disabled'}>›</button>
+            </div>
+          </div>
+
+          <div class="segmented-tabs weather-period-tabs">
+            ${WEATHER_PERIOD_TYPES.map(
+              (entry) => `
+                <button
+                  type="button"
+                  class="segmented-tab${entry.key === periodType ? ' is-active' : ''}"
+                  data-action="weather-period"
+                  data-value="${escapeHtml(entry.key)}"
+                >
+                  ${escapeHtml(entry.label)}
+                </button>
+              `
+            ).join('')}
+          </div>
+
+          ${renderWeatherRainChart(buckets)}
+        </section>
+
+        ${renderWeatherFrostPanel(frostRecent)}
+      </div>
+    `;
+  }
+
   function renderCalendarView(state) {
     if (isRealSession(state)) {
       return renderRealCalendarView(state);
@@ -12226,6 +12672,23 @@
                 `
                 : ''
             }
+            ${
+              paddock.occupancy_state === 'occupied'
+                ? `
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    ${renderActionAttributes({
+                      action: 'open-modal',
+                      value: 'group-shared-paddocks',
+                      meta: { paddockId: paddock.id },
+                    })}
+                  >
+                    <span>Compartir potreros</span>
+                  </button>
+                `
+                : ''
+            }
             <button
               type="button"
               class="btn btn-danger"
@@ -12291,6 +12754,105 @@
         { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
         { label: 'Guardar nueva fecha', tone: 'primary', icon: 'check', submit: true },
       ],
+    });
+  }
+
+  function renderRealGroupSharedPaddocksModal(state, payload) {
+    const primaryPaddock = getRealPaddockById(state, payload.paddockId);
+    if (!primaryPaddock) {
+      return renderInfoModal({
+        title: 'Potrero no disponible',
+        subtitle: 'No pudimos reconstruir el potrero para compartir accesos.',
+        body: `
+          <div class="modal-detail-card">
+            <strong>Revis\u00e1 la lectura actual</strong>
+            <span>Prob\u00e1 refrescar la pantalla para volver a cargar el padr\u00f3n de potreros.</span>
+          </div>
+        `,
+      });
+    }
+
+    const occupyingGroupName = String(primaryPaddock.occupied_groups || '').split(',')[0].trim();
+    const group = occupyingGroupName ? getRealHorseGroupByName(state, occupyingGroupName) : null;
+
+    if (!group) {
+      return renderInfoModal({
+        title: `Compartir potreros - ${primaryPaddock.name}`,
+        subtitle: 'Este potrero no tiene un grupo activo para compartir accesos.',
+        body: `
+          <div class="modal-detail-card">
+            <strong>Sin grupo ocupando este potrero</strong>
+            <span>Primero mov\u00e9s un grupo ac\u00e1 con "Mover Grupo" y despu\u00e9s pod\u00e9s sumarle acceso a otros potreros.</span>
+          </div>
+        `,
+        footerButtons: [{ label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } }],
+      });
+    }
+
+    const dashboard = getRealPaddockDashboard(state);
+    const allPaddocks = Array.isArray(dashboard?.paddocks) ? dashboard.paddocks : [];
+    const candidatePaddocks = allPaddocks
+      .filter((candidate) => candidate.active && Number(candidate.id) !== Number(primaryPaddock.id))
+      .slice()
+      .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), 'es'));
+
+    const isCurrentlyShared = (candidate) =>
+      Boolean(candidate.has_shared_access) &&
+      String(candidate.occupied_groups || '')
+        .split(',')
+        .map((name) => name.trim())
+        .includes(group.name);
+
+    const checkboxesMarkup = candidatePaddocks.length
+      ? candidatePaddocks
+          .map(
+            (candidate) => `
+              <label class="modal-field modal-field--checkbox modal-field--wide">
+                <input type="checkbox" name="sharedPaddock_${escapeHtml(String(candidate.id))}" value="true"${
+                  isCurrentlyShared(candidate) ? ' checked' : ''
+                } />
+                <span class="modal-field-checkbox-label">
+                  <span>${escapeHtml(candidate.name)}</span>
+                  <small>${escapeHtml(
+                    candidate.occupancy_state === 'occupied'
+                      ? `Ocupado - ${candidate.occupied_by || ''}`
+                      : 'Libre'
+                  )}</small>
+                </span>
+              </label>
+            `
+          )
+          .join('')
+      : '<p class="paddock-map-note">No hay otros potreros activos para elegir.</p>';
+
+    return renderFormModal({
+      key: 'group-shared-paddocks',
+      title: `Compartir potreros de ${group.name}`,
+      subtitle: `${group.name} sigue en ${primaryPaddock.name}. Marc\u00e1 qu\u00e9 otros potreros tambi\u00e9n est\u00e1 usando ahora (agua, pastoreo compartido, etc.).`,
+      submitLabel: 'Guardar accesos compartidos',
+      submitIcon: 'check',
+      columns: 1,
+      fields: [
+        {
+          label: 'Fecha efectiva',
+          name: 'eventDate',
+          type: 'date',
+          value: todayDateString(),
+          required: true,
+        },
+        {
+          label: 'Notas (opcional)',
+          name: 'notes',
+          type: 'textarea',
+          rows: 2,
+          placeholder: 'Ej: comen del 3 porque tiene ca\u00f1ada.',
+        },
+      ],
+      extraBody: `
+        <input type="hidden" name="groupId" value="${escapeHtml(String(group.id))}" />
+        <p style="font-weight:600;margin:8px 0 4px;">Potreros compartidos ahora mismo</p>
+        ${checkboxesMarkup}
+      `,
     });
   }
 
@@ -15224,6 +15786,13 @@
         return '';
       }
 
+      case 'group-shared-paddocks': {
+        if (isRealSession(state)) {
+          return renderRealGroupSharedPaddocksModal(state, payload);
+        }
+        return '';
+      }
+
       case 'paddock-form': {
         if (isRealSession(state)) {
           return renderRealPaddockFormModal(state, payload);
@@ -15795,6 +16364,8 @@
         return renderOwnersView(state);
       case 'stock':
         return renderStockView(state);
+      case 'weather':
+        return renderWeatherView(state);
       case 'calendar':
         return renderCalendarView(state);
       case 'records':
@@ -15931,6 +16502,9 @@
     stockDashboard: null,
     ownersDashboard: null,
     ownerStatement: null,
+    weatherDashboard: null,
+    weatherPeriodType: 'week',
+    weatherOffset: 0,
     calendarEventsByMonth: {},
     collapsedRecordCategories: {},
     horseHistoryById: {},
@@ -16417,6 +16991,20 @@
     return payload;
   }
 
+  async function loadWeatherDashboard(options = {}) {
+    if (!isRealSession(store.getState())) {
+      setState({ weatherDashboard: null });
+      return null;
+    }
+
+    const payload = await requestJson(OVERVIEW_API_URL);
+    setState({
+      weatherDashboard: payload,
+      ...(options.closeModal ? { modal: null } : {}),
+    });
+    return payload;
+  }
+
   async function loadAdminDashboards(options = {}) {
     if (!isRealSession(store.getState())) {
       setState({
@@ -16424,6 +17012,7 @@
         paddocksDashboard: null,
         stockDashboard: null,
         ownersDashboard: null,
+        weatherDashboard: null,
         calendarEventsByMonth: {},
       });
       return null;
@@ -16946,6 +17535,55 @@
       showToast(`Descanso extendido. Listo desde ${formatDateLabel(readyToGrazeOn)}.`);
     } catch (error) {
       showToast(error.message || 'No pudimos extender el descanso.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitGroupSharedPaddocksForm(formData) {
+    const groupId = parsePositiveInt(formData.get('groupId'));
+    const eventDate = String(formData.get('eventDate') || '').trim() || todayDateString();
+    const notes = String(formData.get('notes') || '').trim();
+
+    if (!groupId) {
+      showToast('No encontramos el grupo para actualizar los potreros compartidos.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida.', 'critical');
+      return;
+    }
+
+    const paddockIds = [];
+    for (const [key, value] of formData.entries()) {
+      if (key.startsWith('sharedPaddock_') && value === 'true') {
+        const candidateId = parsePositiveInt(key.slice('sharedPaddock_'.length));
+        if (candidateId) {
+          paddockIds.push(candidateId);
+        }
+      }
+    }
+
+    setState({ loading: true });
+    try {
+      const payload = await postMutation({
+        action: 'grazing_group_shared_paddocks_set',
+        groupId,
+        paddockIds,
+        eventDate,
+        notes: notes || undefined,
+      });
+
+      const sharedNames = (payload?.current_shared_paddocks || []).map((row) => row.name).join(', ');
+      const successMessage = sharedNames
+        ? `${payload?.group?.name || ''} ahora también comparte: ${sharedNames}.`
+        : `${payload?.group?.name || ''} ya no comparte potreros extra.`;
+
+      await loadAdminDashboards({ closeModal: true });
+      showToast(successMessage);
+    } catch (error) {
+      showToast(error.message || 'No pudimos actualizar los potreros compartidos.', 'critical');
     } finally {
       setState({ loading: false });
     }
@@ -18361,6 +18999,9 @@
       });
 
       await loadAdminDashboards({ closeModal: true });
+      if (store.getState().weatherDashboard) {
+        loadWeatherDashboard().catch(() => {});
+      }
       showToast(
         `Lluvia registrada para todo el campo: ${payload?.rain?.rain_mm ?? rainMm} mm el ${formatDateLabel(
           payload?.rain?.event_date || eventDate
@@ -18390,6 +19031,9 @@
       });
 
       await loadAdminDashboards({ closeModal: true });
+      if (store.getState().weatherDashboard) {
+        loadWeatherDashboard().catch(() => {});
+      }
       showToast(
         `Helada ${formatValueLabel(payload?.frost?.intensity || intensity, FROST_INTENSITY_OPTIONS).toLowerCase()} registrada para todo el campo el ${formatDateLabel(
           payload?.frost?.event_date || eventDate
@@ -19859,6 +20503,10 @@
       if (navKey === 'owners' && isRealSession(store.getState()) && !store.getState().ownersDashboard) {
         loadOwnersDashboard().catch(() => {});
       }
+
+      if (navKey === 'weather' && isRealSession(store.getState()) && !store.getState().weatherDashboard) {
+        loadWeatherDashboard().catch(() => {});
+      }
       return;
     }
 
@@ -19983,6 +20631,18 @@
       if (isRealSession(store.getState())) {
         loadCalendarMonthData(nextMonth).catch(() => {});
       }
+      return;
+    }
+
+    if (action === 'weather-shift') {
+      const currentOffset = store.getState().weatherOffset || 0;
+      const nextOffset = Math.max(0, currentOffset + Number(actionValue || 0));
+      setState({ weatherOffset: nextOffset });
+      return;
+    }
+
+    if (action === 'weather-period') {
+      setState({ weatherPeriodType: actionValue || 'week', weatherOffset: 0 });
       return;
     }
 
@@ -20420,6 +21080,11 @@
 
         if (modalKey === 'paddock-extend-rest-form') {
           submitPaddockExtendRestForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'group-shared-paddocks') {
+          submitGroupSharedPaddocksForm(new FormData(modalForm));
           return;
         }
 

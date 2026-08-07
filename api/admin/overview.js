@@ -159,6 +159,7 @@ module.exports = async (req, res) => {
       rainSummaryResult,
       rainRecentResult,
       rainDailyResult,
+      rainMonthlyResult,
       rainYearlyResult,
       frostRecentResult,
     ] = await Promise.all([
@@ -504,6 +505,21 @@ module.exports = async (req, res) => {
         `
         SELECT
           EXTRACT(YEAR FROM event_date)::int AS year,
+          EXTRACT(MONTH FROM event_date)::int AS month,
+          COALESCE(SUM(rain_mm), 0)::numeric AS total_mm,
+          COUNT(*) FILTER (WHERE rain_mm > 0)::int AS rainy_days,
+          COALESCE(AVG(NULLIF(rain_mm, 0)), 0)::numeric AS avg_mm_per_event,
+          COALESCE(MAX(rain_mm), 0)::numeric AS peak_mm
+        FROM rain_registry
+        WHERE COALESCE(source, 'manual') <> 'weather_sync'
+        GROUP BY EXTRACT(YEAR FROM event_date), EXTRACT(MONTH FROM event_date)
+        ORDER BY year ASC, month ASC
+        `
+      ),
+      pool.query(
+        `
+        SELECT
+          EXTRACT(YEAR FROM event_date)::int AS year,
           COALESCE(SUM(rain_mm), 0)::numeric AS total_mm,
           COUNT(*) FILTER (WHERE rain_mm > 0)::int AS rainy_days,
           COALESCE(AVG(NULLIF(rain_mm, 0)), 0)::numeric AS avg_mm_per_event,
@@ -600,6 +616,7 @@ module.exports = async (req, res) => {
     const rainSummary = rainModuleEnabled ? rainSummaryResult.rows[0] || {} : {};
     const rainRecentRows = rainModuleEnabled ? rainRecentResult.rows : [];
     const rainDailyRows = rainModuleEnabled ? rainDailyResult.rows : [];
+    const rainMonthlyRows = rainModuleEnabled ? rainMonthlyResult.rows : [];
     const rainYearlyRows = rainModuleEnabled ? rainYearlyResult.rows : [];
     const frostRecentRows = rainModuleEnabled ? frostRecentResult.rows : [];
 
@@ -790,6 +807,14 @@ module.exports = async (req, res) => {
           rain_mm: Number(row.rain_mm || 0),
           min_temp_c: row.min_temp_c == null ? null : Number(row.min_temp_c),
           max_temp_c: row.max_temp_c == null ? null : Number(row.max_temp_c),
+        })),
+        monthly: rainMonthlyRows.map((row) => ({
+          year: Number(row.year || 0),
+          month: Number(row.month || 0),
+          total_mm: Number(row.total_mm || 0),
+          rainy_days: Number(row.rainy_days || 0),
+          avg_mm_per_event: Number(row.avg_mm_per_event || 0),
+          peak_mm: Number(row.peak_mm || 0),
         })),
         yearly: rainYearlyRows.map((row) => ({
           year: Number(row.year || 0),

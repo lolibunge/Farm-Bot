@@ -21,6 +21,7 @@ const {
   moveHorseGroupIntoPaddock,
   correctHorseGroupCurrentPaddock,
   moveHorseGroupOutOfPaddock,
+  setGroupSharedPaddocks,
   listPaddockStatus,
   listPaddockWorkHistory,
   listGrazingHistory,
@@ -710,6 +711,7 @@ const TELEGRAM_ENTRY_COMMANDS = [
   'move group in <group name> <paddock name> [YYYY-MM-DD] [notes]',
   'move group correct <group name> <paddock name> [YYYY-MM-DD] [notes]',
   'move group out <group name> <paddock name> [YYYY-MM-DD] [notes]',
+  'share paddocks <group name> | <paddock 1>, <paddock 2>, ... [YYYY-MM-DD] [notes]',
   'horse training <horse name> <in training|breaking in|clear>',
   'stock add <feed item> <quantity> <unit> [YYYY-MM-DD] [notes]',
   'stock set <feed item> <quantity> <unit>',
@@ -732,6 +734,7 @@ const TELEGRAM_EXAMPLE_COMMANDS = [
   'move in Imperial Potrero 2.1 2026-05-08 calm entry',
   'move group correct Manada Potrero 2.1 2026-05-08 imported history fix',
   'move group in Manada Potrero 2.1 2026-05-08 morning rotation',
+  'share paddocks Manada | Potrero 4.1, Potrero 4.2, Potrero 4.3, Potrero 3 2026-08-07 comen tambien en el 3',
   'horse training Imperial breaking in',
   'stock add oats 50 kg 2026-05-08 bought from Juan',
   'stock use alfalfa 1 bale 2026-05-08 opened new bale',
@@ -1856,6 +1859,119 @@ Moved horses: ${data.moved_count}
 ${moveData.notes ? `Notes: ${moveData.notes}\n` : ''}Horses:
 ${data.horses.map((horse) => `- ${horse.name}`).join('\n')}
 Raw message ID: ${rawMessageId}`
+        );
+        continue;
+      }
+
+      // -----------------------------
+      // SHARE PADDOCKS
+      // A group already grazing somewhere can also have access to other paddocks at the
+      // same time (e.g. a herd split across Potrero 4.1/4.2/4.3 that also eats in Potrero 3).
+      // Unlike "move group in", this does not change the group's primary paddock/rest clock
+      // of the source paddock - it only opens/closes extra paddocks alongside it.
+      // share paddocks <group name> | <paddock 1>, <paddock 2>, ... [YYYY-MM-DD] [notes...]
+      // share paddocks <group name> | none [YYYY-MM-DD] [notes...]   (releases all extras)
+      // -----------------------------
+      if (lowerMessage.startsWith('share paddocks ')) {
+        const remainder = messageText.slice('share paddocks '.length).trim();
+        const segments = parsePipeSegments(remainder);
+        const groupNamePart = String(segments[0] || '').trim();
+        const paddocksPart = segments.slice(1).join(' | ').trim();
+
+        if (!groupNamePart || !paddocksPart) {
+          await ctx.reply(
+            'Use: share paddocks <group name> | <paddock 1>, <paddock 2>, ... [YYYY-MM-DD] [notes]\nUse: share paddocks <group name> | none [YYYY-MM-DD] [notes]'
+          );
+          continue;
+        }
+
+        const group = await findHorseGroupByName(groupNamePart);
+
+        if (!group) {
+          const allGroups = await listHorseGroups();
+          await ctx.reply(
+            `Group not found: ${groupNamePart}
+
+Available groups:
+${allGroups.map((row) => `- ${row.name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        const chunks = paddocksPart
+          .split(',')
+          .map((chunk) => chunk.trim())
+          .filter(Boolean);
+
+        if (chunks.length === 0) {
+          await ctx.reply('Use: share paddocks <group name> | <paddock 1>, <paddock 2>, ... [YYYY-MM-DD] [notes]');
+          continue;
+        }
+
+        let lastSegmentData;
+        try {
+          lastSegmentData = parseNamedSegmentWithOptionalDateAndNotes(chunks[chunks.length - 1]);
+        } catch (error) {
+          await ctx.reply(error.message);
+          continue;
+        }
+
+        const paddockNameCandidates = [...chunks.slice(0, -1), lastSegmentData.name].map((value) =>
+          value.trim()
+        );
+
+        const releaseKeywords = new Set(['none', 'ninguno', 'ninguna', '-']);
+        const resolvedPaddockIds = [];
+        const notFoundNames = [];
+
+        for (const candidateName of paddockNameCandidates) {
+          if (!candidateName || releaseKeywords.has(candidateName.toLowerCase())) {
+            continue;
+          }
+
+          const candidatePaddock = await findPaddockByName(candidateName);
+          if (!candidatePaddock) {
+            notFoundNames.push(candidateName);
+            continue;
+          }
+
+          resolvedPaddockIds.push(candidatePaddock.id);
+        }
+
+        if (notFoundNames.length > 0) {
+          const paddocks = await listPaddockNames();
+          await ctx.reply(
+            `Paddock(s) not found: ${notFoundNames.join(', ')}
+
+Available paddocks:
+${paddocks.map((name) => `- ${name}`).join('\n')}`
+          );
+          continue;
+        }
+
+        let data;
+        try {
+          data = await setGroupSharedPaddocks({
+            groupId: group.id,
+            paddockIds: resolvedPaddockIds,
+            effectiveDate: lastSegmentData.eventDate,
+            notes: lastSegmentData.notes || null,
+            source: 'telegram_shared',
+            telegramUserId,
+          });
+        } catch (error) {
+          await ctx.reply(error.message);
+          continue;
+        }
+
+        await ctx.reply(
+          `Shared paddocks updated ✅
+
+Group: ${data.group.name}
+Primary paddock: ${data.primary_paddock.name}
+Effective date: ${formatDateForReply(data.effective_date)}
+Now shared with: ${data.current_shared_paddocks.length ? data.current_shared_paddocks.map((row) => row.name).join(', ') : 'none'}
+${data.added_paddock_ids.length ? `Opened: ${data.added_paddock_ids.length}\n` : ''}${data.removed_paddock_ids.length ? `Released: ${data.removed_paddock_ids.length}\n` : ''}${lastSegmentData.notes ? `Notes: ${lastSegmentData.notes}\n` : ''}Raw message ID: ${rawMessageId}`
         );
         continue;
       }
