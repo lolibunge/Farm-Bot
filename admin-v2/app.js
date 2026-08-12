@@ -6483,7 +6483,6 @@
     const movementType = payload?.movementType === 'consumption' ? 'consumption' : 'purchase';
     const isConsumption = movementType === 'consumption';
     const quantityRaw = payload?.quantity !== undefined ? payload.quantity : '';
-    const unit = payload?.unit !== undefined ? payload.unit : '';
     const unitPriceRaw = payload?.unitPrice !== undefined ? payload.unitPrice : '';
     const parsedQuantity = parseFloat(quantityRaw);
     const parsedUnitPrice = parseFloat(unitPriceRaw);
@@ -6494,6 +6493,60 @@
     const amount = computedAmount != null
       ? String(computedAmount)
       : (payload?.amount !== undefined ? payload.amount : '');
+
+    // Existing stock for this owner, so "Producto" can be picked from what's
+    // already there instead of retyped from scratch — a typo or a slightly
+    // different name (e.g. "Fardo" vs "Fardos") used to silently start a
+    // whole new stock bucket instead of drawing down the one that already
+    // existed.
+    const feedStock = Array.isArray(owner.feed_purchases?.stock) ? owner.feed_purchases.stock : [];
+
+    // Consuming with nothing in stock doesn't make sense — nudge her to log
+    // a purchase first, same as the general stock module does.
+    if (isConsumption && feedStock.length === 0) {
+      return renderInfoModal({
+        title: 'Todavía no hay stock cargado',
+        subtitle: `Para descontar un consumo de ${owner.name} primero necesitamos que haya alguna compra registrada.`,
+        body: `
+          <div class="empty-state-card">
+            <strong>No hay productos en stock para este propietario.</strong>
+            <span>Registrá primero una compra (avena, fardos, etc.) y después vas a poder elegirla acá para descontar consumo.</span>
+          </div>
+        `,
+        footerButtons: [
+          { label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } },
+          {
+            label: 'Registrar compra',
+            tone: 'primary',
+            icon: 'cart',
+            trigger: { action: 'open-modal', value: 'owner-feed-purchase-form', meta: { ownerId: owner.id, movementType: 'purchase' } },
+          },
+        ],
+      });
+    }
+
+    // For consumption, "Producto" is a dropdown over what's actually in
+    // stock — it always resolves to a real entry, defaulting to the first
+    // one. For purchase it stays free-typed (with a datalist of suggestions
+    // below) since a purchase can introduce a brand-new product.
+    let productNameValue = String(payload?.productName || '').trim();
+    if (isConsumption) {
+      const requestedMatch = productNameValue
+        ? feedStock.find((row) => String(row.product_name || '').trim().toLowerCase() === productNameValue.toLowerCase())
+        : null;
+      productNameValue = (requestedMatch || feedStock[0]).product_name;
+    }
+    const matchedStock = productNameValue
+      ? feedStock.find((row) => String(row.product_name || '').trim().toLowerCase() === productNameValue.toLowerCase())
+      : null;
+    const stockHintSuffix = matchedStock
+      ? ` · Stock actual: ${matchedStock.current_stock} ${matchedStock.unit || ''}`.trimEnd()
+      : '';
+    // Once a known product is picked, default the unit from its stock entry
+    // (only while the field is still empty, so it never overrides something
+    // she actually typed herself).
+    const unitRaw = payload?.unit !== undefined ? payload.unit : '';
+    const unit = unitRaw || matchedStock?.unit || '';
 
     const fields = [
       {
@@ -6509,16 +6562,32 @@
         layout: 'wide',
         attributes: { 'data-care-form-field': 'movementType' },
       },
-      {
-        label: 'Producto',
-        name: 'productName',
-        type: 'text',
-        value: payload?.productName || '',
-        placeholder: 'Ej: Avena, Maíz, Semitín, Fardos...',
-        required: true,
-        layout: 'wide',
-        attributes: { 'data-care-form-field': 'productName' },
-      },
+      isConsumption
+        ? {
+            label: 'Producto',
+            name: 'productName',
+            type: 'select',
+            value: productNameValue,
+            options: feedStock.map((row) => ({
+              value: row.product_name,
+              label: `${row.product_name} — ${row.current_stock} ${row.unit || ''}`.trimEnd(),
+            })),
+            required: true,
+            layout: 'wide',
+            hint: 'Elegí de qué producto vas a descontar.',
+            attributes: { 'data-care-form-field': 'productName' },
+          }
+        : {
+            label: 'Producto',
+            name: 'productName',
+            type: 'text',
+            value: payload?.productName || '',
+            placeholder: 'Ej: Avena, Maíz, Semitín, Fardos...',
+            required: true,
+            layout: 'wide',
+            hint: feedStock.length > 0 ? 'Buscá entre lo que ya tenés en stock, o escribí un producto nuevo.' : undefined,
+            attributes: { 'data-care-form-field': 'productName', list: 'owner-feed-stock-options' },
+          },
       {
         label: 'Cantidad',
         name: 'quantity',
@@ -6528,7 +6597,7 @@
         step: 'any',
         placeholder: '4',
         required: isConsumption,
-        hint: isConsumption ? 'Cuánto se consumió' : 'Opcional, para calcular stock y total',
+        hint: (isConsumption ? 'Cuánto se consumió' : 'Opcional, para calcular stock y total') + stockHintSuffix,
         attributes: { 'data-care-form-field': 'quantity' },
       },
       {
@@ -6600,7 +6669,23 @@
         : 'Registrá lo que compraste por tu cuenta para tus caballos. Si cargás cantidad y precio unitario, calculamos el total solos.',
       columns: 2,
       fields,
-      extraBody: `<input type="hidden" name="ownerId" value="${escapeHtml(String(owner.id))}" />`,
+      extraBody: `
+        <input type="hidden" name="ownerId" value="${escapeHtml(String(owner.id))}" />
+        ${
+          !isConsumption && feedStock.length > 0
+            ? `
+              <datalist id="owner-feed-stock-options">
+                ${feedStock
+                  .map(
+                    (row) =>
+                      `<option value="${escapeHtml(row.product_name)}">${escapeHtml(row.product_name)} — ${escapeHtml(String(row.current_stock))} ${escapeHtml(row.unit || '')} en stock</option>`
+                  )
+                  .join('')}
+              </datalist>
+            `
+            : ''
+        }
+      `,
       footerButtons: [
         { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
         { label: isConsumption ? 'Guardar consumo' : 'Guardar compra', tone: 'primary', icon: 'cart', submit: true },
