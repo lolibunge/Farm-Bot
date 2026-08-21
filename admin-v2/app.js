@@ -10819,6 +10819,179 @@
     `;
   }
 
+  function buildSeasonalMonthlyAverages(monthlyRows) {
+    const rows = Array.isArray(monthlyRows) ? monthlyRows : [];
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const buckets = Array.from({ length: 12 }, () => ({ total: 0, count: 0 }));
+    rows.forEach((row) => {
+      const monthIndex = Number(row.month) - 1;
+      if (monthIndex < 0 || monthIndex > 11) return;
+      const key = `${row.year}-${String(row.month).padStart(2, '0')}`;
+      if (key === currentMonthKey) return; // skip the in-progress month, it would skew the average
+      buckets[monthIndex].total += Number(row.total_mm || 0);
+      buckets[monthIndex].count += 1;
+    });
+
+    return buckets.map((bucket, monthIndex) => ({
+      month_index: monthIndex,
+      label: WEATHER_MONTH_SHORT_LABELS[monthIndex],
+      avg_mm: bucket.count ? Math.round((bucket.total / bucket.count) * 10) / 10 : 0,
+      years_count: bucket.count,
+    }));
+  }
+
+  function renderWeatherSeasonalityPanel(monthlyRows) {
+    const months = buildSeasonalMonthlyAverages(monthlyRows);
+    const monthsWithData = months.filter((month) => month.years_count > 0);
+
+    if (!monthsWithData.length) {
+      return `
+        <section class="panel weather-chart-panel">
+          <div class="panel-head">
+            <div>
+              <h2>¿En qué época llueve más?</h2>
+              <span class="subtle-text">Promedio histórico por mes</span>
+            </div>
+          </div>
+          <div class="empty-state-card">
+            <strong>Todavía no hay suficiente historial.</strong>
+            <span>A medida que se completen meses vas a poder ver en qué época del año llueve más en el campo.</span>
+          </div>
+        </section>
+      `;
+    }
+
+    const maxAvg = Math.max(1, ...months.map((month) => month.avg_mm));
+    const wettest = monthsWithData.reduce((best, month) => (month.avg_mm > best.avg_mm ? month : best));
+    const driest = monthsWithData.reduce((worst, month) => (month.avg_mm < worst.avg_mm ? month : worst));
+
+    return `
+      <section class="panel weather-chart-panel">
+        <div class="panel-head">
+          <div>
+            <h2>¿En qué época llueve más?</h2>
+            <span class="subtle-text">Promedio histórico por mes, con los años registrados hasta ahora</span>
+          </div>
+        </div>
+        <div class="weather-chart-summary">
+          <strong>${escapeHtml(wettest.label)} es el mes con más lluvia en promedio</strong>
+          <span>${escapeHtml(formatNumberLabel(wettest.avg_mm))} mm promedio · el mes con menos lluvia es ${escapeHtml(driest.label)} con ${escapeHtml(formatNumberLabel(driest.avg_mm))} mm</span>
+        </div>
+        <div class="weather-bar-chart">
+          ${months
+            .map((month) => {
+              const heightPercent = month.avg_mm > 0 ? Math.max(3, Math.round((month.avg_mm / maxAvg) * 100)) : 0;
+              const isWettest = month.years_count > 0 && month.month_index === wettest.month_index;
+              const title = month.years_count
+                ? `${month.label}: ${formatNumberLabel(month.avg_mm)} mm promedio (${month.years_count} año(s) con datos)`
+                : `${month.label}: sin datos todavía`;
+              return `
+                <div class="weather-bar-col" title="${escapeHtml(title)}">
+                  <div class="weather-bar-track">
+                    <div class="weather-bar${isWettest ? ' is-target-met' : ''}" style="height:${heightPercent}%"></div>
+                  </div>
+                  <span class="weather-bar-value">${month.avg_mm > 0 ? escapeHtml(formatNumberLabel(month.avg_mm)) : ''}</span>
+                  <span class="weather-bar-label">${escapeHtml(month.label)}</span>
+                </div>
+              `;
+            })
+            .join('')}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderWeatherYearComparePanel(dashboard) {
+    const ytdRows = Array.isArray(dashboard?.rain?.ytd_compare) ? dashboard.rain.ytd_compare : [];
+    const monthlyRows = Array.isArray(dashboard?.rain?.monthly) ? dashboard.rain.monthly : [];
+    const currentYear = new Date().getFullYear();
+    const previousYear = currentYear - 1;
+
+    const currentYtd = ytdRows.find((row) => row.year === currentYear) || null;
+    const previousYtd = ytdRows.find((row) => row.year === previousYear) || null;
+
+    if (!currentYtd && !previousYtd) {
+      return `
+        <section class="panel weather-chart-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Comparación con el año anterior</h2>
+            </div>
+          </div>
+          <div class="empty-state-card">
+            <strong>Todavía no hay datos de años anteriores.</strong>
+            <span>Con un año de registro vas a poder comparar cuánto llovió contra el mismo período del año pasado.</span>
+          </div>
+        </section>
+      `;
+    }
+
+    const currentTotal = Number(currentYtd?.total_mm || 0);
+    const previousTotal = Number(previousYtd?.total_mm || 0);
+    const deltaMm = Math.round((currentTotal - previousTotal) * 10) / 10;
+    const deltaPercent = previousTotal > 0 ? Math.round((deltaMm / previousTotal) * 1000) / 10 : null;
+    const deltaLabel = previousYtd
+      ? `${deltaMm >= 0 ? '+' : ''}${formatNumberLabel(deltaMm)} mm${deltaPercent != null ? ` (${deltaPercent >= 0 ? '+' : ''}${deltaPercent}%)` : ''} vs ${previousYear}`
+      : `Sin datos de ${previousYear} para comparar todavía`;
+
+    const monthTotalsByYear = new Map();
+    monthlyRows.forEach((row) => {
+      if (row.year !== currentYear && row.year !== previousYear) return;
+      monthTotalsByYear.set(`${row.year}-${row.month}`, Number(row.total_mm || 0));
+    });
+
+    const monthIndexes = Array.from({ length: 12 }, (_, index) => index + 1);
+    const maxMonthMm = Math.max(
+      1,
+      ...monthIndexes.flatMap((month) => [
+        monthTotalsByYear.get(`${currentYear}-${month}`) || 0,
+        monthTotalsByYear.get(`${previousYear}-${month}`) || 0,
+      ])
+    );
+
+    return `
+      <section class="panel weather-chart-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Comparación con el año anterior</h2>
+            <span class="subtle-text">Acumulado ${currentYear} hasta hoy vs mismo período ${previousYear}</span>
+          </div>
+        </div>
+        <div class="weather-chart-summary">
+          <strong>${escapeHtml(formatNumberLabel(currentTotal))} mm en ${currentYear}</strong>
+          <span>${escapeHtml(deltaLabel)}</span>
+        </div>
+        <div class="weather-compare-legend">
+          <span class="weather-legend-item weather-legend-item--current">${escapeHtml(String(currentYear))}</span>
+          <span class="weather-legend-item weather-legend-item--previous">${escapeHtml(String(previousYear))}</span>
+        </div>
+        <div class="weather-bar-chart weather-bar-chart--compare">
+          ${monthIndexes
+            .map((month) => {
+              const currentMm = monthTotalsByYear.get(`${currentYear}-${month}`) || 0;
+              const previousMm = monthTotalsByYear.get(`${previousYear}-${month}`) || 0;
+              const currentHeight = currentMm > 0 ? Math.max(3, Math.round((currentMm / maxMonthMm) * 100)) : 0;
+              const previousHeight = previousMm > 0 ? Math.max(3, Math.round((previousMm / maxMonthMm) * 100)) : 0;
+              const label = WEATHER_MONTH_SHORT_LABELS[month - 1];
+              const title = `${label}: ${currentYear} ${formatNumberLabel(currentMm)} mm · ${previousYear} ${formatNumberLabel(previousMm)} mm`;
+              return `
+                <div class="weather-bar-col weather-bar-col--dual" title="${escapeHtml(title)}">
+                  <div class="weather-bar-track weather-bar-track--dual">
+                    <div class="weather-bar weather-bar--current" style="height:${currentHeight}%"></div>
+                    <div class="weather-bar weather-bar--previous" style="height:${previousHeight}%"></div>
+                  </div>
+                  <span class="weather-bar-label">${escapeHtml(label)}</span>
+                </div>
+              `;
+            })
+            .join('')}
+        </div>
+      </section>
+    `;
+  }
+
   function renderWeatherView(state) {
     if (!isRealSession(state)) {
       return `
@@ -10913,6 +11086,10 @@
 
           ${renderWeatherRainChart(buckets)}
         </section>
+
+        ${renderWeatherYearComparePanel(dashboard)}
+
+        ${renderWeatherSeasonalityPanel(dashboard.rain?.monthly)}
 
         ${renderWeatherFrostPanel(frostRecent)}
       </div>
