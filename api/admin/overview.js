@@ -161,6 +161,7 @@ module.exports = async (req, res) => {
       rainDailyResult,
       rainMonthlyResult,
       rainYearlyResult,
+      rainYtdCompareResult,
       frostRecentResult,
     ] = await Promise.all([
       pool.query('SELECT COUNT(*)::int AS count FROM horses'),
@@ -533,6 +534,19 @@ module.exports = async (req, res) => {
       pool.query(
         `
         SELECT
+          EXTRACT(YEAR FROM event_date)::int AS year,
+          COALESCE(SUM(rain_mm), 0)::numeric AS total_mm,
+          COUNT(*) FILTER (WHERE rain_mm > 0)::int AS rainy_days
+        FROM rain_registry
+        WHERE COALESCE(source, 'manual') <> 'weather_sync'
+          AND EXTRACT(DOY FROM event_date) <= EXTRACT(DOY FROM CURRENT_DATE)
+        GROUP BY EXTRACT(YEAR FROM event_date)
+        ORDER BY year DESC
+        `
+      ),
+      pool.query(
+        `
+        SELECT
           id,
           event_date,
           intensity,
@@ -618,6 +632,7 @@ module.exports = async (req, res) => {
     const rainDailyRows = rainModuleEnabled ? rainDailyResult.rows : [];
     const rainMonthlyRows = rainModuleEnabled ? rainMonthlyResult.rows : [];
     const rainYearlyRows = rainModuleEnabled ? rainYearlyResult.rows : [];
+    const rainYtdCompareRows = rainModuleEnabled ? rainYtdCompareResult.rows : [];
     const frostRecentRows = rainModuleEnabled ? frostRecentResult.rows : [];
 
     res.status(200).json({
@@ -822,6 +837,13 @@ module.exports = async (req, res) => {
           rainy_days: Number(row.rainy_days || 0),
           avg_mm_per_event: Number(row.avg_mm_per_event || 0),
           peak_mm: Number(row.peak_mm || 0),
+        })),
+        // Cumulative rain per year, cut off at the current day-of-year, so the
+        // current year can be fairly compared against the same period in past years.
+        ytd_compare: rainYtdCompareRows.map((row) => ({
+          year: Number(row.year || 0),
+          total_mm: Number(row.total_mm || 0),
+          rainy_days: Number(row.rainy_days || 0),
         })),
       },
       frost: {

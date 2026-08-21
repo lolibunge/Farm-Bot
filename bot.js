@@ -692,6 +692,8 @@ const TELEGRAM_LOOKUP_COMMANDS = [
   'rain today',
   'rain history',
   'rain history 30',
+  'rain year',
+  'rain seasonal',
   'deworm due',
   'deworm history',
   'deworm history <horse name>',
@@ -3081,6 +3083,129 @@ Feed event ID: ${feedEventResult.rows[0].id}`
               });
 
               await ctx.reply(`Rain history (latest ${limit})\n\n${lines.join('\n')}`);
+              continue;
+            }
+
+            // -----------------------------
+            // RAIN YEAR (year-over-year comparison)
+            // rain year
+            // -----------------------------
+            if (lowerMessage === 'rain year') {
+              const currentYear = new Date().getFullYear();
+              const previousYear = currentYear - 1;
+
+              const ytdResult = await pool.query(
+                `
+                SELECT
+                  EXTRACT(YEAR FROM event_date)::int AS year,
+                  COALESCE(SUM(rain_mm), 0)::numeric AS total_mm,
+                  COUNT(*) FILTER (WHERE rain_mm > 0)::int AS rainy_days
+                FROM rain_registry
+                WHERE COALESCE(source, 'manual') <> 'weather_sync'
+                  AND EXTRACT(DOY FROM event_date) <= EXTRACT(DOY FROM CURRENT_DATE)
+                  AND EXTRACT(YEAR FROM event_date) IN ($1, $2)
+                GROUP BY EXTRACT(YEAR FROM event_date)
+                `,
+                [currentYear, previousYear]
+              );
+
+              const yearlyResult = await pool.query(
+                `
+                SELECT
+                  EXTRACT(YEAR FROM event_date)::int AS year,
+                  COALESCE(SUM(rain_mm), 0)::numeric AS total_mm
+                FROM rain_registry
+                WHERE COALESCE(source, 'manual') <> 'weather_sync'
+                GROUP BY EXTRACT(YEAR FROM event_date)
+                ORDER BY year DESC
+                LIMIT 5
+                `
+              );
+
+              const ytdByYear = new Map(ytdResult.rows.map((row) => [row.year, row]));
+              const currentYtd = ytdByYear.get(currentYear);
+              const previousYtd = ytdByYear.get(previousYear);
+
+              if (!currentYtd && !previousYtd) {
+                await ctx.reply('No rain records found yet to compare years.');
+                continue;
+              }
+
+              const currentTotal = Number(currentYtd?.total_mm || 0);
+              const previousTotal = Number(previousYtd?.total_mm || 0);
+              const deltaMm = currentTotal - previousTotal;
+              const deltaPercent = previousTotal > 0 ? Math.round((deltaMm / previousTotal) * 1000) / 10 : null;
+
+              const lines = [
+                'Rain year comparison',
+                '',
+                `${currentYear} so far: ${currentTotal.toFixed(1)} mm${currentYtd ? ` (${currentYtd.rainy_days} rainy days)` : ''}`,
+                previousYtd
+                  ? `${previousYear} same period: ${previousTotal.toFixed(1)} mm (${previousYtd.rainy_days} rainy days)`
+                  : `${previousYear} same period: no data`,
+                previousYtd
+                  ? `Difference: ${deltaMm >= 0 ? '+' : ''}${deltaMm.toFixed(1)} mm${deltaPercent != null ? ` (${deltaPercent >= 0 ? '+' : ''}${deltaPercent}%)` : ''}`
+                  : null,
+              ].filter(Boolean);
+
+              if (yearlyResult.rows.length) {
+                lines.push('', 'Recent full years:');
+                yearlyResult.rows.forEach((row) => {
+                  lines.push(`- ${row.year}: ${Number(row.total_mm).toFixed(1)} mm`);
+                });
+              }
+
+              await ctx.reply(lines.join('\n'));
+              continue;
+            }
+
+            // -----------------------------
+            // RAIN SEASONAL (historical monthly averages)
+            // rain seasonal
+            // -----------------------------
+            if (lowerMessage === 'rain seasonal' || lowerMessage === 'rain months') {
+              const result = await pool.query(
+                `
+                SELECT
+                  EXTRACT(MONTH FROM event_date)::int AS month,
+                  COALESCE(SUM(rain_mm), 0)::numeric AS total_mm,
+                  COUNT(DISTINCT EXTRACT(YEAR FROM event_date))::int AS years_count
+                FROM rain_registry
+                WHERE COALESCE(source, 'manual') <> 'weather_sync'
+                  AND event_date < DATE_TRUNC('month', CURRENT_DATE)
+                GROUP BY EXTRACT(MONTH FROM event_date)
+                ORDER BY month ASC
+                `
+              );
+
+              if (result.rows.length === 0) {
+                await ctx.reply('Not enough rain history yet to show seasonal averages.');
+                continue;
+              }
+
+              const monthNames = [
+                'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+              ];
+
+              const months = result.rows.map((row) => ({
+                month: row.month,
+                avgMm: row.years_count > 0 ? Number(row.total_mm) / row.years_count : 0,
+                yearsCount: row.years_count,
+              }));
+
+              const wettest = months.reduce((best, m) => (m.avgMm > (best?.avgMm ?? -1) ? m : best), null);
+              const driest = months.reduce((worst, m) => (worst == null || m.avgMm < worst.avgMm ? m : worst), null);
+
+              const lines = ['Rain by month (historical average)', ''];
+              months.forEach((m) => {
+                lines.push(`${monthNames[m.month - 1]}: ${m.avgMm.toFixed(1)} mm avg (${m.yearsCount} yr)`);
+              });
+              lines.push('');
+              lines.push(`Wettest: ${monthNames[wettest.month - 1]} (${wettest.avgMm.toFixed(1)} mm avg)`);
+              lines.push(`Driest: ${monthNames[driest.month - 1]} (${driest.avgMm.toFixed(1)} mm avg)`);
+
+              await ctx.reply(lines.join('\n'));
               continue;
             }
 

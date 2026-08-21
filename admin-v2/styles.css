@@ -2300,6 +2300,54 @@ button {
   white-space: nowrap;
 }
 
+.weather-compare-legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.weather-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.weather-legend-item::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.weather-legend-item--current::before {
+  background: linear-gradient(180deg, var(--blue) 0%, #1d4fd6 100%);
+}
+
+.weather-legend-item--previous::before {
+  background: linear-gradient(180deg, var(--purple) 0%, #6d28d9 100%);
+}
+
+.weather-bar-col--dual {
+  min-width: 34px;
+}
+
+.weather-bar-track--dual {
+  max-width: 40px;
+  gap: 3px;
+}
+
+.weather-bar-track--dual .weather-bar {
+  width: auto;
+  flex: 1 1 0;
+}
+
+.weather-bar--previous {
+  background: linear-gradient(180deg, var(--purple) 0%, #6d28d9 100%);
+}
+
 .loading-bar {
   position: fixed;
   top: 0;
