@@ -31,7 +31,7 @@ const {
 const { ensureFarmSettingsTable, saveFarmSettings } = require('../../lib/farm-settings');
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
 const { ensureFrostRegistryTable } = require('../../lib/frost-registry');
-const { ensureFarmVisitsTable } = require('../../lib/farm-visits');
+const { ensureFarmVisitsTable, updateFarmVisitStatus } = require('../../lib/farm-visits');
 const { syncWeatherIntoRainRegistry } = require('../../lib/weather-sync');
 const {
   toIsoDateString,
@@ -2679,6 +2679,7 @@ module.exports = async (req, res) => {
       const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
       const farmName = body.farmName ? String(body.farmName).trim() : null;
       const notes = body.notes ? String(body.notes).trim() : '';
+      const horseId = body.horseId == null || body.horseId === '' ? null : parsePositiveInt(body.horseId);
 
       if (!title) {
         res.status(400).json({ ok: false, error: 'title is required' });
@@ -2695,13 +2696,28 @@ module.exports = async (req, res) => {
         return;
       }
 
+      if ((body.horseId != null && body.horseId !== '') && !horseId) {
+        res.status(400).json({ ok: false, error: 'horseId is invalid' });
+        return;
+      }
+
+      let horseName = null;
+      if (horseId) {
+        const horseResult = await pool.query('SELECT id, name FROM horses WHERE id = $1 LIMIT 1', [horseId]);
+        if (horseResult.rows.length === 0) {
+          res.status(404).json({ ok: false, error: 'Horse not found' });
+          return;
+        }
+        horseName = horseResult.rows[0].name;
+      }
+
       const saveResult = await pool.query(
         `
-        INSERT INTO farm_visits (event_date, category, title, farm_name, notes)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, event_date, category, title, farm_name, notes
+        INSERT INTO farm_visits (event_date, category, title, farm_name, notes, horse_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, event_date, category, title, farm_name, notes, horse_id
         `,
-        [eventDateRaw, category, title, farmName || null, notes || null]
+        [eventDateRaw, category, title, farmName || null, notes || null, horseId]
       );
 
       const row = saveResult.rows[0];
@@ -2715,13 +2731,14 @@ module.exports = async (req, res) => {
           title: row.title,
           farm_name: row.farm_name || null,
           notes: row.notes || null,
+          horse_id: row.horse_id || null,
+          horse_name: horseName,
         },
       });
       return;
     }
 
     if (action === 'farm_visit_update') {
-      const ALLOWED_VISIT_STATUSES = new Set(['pending', 'done', 'missed']);
       const id = parsePositiveInt(body.id);
       const status = String(body.status || '').trim().toLowerCase();
 
@@ -2730,26 +2747,28 @@ module.exports = async (req, res) => {
         return;
       }
 
-      if (!ALLOWED_VISIT_STATUSES.has(status)) {
-        res.status(400).json({ ok: false, error: 'status must be pending, done, or missed' });
+      let updated;
+      try {
+        updated = await updateFarmVisitStatus(id, status);
+      } catch (error) {
+        res.status(400).json({ ok: false, error: error.message || 'Could not update the scheduled task' });
         return;
       }
 
-      const updateResult = await pool.query(
-        `UPDATE farm_visits SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, status`,
-        [status, id]
-      );
-
-      if (updateResult.rowCount === 0) {
+      if (!updated) {
         res.status(404).json({ ok: false, error: 'Visit not found' });
         return;
       }
 
-      const row = updateResult.rows[0];
       res.status(200).json({
         ok: true,
         action,
-        visit: { id: row.id, status: row.status },
+        visit: {
+          id: updated.id,
+          status: updated.status,
+          horse_id: updated.horse_id || null,
+          health_event_id: updated.health_event_id || null,
+        },
       });
       return;
     }

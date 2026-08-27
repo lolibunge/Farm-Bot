@@ -12948,6 +12948,17 @@
                   >
                     <span>Compartir potreros</span>
                   </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    ${renderActionAttributes({
+                      action: 'open-modal',
+                      value: 'paddock-entry-correction',
+                      meta: { paddockId: paddock.id },
+                    })}
+                  >
+                    <span>Corregir ingreso</span>
+                  </button>
                 `
                 : ''
             }
@@ -13114,6 +13125,77 @@
         <input type="hidden" name="groupId" value="${escapeHtml(String(group.id))}" />
         <p style="font-weight:600;margin:8px 0 4px;">Potreros compartidos ahora mismo</p>
         ${checkboxesMarkup}
+      `,
+    });
+  }
+
+  function renderRealPaddockEntryCorrectionModal(state, payload) {
+    const paddock = getRealPaddockById(state, payload.paddockId);
+    if (!paddock) {
+      return renderInfoModal({
+        title: 'Potrero no disponible',
+        subtitle: 'No pudimos reconstruir el potrero para corregir el ingreso.',
+        body: `
+          <div class="modal-detail-card">
+            <strong>Revisá la lectura actual</strong>
+            <span>Probá refrescar la pantalla para volver a cargar el padrón de potreros.</span>
+          </div>
+        `,
+      });
+    }
+
+    const occupyingGroupNames = String(paddock.occupied_groups || '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const group =
+      occupyingGroupNames.length === 1 ? getRealHorseGroupByName(state, occupyingGroupNames[0]) : null;
+
+    if (!group) {
+      return renderInfoModal({
+        title: `Corregir ingreso - ${paddock.name}`,
+        subtitle:
+          occupyingGroupNames.length > 1
+            ? 'Este potrero tiene más de un grupo activo. Corregí el ingreso moviendo el grupo desde Telegram.'
+            : 'Este potrero no tiene un grupo activo para corregir la fecha de ingreso.',
+        body: `
+          <div class="modal-detail-card">
+            <strong>Sin grupo único ocupando este potrero</strong>
+            <span>Esta corrección solo está disponible cuando hay un solo grupo pastoreando el potrero.</span>
+          </div>
+        `,
+        footerButtons: [{ label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } }],
+      });
+    }
+
+    const currentEnteredOn = paddock.occupied_since || todayDateString();
+
+    return renderFormModal({
+      key: 'paddock-entry-correction',
+      title: `Corregir ingreso - ${paddock.name}`,
+      subtitle: `${group.name} figura desde ${formatDateLabel(currentEnteredOn)}. Poné la fecha real de ingreso.`,
+      submitLabel: 'Corregir ingreso',
+      submitIcon: 'check',
+      columns: 1,
+      fields: [
+        {
+          label: 'Fecha real de ingreso',
+          name: 'eventDate',
+          type: 'date',
+          value: currentEnteredOn,
+          required: true,
+        },
+        {
+          label: 'Notas (opcional)',
+          name: 'notes',
+          type: 'textarea',
+          rows: 2,
+          placeholder: 'Ej: se cargó mal la fecha de entrada.',
+        },
+      ],
+      extraBody: `
+        <input type="hidden" name="groupId" value="${escapeHtml(String(group.id))}" />
+        <input type="hidden" name="paddockId" value="${escapeHtml(String(paddock.id))}" />
       `,
     });
   }
@@ -15251,11 +15333,16 @@
     });
   }
 
-  function renderRealNewTaskModal(payload) {
+  function renderRealNewTaskModal(state, payload) {
+    const horseOptions = buildRealHorseSelectOptions(state, {
+      includeBlank: true,
+      blankLabel: 'Sin caballo (evento general del campo)',
+    });
+
     return renderFormModal({
       key: 'new-task',
       title: 'Registrar Evento',
-      subtitle: 'Anotá una visita, cuidado o recordatorio en el calendario',
+      subtitle: 'Anotá una visita, cuidado o recordatorio en el calendario. Si es para un caballo puntual (cirugía, control veterinario, etc.), elegilo abajo para que quede en su historial.',
       submitLabel: 'Guardar',
       submitIcon: 'plus',
       fields: [
@@ -15268,11 +15355,19 @@
           required: true,
         },
         {
+          label: 'Caballo (opcional)',
+          name: 'horseId',
+          type: 'select',
+          value: payload?.horseId ? String(payload.horseId) : '',
+          options: horseOptions,
+          hint: 'Si marcás este evento como hecho, se suma automáticamente al historial de salud del caballo.',
+        },
+        {
           label: 'Título',
           name: 'title',
           type: 'text',
           value: payload?.title || '',
-          placeholder: 'Ej: Visita Ginevra, Desparasitada lote A...',
+          placeholder: 'Ej: Cirugía Imperial, Visita Ginevra, Desparasitada lote A...',
           required: true,
         },
         {
@@ -15976,7 +16071,7 @@
 
       case 'new-task':
         if (isRealSession(state)) {
-          return renderRealNewTaskModal(payload);
+          return renderRealNewTaskModal(state, payload);
         }
 
         return renderFormModal({
@@ -16051,6 +16146,13 @@
       case 'group-shared-paddocks': {
         if (isRealSession(state)) {
           return renderRealGroupSharedPaddocksModal(state, payload);
+        }
+        return '';
+      }
+
+      case 'paddock-entry-correction': {
+        if (isRealSession(state)) {
+          return renderRealPaddockEntryCorrectionModal(state, payload);
         }
         return '';
       }
@@ -17851,6 +17953,43 @@
     }
   }
 
+  async function submitPaddockEntryCorrectionForm(formData) {
+    const groupId = parsePositiveInt(formData.get('groupId'));
+    const paddockId = parsePositiveInt(formData.get('paddockId'));
+    const eventDate = String(formData.get('eventDate') || '').trim();
+    const notes = String(formData.get('notes') || '').trim();
+
+    if (!groupId || !paddockId) {
+      showToast('No encontramos el grupo o el potrero para corregir el ingreso.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      const payload = await postMutation({
+        action: 'grazing_group_correct_current',
+        groupId,
+        paddockId,
+        eventDate,
+        notes: notes || undefined,
+      });
+
+      const groupName = payload?.group?.name || 'El grupo';
+      const paddockName = payload?.paddock?.name || 'el potrero';
+      await loadAdminDashboards({ closeModal: true });
+      showToast(`${groupName} ahora figura en ${paddockName} desde ${formatDateLabel(eventDate)}.`);
+    } catch (error) {
+      showToast(error.message || 'No pudimos corregir el ingreso.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
   async function submitHorseForm(formData) {
     const currentState = store.getState();
     const isEdit = currentState.modal?.payload?.mode === 'edit';
@@ -19333,6 +19472,7 @@
     const eventDate = String(values.eventDate || '').trim() || todayDateString();
     const farmName = String(values.farmName || '').trim();
     const notes = String(values.notes || '').trim();
+    const horseId = parsePositiveInt(values.horseId);
 
     if (!title) {
       showToast('Escribí un título para el evento.', 'critical');
@@ -19349,11 +19489,13 @@
         eventDate,
         farmName: farmName || undefined,
         notes: notes || undefined,
+        horseId: horseId || undefined,
       });
 
       await loadAdminDashboards({ closeModal: true });
+      const horseSuffix = payload?.visit?.horse_name ? ` para ${payload.visit.horse_name}` : '';
       showToast(
-        `"${payload?.visit?.title || title}" guardado para el ${formatDateLabel(payload?.visit?.event_date || eventDate)}.`
+        `"${payload?.visit?.title || title}"${horseSuffix} guardado para el ${formatDateLabel(payload?.visit?.event_date || eventDate)}.`
       );
     } catch (error) {
       showToast(error.message || 'No pudimos guardar el evento.', 'critical');
@@ -21347,6 +21489,11 @@
 
         if (modalKey === 'group-shared-paddocks') {
           submitGroupSharedPaddocksForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'paddock-entry-correction') {
+          submitPaddockEntryCorrectionForm(new FormData(modalForm));
           return;
         }
 

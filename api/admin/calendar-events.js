@@ -351,13 +351,14 @@ function buildCalendarQuery(existingTables) {
       fv.event_date AS event_date,
       'visit' AS category,
       fv.title AS title,
-      COALESCE(fv.farm_name, 'Campo') AS subtitle,
+      COALESCE(h.name, fv.farm_name, 'Campo') AS subtitle,
       INITCAP(REPLACE(fv.category, '_', ' ')) AS detail,
       fv.status AS meta,
       NULL::numeric AS metric_value,
       NULL::text AS metric_unit,
       NULLIF(TRIM(fv.notes), '') AS notes
     FROM farm_visits fv
+    LEFT JOIN horses h ON h.id = fv.horse_id
     WHERE fv.event_date BETWEEN $1::date AND $2::date
   `);
 
