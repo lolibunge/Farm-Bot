@@ -28,10 +28,10 @@ const {
   isAdminModuleEnabled,
   saveAdminModuleSettings,
 } = require('../../lib/admin-modules');
-const { ensureFarmSettingsTable, saveFarmSettings } = require('../../lib/farm-settings');
+const { ensureFarmSettingsTable, saveFarmSettings, savePaddockMapConfig } = require('../../lib/farm-settings');
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
 const { ensureFrostRegistryTable } = require('../../lib/frost-registry');
-const { ensureFarmVisitsTable } = require('../../lib/farm-visits');
+const { ensureFarmVisitsTable, updateFarmVisitStatus } = require('../../lib/farm-visits');
 const { syncWeatherIntoRainRegistry } = require('../../lib/weather-sync');
 const {
   toIsoDateString,
@@ -63,6 +63,7 @@ function getModuleKeyForAdminAction(action) {
       'grazing_group_correct_current',
       'grazing_group_move_out',
       'grazing_group_shared_paddocks_set',
+      'paddock_map_save',
     ].includes(action)
   ) {
     return 'paddocks';
@@ -97,7 +98,7 @@ function getModuleKeyForAdminAction(action) {
     return 'farrier';
   }
 
-  if (action === 'health_event_add') {
+  if (action === 'health_event_add' || action === 'health_event_update') {
     return 'health';
   }
 
@@ -1264,6 +1265,38 @@ module.exports = async (req, res) => {
         current_shared_paddocks: data.current_shared_paddocks,
         added_paddock_ids: data.added_paddock_ids,
         removed_paddock_ids: data.removed_paddock_ids,
+      });
+      return;
+    }
+
+    if (action === 'paddock_map_save') {
+      const viewBox = String(body.viewBox || '').trim();
+      const boundaryD = String(body.boundaryD || '').trim();
+      const shapes = Array.isArray(body.shapes) ? body.shapes : null;
+      const sourceFileName = body.sourceFileName ? String(body.sourceFileName).trim() : '';
+
+      if (!viewBox) {
+        res.status(400).json({ ok: false, error: 'viewBox is required' });
+        return;
+      }
+
+      if (!shapes || !shapes.length) {
+        res.status(400).json({ ok: false, error: 'shapes is required and must be a non-empty array' });
+        return;
+      }
+
+      let data;
+      try {
+        data = await savePaddockMapConfig({ viewBox, boundaryD, shapes, sourceFileName });
+      } catch (error) {
+        res.status(400).json({ ok: false, error: error.message || 'Could not save paddock map' });
+        return;
+      }
+
+      res.status(200).json({
+        ok: true,
+        action,
+        paddock_map: data,
       });
       return;
     }
@@ -2558,6 +2591,77 @@ module.exports = async (req, res) => {
       return;
     }
 
+    if (action === 'health_event_update') {
+      await ensureOwnersSchema();
+      const id = parsePositiveInt(body.id);
+      const eventType = String(body.eventType || '').trim().toLowerCase();
+      const description = String(body.description || '').trim();
+      const notes = body.notes ? String(body.notes).trim() : '';
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
+      const hasCostAmount = Object.prototype.hasOwnProperty.call(body, 'costAmount');
+      const costAmount = hasCostAmount ? parseNonNegativeNumber(body.costAmount) : undefined;
+
+      if (!id) {
+        res.status(400).json({ ok: false, error: 'id is required' });
+        return;
+      }
+
+      if (!eventType) {
+        res.status(400).json({ ok: false, error: 'eventType is required' });
+        return;
+      }
+
+      if (!description) {
+        res.status(400).json({ ok: false, error: 'description is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      const updateResult = await pool.query(
+        `
+        UPDATE horse_health_events
+        SET
+          event_type = $1,
+          description = $2,
+          event_date = $3,
+          notes = $4,
+          cost_amount = CASE WHEN $6 THEN $5 ELSE cost_amount END
+        WHERE id = $7
+        RETURNING id, horse_id, event_date, event_type, description, notes, cost_amount::float AS cost_amount
+        `,
+        [eventType, description, eventDateRaw, notes || null, costAmount, hasCostAmount, id]
+      );
+
+      if (updateResult.rows.length === 0) {
+        res.status(404).json({ ok: false, error: 'Health event not found' });
+        return;
+      }
+
+      const updated = updateResult.rows[0];
+      const horseResult = await pool.query(`SELECT id, name FROM horses WHERE id = $1 LIMIT 1`, [
+        updated.horse_id,
+      ]);
+
+      res.status(200).json({
+        ok: true,
+        action,
+        horse: horseResult.rows[0] || null,
+        health_event: {
+          id: updated.id,
+          event_type: updated.event_type,
+          description: updated.description,
+          notes: updated.notes,
+          event_date: toIsoDateString(updated.event_date),
+          cost_amount: updated.cost_amount,
+        },
+      });
+      return;
+    }
+
     if (action === 'rain_save') {
       const rainMm = Number(body.rainMm);
       const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
@@ -2679,6 +2783,7 @@ module.exports = async (req, res) => {
       const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : todayDateString();
       const farmName = body.farmName ? String(body.farmName).trim() : null;
       const notes = body.notes ? String(body.notes).trim() : '';
+      const horseId = body.horseId == null || body.horseId === '' ? null : parsePositiveInt(body.horseId);
 
       if (!title) {
         res.status(400).json({ ok: false, error: 'title is required' });
@@ -2695,13 +2800,28 @@ module.exports = async (req, res) => {
         return;
       }
 
+      if ((body.horseId != null && body.horseId !== '') && !horseId) {
+        res.status(400).json({ ok: false, error: 'horseId is invalid' });
+        return;
+      }
+
+      let horseName = null;
+      if (horseId) {
+        const horseResult = await pool.query('SELECT id, name FROM horses WHERE id = $1 LIMIT 1', [horseId]);
+        if (horseResult.rows.length === 0) {
+          res.status(404).json({ ok: false, error: 'Horse not found' });
+          return;
+        }
+        horseName = horseResult.rows[0].name;
+      }
+
       const saveResult = await pool.query(
         `
-        INSERT INTO farm_visits (event_date, category, title, farm_name, notes)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, event_date, category, title, farm_name, notes
+        INSERT INTO farm_visits (event_date, category, title, farm_name, notes, horse_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, event_date, category, title, farm_name, notes, horse_id
         `,
-        [eventDateRaw, category, title, farmName || null, notes || null]
+        [eventDateRaw, category, title, farmName || null, notes || null, horseId]
       );
 
       const row = saveResult.rows[0];
@@ -2715,13 +2835,14 @@ module.exports = async (req, res) => {
           title: row.title,
           farm_name: row.farm_name || null,
           notes: row.notes || null,
+          horse_id: row.horse_id || null,
+          horse_name: horseName,
         },
       });
       return;
     }
 
     if (action === 'farm_visit_update') {
-      const ALLOWED_VISIT_STATUSES = new Set(['pending', 'done', 'missed']);
       const id = parsePositiveInt(body.id);
       const status = String(body.status || '').trim().toLowerCase();
 
@@ -2730,26 +2851,28 @@ module.exports = async (req, res) => {
         return;
       }
 
-      if (!ALLOWED_VISIT_STATUSES.has(status)) {
-        res.status(400).json({ ok: false, error: 'status must be pending, done, or missed' });
+      let updated;
+      try {
+        updated = await updateFarmVisitStatus(id, status);
+      } catch (error) {
+        res.status(400).json({ ok: false, error: error.message || 'Could not update the scheduled task' });
         return;
       }
 
-      const updateResult = await pool.query(
-        `UPDATE farm_visits SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, status`,
-        [status, id]
-      );
-
-      if (updateResult.rowCount === 0) {
+      if (!updated) {
         res.status(404).json({ ok: false, error: 'Visit not found' });
         return;
       }
 
-      const row = updateResult.rows[0];
       res.status(200).json({
         ok: true,
         action,
-        visit: { id: row.id, status: row.status },
+        visit: {
+          id: updated.id,
+          status: updated.status,
+          horse_id: updated.horse_id || null,
+          health_event_id: updated.health_event_id || null,
+        },
       });
       return;
     }
@@ -3248,7 +3371,7 @@ module.exports = async (req, res) => {
       res.status(400).json({
         ok: false,
         error:
-        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, paddock_ready_date_set, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, grazing_group_shared_paddocks_set, feed_item_save, feed_item_delete, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
+        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, paddock_ready_date_set, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, grazing_group_shared_paddocks_set, paddock_map_save, feed_item_save, feed_item_delete, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, health_event_update, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
       });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);

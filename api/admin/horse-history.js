@@ -234,7 +234,8 @@ module.exports = async (req, res) => {
           h.event_date,
           h.event_type,
           h.description,
-          h.notes
+          h.notes,
+          h.cost_amount::float AS cost_amount
         FROM horse_health_events h
         WHERE h.horse_id = $1
         ORDER BY COALESCE(h.event_date, h.created_at::date) DESC, h.id DESC

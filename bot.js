@@ -4,6 +4,7 @@ const { Telegraf } = require('telegraf');
 const { pool } = require('./lib/db');
 const { ensureHorseProfileColumns } = require('./lib/horse-profile');
 const { getFarmSettings, saveFarmAlertChatId } = require('./lib/farm-settings');
+const { ensureFarmVisitsTable, updateFarmVisitStatus } = require('./lib/farm-visits');
 const {
   ensurePaddockTables,
   findPaddockByName,
@@ -39,6 +40,7 @@ function parsePositiveInt(value, fallbackValue) {
 }
 
 const DEWORM_ALERT_DAYS_AHEAD = parsePositiveInt(process.env.DEWORM_ALERT_DAYS_AHEAD, 3);
+const SCHEDULE_ALERT_DAYS_AHEAD = parsePositiveInt(process.env.SCHEDULE_ALERT_DAYS_AHEAD, 3);
 const LOW_STOCK_THRESHOLD = parsePositiveInt(process.env.LOW_STOCK_THRESHOLD, 5);
 const ALERT_CHECK_INTERVAL_MINUTES = parsePositiveInt(
   process.env.ALERT_CHECK_INTERVAL_MINUTES,
@@ -267,6 +269,59 @@ async function getLatestDewormRows() {
   return result.rows;
 }
 
+function buildScheduledReminderGroups(rows, daysAhead) {
+  const today = todayDateString();
+  const soonLimit = addDaysToDateString(today, daysAhead);
+  const overdue = [];
+  const dueSoon = [];
+
+  for (const row of rows) {
+    const eventDate = formatDateForReply(row.event_date);
+    const who = row.horse_name || 'Campo';
+    const line = `- #${row.id} | ${who} | due: ${eventDate} | ${row.title}`;
+
+    if (eventDate < today) {
+      overdue.push({
+        key: `schedule:${row.id}:${eventDate}`,
+        line,
+      });
+      continue;
+    }
+
+    if (eventDate >= today && eventDate <= soonLimit) {
+      dueSoon.push({
+        key: `schedule:${row.id}:${eventDate}`,
+        line,
+      });
+    }
+  }
+
+  return { overdue, dueSoon };
+}
+
+async function getPendingScheduledRows() {
+  await ensureFarmVisitsTable();
+
+  const result = await pool.query(
+    `
+    SELECT
+      fv.id,
+      fv.horse_id,
+      h.name AS horse_name,
+      fv.category,
+      fv.title,
+      fv.event_date,
+      fv.notes
+    FROM farm_visits fv
+    LEFT JOIN horses h ON h.id = fv.horse_id
+    WHERE fv.status = 'pending'
+    ORDER BY fv.event_date ASC, fv.id ASC
+    `
+  );
+
+  return result.rows;
+}
+
 async function getLowStockRows(threshold) {
   const result = await pool.query(
     `
@@ -321,9 +376,10 @@ async function sendRemindersToAlertChat() {
     return;
   }
 
-  const [dewormRows, lowStockRows] = await Promise.all([
+  const [dewormRows, lowStockRows, scheduledRows] = await Promise.all([
     getLatestDewormRows(),
     getLowStockRows(LOW_STOCK_THRESHOLD),
+    getPendingScheduledRows(),
   ]);
 
   const { overdue, dueSoon } = buildDewormReminderGroups(
@@ -331,9 +387,16 @@ async function sendRemindersToAlertChat() {
     DEWORM_ALERT_DAYS_AHEAD
   );
 
+  const scheduledGroups = buildScheduledReminderGroups(
+    scheduledRows,
+    SCHEDULE_ALERT_DAYS_AHEAD
+  );
+
   const pendingOverdue = [];
   const pendingDueSoon = [];
   const pendingLowStock = [];
+  const pendingScheduledOverdue = [];
+  const pendingScheduledDueSoon = [];
 
   for (const item of overdue) {
     if (await markAlertAsSentForToday(item.key)) {
@@ -356,10 +419,24 @@ async function sendRemindersToAlertChat() {
     }
   }
 
+  for (const item of scheduledGroups.overdue) {
+    if (await markAlertAsSentForToday(item.key)) {
+      pendingScheduledOverdue.push(item.line);
+    }
+  }
+
+  for (const item of scheduledGroups.dueSoon) {
+    if (await markAlertAsSentForToday(item.key)) {
+      pendingScheduledDueSoon.push(item.line);
+    }
+  }
+
   if (
     pendingOverdue.length === 0 &&
     pendingDueSoon.length === 0 &&
-    pendingLowStock.length === 0
+    pendingLowStock.length === 0 &&
+    pendingScheduledOverdue.length === 0 &&
+    pendingScheduledDueSoon.length === 0
   ) {
     return;
   }
@@ -368,6 +445,14 @@ async function sendRemindersToAlertChat() {
   const today = todayDateString();
 
   sections.push(`Farm reminders (${today})`);
+
+  if (pendingScheduledOverdue.length > 0) {
+    sections.push(`Scheduled tasks overdue:\n${pendingScheduledOverdue.join('\n')}`);
+  }
+
+  if (pendingScheduledDueSoon.length > 0) {
+    sections.push(`Scheduled tasks coming up:\n${pendingScheduledDueSoon.join('\n')}`);
+  }
 
   if (pendingOverdue.length > 0) {
     sections.push(`Deworming overdue:\n${pendingOverdue.join('\n')}`);
@@ -698,6 +783,7 @@ const TELEGRAM_LOOKUP_COMMANDS = [
   'deworm history',
   'deworm history <horse name>',
   'farrier due',
+  'schedule list',
 ];
 
 const TELEGRAM_ENTRY_COMMANDS = [
@@ -720,6 +806,9 @@ const TELEGRAM_ENTRY_COMMANDS = [
   'stock use <feed item> <quantity> <unit> [YYYY-MM-DD] [notes]',
   'feed <horse name> <feed item> <quantity> <unit> [YYYY-MM-DD]',
   'rain <mm> [YYYY-MM-DD] [notes]',
+  'schedule <horse name or -> | <category> | <title> | <YYYY-MM-DD> | [notes]',
+  'schedule done <id>',
+  'schedule missed <id>',
   'deworm <horse name> <product> [YYYY-MM-DD]',
   'deworm done <horse name> <product> <YYYY-MM-DD>',
   'farrier <horse name> <service> [YYYY-MM-DD]',
@@ -742,6 +831,8 @@ const TELEGRAM_EXAMPLE_COMMANDS = [
   'stock use alfalfa 1 bale 2026-05-08 opened new bale',
   'feed Fair Halo oats 2 kg',
   'rain 12.5 2026-05-08 heavy shower',
+  'schedule Imperial | vet | Cirugia rodilla | 2026-08-26 | Dr. Suarez, en ayunas desde la noche anterior',
+  'schedule done 14',
   'deworm Imperial ivermectin 2026-05-08',
   'health add Imperial injury left hind leg cut 2026-05-08',
   'dose add Imperial repen 2026-05-08 18:00',
@@ -3273,7 +3364,162 @@ Feed event ID: ${feedEventResult.rows[0].id}`
               continue;
             }
 
-            
+            // -----------------------------
+            // SCHEDULE LIST
+            // schedule list
+            // -----------------------------
+            if (lowerMessage === 'schedule list') {
+              const rows = await getPendingScheduledRows();
+
+              if (rows.length === 0) {
+                await ctx.reply('No pending scheduled tasks.');
+                continue;
+              }
+
+              const lines = rows.slice(0, 30).map((row) => {
+                const who = row.horse_name || 'Campo';
+                return `- #${row.id} | ${formatDateForReply(row.event_date)} | ${who} | ${row.category} | ${row.title}`;
+              });
+
+              await ctx.reply(`Scheduled tasks (pending)\n\n${lines.join('\n')}`);
+              continue;
+            }
+
+            // -----------------------------
+            // SCHEDULE DONE
+            // schedule done <id>
+            // -----------------------------
+            if (lowerMessage.startsWith('schedule done ')) {
+              const idRaw = messageText.slice('schedule done '.length).trim();
+              const id = parsePositiveInt(idRaw, null);
+
+              if (!id) {
+                await ctx.reply('Use: schedule done <id>. Find the id with "schedule list".');
+                continue;
+              }
+
+              let updated;
+              try {
+                updated = await updateFarmVisitStatus(id, 'done');
+              } catch (error) {
+                await ctx.reply(error.message || 'Could not update that scheduled task.');
+                continue;
+              }
+
+              if (!updated) {
+                await ctx.reply(`No scheduled task found with id ${id}.`);
+                continue;
+              }
+
+              await ctx.reply(
+                `Scheduled task #${id} marked as done ✅${updated.health_event_id ? '\nAlso logged to the horse health history.' : ''}`
+              );
+              continue;
+            }
+
+            // -----------------------------
+            // SCHEDULE MISSED
+            // schedule missed <id>
+            // -----------------------------
+            if (lowerMessage.startsWith('schedule missed ')) {
+              const idRaw = messageText.slice('schedule missed '.length).trim();
+              const id = parsePositiveInt(idRaw, null);
+
+              if (!id) {
+                await ctx.reply('Use: schedule missed <id>. Find the id with "schedule list".');
+                continue;
+              }
+
+              let updated;
+              try {
+                updated = await updateFarmVisitStatus(id, 'missed');
+              } catch (error) {
+                await ctx.reply(error.message || 'Could not update that scheduled task.');
+                continue;
+              }
+
+              if (!updated) {
+                await ctx.reply(`No scheduled task found with id ${id}.`);
+                continue;
+              }
+
+              await ctx.reply(`Scheduled task #${id} marked as missed.`);
+              continue;
+            }
+
+            // -----------------------------
+            // SCHEDULE ADD
+            // schedule <horse name or -> | <category> | <title> | <YYYY-MM-DD> | [notes]
+            // -----------------------------
+            if (lowerMessage.startsWith('schedule ')) {
+              const remainder = messageText.slice('schedule '.length).trim();
+              const usage =
+                'Use: schedule <horse name or -> | <category> | <title> | <YYYY-MM-DD> | [notes]\nCategories: vet, deworming, farrier, visit, note';
+
+              if (!remainder) {
+                await ctx.reply(usage);
+                continue;
+              }
+
+              const segments = parsePipeSegments(remainder);
+              if (segments.length < 4) {
+                await ctx.reply(usage);
+                continue;
+              }
+
+              const horseNameRaw = segments[0].trim();
+              const categoryRaw = segments[1].trim().toLowerCase();
+              const title = segments[2].trim();
+              const eventDateRaw = segments[3].trim();
+              const notes = segments.slice(4).join(' | ').trim();
+
+              const ALLOWED_SCHEDULE_CATEGORIES = new Set(['visit', 'deworming', 'farrier', 'vet', 'note']);
+
+              if (!title) {
+                await ctx.reply('The title cannot be empty.');
+                continue;
+              }
+
+              if (!ALLOWED_SCHEDULE_CATEGORIES.has(categoryRaw)) {
+                await ctx.reply('Category must be one of: vet, deworming, farrier, visit, note');
+                continue;
+              }
+
+              if (!isValidDateString(eventDateRaw)) {
+                await ctx.reply(`Invalid calendar date: ${eventDateRaw}`);
+                continue;
+              }
+
+              let horseId = null;
+              if (horseNameRaw && !['-', 'campo', 'field', 'none'].includes(horseNameRaw.toLowerCase())) {
+                const horse = await findHorseByName(horseNameRaw);
+                if (!horse) {
+                  await ctx.reply(`No horse found named "${horseNameRaw}". Use - for a general farm task.`);
+                  continue;
+                }
+                horseId = horse.id;
+              }
+
+              await ensureFarmVisitsTable();
+
+              const insertResult = await pool.query(
+                `
+                INSERT INTO farm_visits (event_date, category, title, notes, horse_id)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id, event_date
+                `,
+                [eventDateRaw, categoryRaw, title, notes || null, horseId]
+              );
+
+              const saved = insertResult.rows[0];
+
+              await ctx.reply(
+                `Scheduled ✅\n\n#${saved.id} | ${horseId ? horseNameRaw : 'Campo'} | ${categoryRaw} | ${title}\nDate: ${formatDateForReply(saved.event_date)}`
+              );
+              continue;
+            }
+
+
       // -----------------------------
       // DEWORM DUE
       // -----------------------------

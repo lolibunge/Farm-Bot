@@ -5161,7 +5161,13 @@
     const activeMemberKeys = new Set(
       members.map((horse) => getGroupManageHorseKey(horse)).filter(Boolean)
     );
-    const candidates = allHorses.filter((horse) => !activeMemberKeys.has(getGroupManageHorseKey(horse)));
+    const allCandidates = allHorses.filter((horse) => !activeMemberKeys.has(getGroupManageHorseKey(horse)));
+
+    const groupPickerSearchValue = payload?.groupPickerSearch != null ? String(payload.groupPickerSearch) : '';
+    const normalizedSearch = normalizePaddockMapName(groupPickerSearchValue);
+    const candidates = normalizedSearch
+      ? allCandidates.filter((horse) => normalizePaddockMapName(horse.name).includes(normalizedSearch))
+      : allCandidates;
 
     return {
       ...source,
@@ -5176,8 +5182,10 @@
       removed_horse_keys: Array.from(removedHorseKeys),
       selected_horse_key_set: selectedHorseKeys,
       group_picker_open: Boolean(payload?.groupPickerOpen),
+      group_picker_search: groupPickerSearchValue,
       members,
       candidates,
+      candidate_total_count: allCandidates.length,
       member_count: members.length,
     };
   }
@@ -5300,6 +5308,23 @@
                   ? `
                     <div class="group-manage-picker">
                       <p>Selecciona caballos para agregar al grupo:</p>
+                      ${
+                        modalState.candidate_total_count > 0
+                          ? `
+                            <label class="search-field group-manage-picker-search">
+                              ${renderIcon('search')}
+                              <input
+                                type="search"
+                                placeholder="Buscar caballo por nombre..."
+                                value="${escapeHtml(modalState.group_picker_search)}"
+                                data-group-config="groupPickerSearch"
+                                data-focus-key="group-picker-search"
+                                autocomplete="off"
+                              />
+                            </label>
+                          `
+                          : ''
+                      }
                       <div class="group-manage-picker-list">
                         ${
                           modalState.candidates.length
@@ -5313,6 +5338,13 @@
                                   })
                                 )
                                 .join('')
+                            : modalState.group_picker_search
+                            ? `
+                              <div class="group-manage-empty">
+                                <strong>Ningún caballo coincide con "${escapeHtml(modalState.group_picker_search)}".</strong>
+                                <span>Probá con otro nombre o borrá la búsqueda.</span>
+                              </div>
+                            `
                             : `
                               <div class="group-manage-empty">
                                 <strong>No hay caballos disponibles para sumar.</strong>
@@ -7962,6 +7994,142 @@
       .replace(/\s+/g, ' ');
   }
 
+  const PADDOCK_MAP_BOUNDARY_LABELS = new Set([
+    'boundary',
+    'contorno',
+    'limite',
+    'borde',
+    'perimetro',
+  ]);
+
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('No pudimos leer el archivo.'));
+      reader.readAsText(file);
+    });
+  }
+
+  function parsePaddockMapSvgText(svgText) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgText, 'image/svg+xml');
+    if (doc.querySelector('parsererror')) {
+      throw new Error('El archivo no es un SVG v\u00e1lido.');
+    }
+
+    const svgEl = doc.querySelector('svg');
+    if (!svgEl) {
+      throw new Error('No encontramos la etiqueta <svg> en el archivo.');
+    }
+
+    const viewBox = (svgEl.getAttribute('viewBox') || '').trim();
+    if (!viewBox) {
+      throw new Error('El SVG no tiene un atributo viewBox. Agregalo antes de subirlo.');
+    }
+
+    const paths = Array.from(doc.querySelectorAll('path'));
+    let boundaryD = '';
+    const shapes = [];
+    let skippedCount = 0;
+
+    paths.forEach((pathEl) => {
+      const d = (pathEl.getAttribute('d') || '').trim();
+      if (!d) {
+        return;
+      }
+
+      const titleEl = pathEl.querySelector('title');
+      const rawLabel = (pathEl.getAttribute('id') || (titleEl ? titleEl.textContent : '') || '').trim();
+      const label = rawLabel.replace(/[_-]+/g, ' ').trim();
+
+      if (!label) {
+        skippedCount += 1;
+        return;
+      }
+
+      if (PADDOCK_MAP_BOUNDARY_LABELS.has(normalizePaddockMapName(label))) {
+        if (!boundaryD) {
+          boundaryD = d;
+        }
+        return;
+      }
+
+      shapes.push({ name: label, d });
+    });
+
+    if (!shapes.length) {
+      throw new Error(
+        'No encontramos potreros identificados en el SVG. Cada <path> necesita un id (o <title>) con el nombre del potrero.'
+      );
+    }
+
+    return { viewBox, boundaryD, shapes, skippedCount };
+  }
+
+  async function handlePaddockMapFileSelected(inputEl) {
+    const file = inputEl.files && inputEl.files[0];
+    if (!file) {
+      return;
+    }
+
+    updateActiveModalPayload((currentPayload) => ({
+      ...currentPayload,
+      mapUploadFileName: file.name,
+      mapUploadError: '',
+      mapUploadParsing: true,
+      mapUploadViewBox: '',
+      mapUploadBoundaryD: '',
+      mapUploadShapesJson: '',
+      mapUploadMatchedNames: [],
+      mapUploadUnmatchedNames: [],
+      mapUploadSkippedCount: 0,
+    }));
+
+    try {
+      const svgText = await readFileAsText(file);
+      const parsed = parsePaddockMapSvgText(svgText);
+      const currentState = store.getState();
+      const dashboard = getRealPaddockDashboard(currentState);
+      const existingNames = new Set(
+        (Array.isArray(dashboard?.paddocks) ? dashboard.paddocks : []).map((paddock) =>
+          normalizePaddockMapName(paddock.name)
+        )
+      );
+      const matchedNames = parsed.shapes
+        .filter((shape) => existingNames.has(normalizePaddockMapName(shape.name)))
+        .map((shape) => shape.name);
+      const unmatchedNames = parsed.shapes
+        .filter((shape) => !existingNames.has(normalizePaddockMapName(shape.name)))
+        .map((shape) => shape.name);
+
+      updateActiveModalPayload((currentPayload) => ({
+        ...currentPayload,
+        mapUploadParsing: false,
+        mapUploadError: '',
+        mapUploadFileName: file.name,
+        mapUploadViewBox: parsed.viewBox,
+        mapUploadBoundaryD: parsed.boundaryD,
+        mapUploadShapesJson: JSON.stringify(parsed.shapes),
+        mapUploadMatchedNames: matchedNames,
+        mapUploadUnmatchedNames: unmatchedNames,
+        mapUploadSkippedCount: parsed.skippedCount,
+      }));
+    } catch (error) {
+      updateActiveModalPayload((currentPayload) => ({
+        ...currentPayload,
+        mapUploadParsing: false,
+        mapUploadError: error.message || 'No pudimos leer ese archivo SVG.',
+        mapUploadViewBox: '',
+        mapUploadBoundaryD: '',
+        mapUploadShapesJson: '',
+        mapUploadMatchedNames: [],
+        mapUploadUnmatchedNames: [],
+        mapUploadSkippedCount: 0,
+      }));
+    }
+  }
+
   function getPaddockMapToneColor(tone) {
     switch (tone) {
       case 'green':
@@ -7989,15 +8157,20 @@
       }
     });
 
+    const customMap = dashboard?.paddock_map || null;
+    const mapShapes = customMap?.shapes?.length ? customMap.shapes : PADDOCK_MAP_SHAPES;
+    const mapBoundaryD = customMap ? customMap.boundary_d || '' : PADDOCK_MAP_BOUNDARY_D;
+    const mapViewBox = customMap?.view_box || '880 975 1740 590';
+
     const unmatched = [];
 
-    const shapesMarkup = PADDOCK_MAP_SHAPES.map((shape) => {
+    const shapesMarkup = mapShapes.map((shape) => {
       const match = byName.get(normalizePaddockMapName(shape.name));
       if (!match) {
         unmatched.push(shape.name);
         return `
           <path
-            d="${shape.d}"
+            d="${escapeHtml(shape.d)}"
             class="paddock-map-shape paddock-map-shape--unmatched"
             fill="#e4e7eb"
             stroke="#b7bec7"
@@ -8017,7 +8190,7 @@
 
       return `
         <path
-          d="${shape.d}"
+          d="${escapeHtml(shape.d)}"
           class="paddock-map-shape${match.has_shared_access ? ' paddock-map-shape--shared' : ''}"
           fill="${fillColor}"
           stroke="${match.has_shared_access ? '#7c3aed' : '#20232a'}"
@@ -8041,25 +8214,106 @@
       ? `<p class="paddock-map-note">Sin datos para: ${escapeHtml(unmatched.join(', '))}. Revisá que el nombre coincida con el potrero cargado en el sistema.</p>`
       : '';
 
+    const mapSourceNote = customMap
+      ? `<p class="paddock-map-note paddock-map-note--source">Mapa personalizado${customMap.source_file_name ? ` (${escapeHtml(customMap.source_file_name)})` : ''}${customMap.updated_at ? ` · actualizado ${escapeHtml(formatCompactDateLabel(String(customMap.updated_at).slice(0, 10)))}` : ''}</p>`
+      : '<p class="paddock-map-note paddock-map-note--source">Mapa por defecto (cargado en el código).</p>';
+
     return `
       <section class="panel">
-        <div class="paddock-map-legend">
-          ${legendItems.map((item) => `
-            <span class="paddock-map-legend-item">
-              <span class="paddock-map-legend-swatch" style="background:${item.tone ? getPaddockMapToneColor(item.tone) : '#e4e7eb'}${item.tone ? '' : ';border:2px dashed #b7bec7'}"></span>
-              ${escapeHtml(item.label)}
-            </span>
-          `).join('')}
+        <div class="paddock-map-toolbar">
+          <div class="paddock-map-legend">
+            ${legendItems.map((item) => `
+              <span class="paddock-map-legend-item">
+                <span class="paddock-map-legend-swatch" style="background:${item.tone ? getPaddockMapToneColor(item.tone) : '#e4e7eb'}${item.tone ? '' : ';border:2px dashed #b7bec7'}"></span>
+                ${escapeHtml(item.label)}
+              </span>
+            `).join('')}
+          </div>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            ${renderActionAttributes({ action: 'open-modal', value: 'paddock-map-upload' })}
+          >
+            ${renderIcon('edit')}
+            <span>Actualizar mapa</span>
+          </button>
         </div>
         <div class="paddock-map-wrap">
-          <svg viewBox="880 975 1740 590" class="paddock-map-svg" role="img" aria-label="Mapa de potreros del campo">
-            <path d="${PADDOCK_MAP_BOUNDARY_D}" fill="none" stroke="#8a8f98" stroke-width="2"/>
+          <svg viewBox="${escapeHtml(mapViewBox)}" class="paddock-map-svg" role="img" aria-label="Mapa de potreros del campo">
+            ${mapBoundaryD ? `<path d="${escapeHtml(mapBoundaryD)}" fill="none" stroke="#8a8f98" stroke-width="2"/>` : ''}
             ${shapesMarkup}
           </svg>
         </div>
         ${unmatchedNote}
+        ${mapSourceNote}
       </section>
     `;
+  }
+
+  function renderPaddockMapUploadModal(state, payload) {
+    const dashboard = getRealPaddockDashboard(state);
+    const existingPaddockCount = Array.isArray(dashboard?.paddocks) ? dashboard.paddocks.length : 0;
+    const matchedNames = Array.isArray(payload?.mapUploadMatchedNames) ? payload.mapUploadMatchedNames : [];
+    const unmatchedNames = Array.isArray(payload?.mapUploadUnmatchedNames) ? payload.mapUploadUnmatchedNames : [];
+    const hasParsedShapes = Boolean(payload?.mapUploadShapesJson);
+
+    const previewMarkup = payload?.mapUploadParsing
+      ? `<p class="paddock-map-note">Leyendo ${escapeHtml(payload?.mapUploadFileName || 'el archivo')}...</p>`
+      : payload?.mapUploadError
+      ? `<p class="paddock-map-note paddock-map-upload-error">${escapeHtml(payload.mapUploadError)}</p>`
+      : hasParsedShapes
+      ? `
+        <div class="modal-detail-card">
+          <strong>${escapeHtml(payload?.mapUploadFileName || 'Archivo leído')}</strong>
+          <span>${matchedNames.length} potrero(s) reconocido(s) de ${existingPaddockCount} cargado(s) en el sistema.</span>
+          ${
+            unmatchedNames.length
+              ? `<span>Sin coincidencia (${unmatchedNames.length}): ${escapeHtml(unmatchedNames.join(', '))}. Revisá que el nombre del path coincida exacto con el potrero.</span>`
+              : ''
+          }
+          ${
+            payload?.mapUploadSkippedCount
+              ? `<span>${payload.mapUploadSkippedCount} path(s) sin id/nombre fueron ignorados.</span>`
+              : ''
+          }
+          ${
+            payload?.mapUploadBoundaryD
+              ? '<span>Contorno del campo detectado.</span>'
+              : '<span>No se encontró un path de contorno (id="boundary"). El mapa se guarda igual, sin línea de perímetro.</span>'
+          }
+        </div>
+      `
+      : '';
+
+    return renderFormModal({
+      key: 'paddock-map-upload',
+      title: 'Actualizar mapa de potreros',
+      subtitle: 'Subí un SVG nuevo cuando cambie el trazado del campo, sin tocar código.',
+      submitLabel: 'Guardar mapa',
+      submitIcon: 'check',
+      columns: 1,
+      callout: {
+        title: 'Cómo tiene que venir el SVG',
+        detail:
+          'Cada potrero debe ser un <path> cuyo id (o <title>) sea exactamente el nombre del potrero en el sistema (Ej: id="Potrero 7"). El contorno general del campo, si lo incluís, va en un <path> con id="boundary". El <svg> raíz necesita un atributo viewBox.',
+      },
+      fields: [],
+      extraBody: `
+        <label class="field-block modal-field--wide">
+          <span>Archivo SVG</span>
+          <input type="file" accept=".svg,image/svg+xml" data-paddock-map-file-input />
+        </label>
+        ${previewMarkup}
+        <input type="hidden" name="viewBox" value="${escapeHtml(payload?.mapUploadViewBox || '')}" />
+        <input type="hidden" name="boundaryD" value="${escapeHtml(payload?.mapUploadBoundaryD || '')}" />
+        <input type="hidden" name="shapesJson" value="${escapeHtml(payload?.mapUploadShapesJson || '')}" />
+        <input type="hidden" name="sourceFileName" value="${escapeHtml(payload?.mapUploadFileName || '')}" />
+      `,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Guardar mapa', tone: 'primary', icon: 'check', submit: true },
+      ],
+    });
   }
 
   function renderPaddocksView(state) {
@@ -11368,6 +11622,12 @@
         tone: 'red',
         icon: 'health',
         isActive: false,
+        category: 'health',
+        healthEventId: row.id,
+        rawEventType: row.event_type || '',
+        rawDescription: row.description || '',
+        rawNotes: row.notes || '',
+        rawCostAmount: row.cost_amount != null ? row.cost_amount : '',
       });
     }
 
@@ -12948,6 +13208,17 @@
                   >
                     <span>Compartir potreros</span>
                   </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    ${renderActionAttributes({
+                      action: 'open-modal',
+                      value: 'paddock-entry-correction',
+                      meta: { paddockId: paddock.id },
+                    })}
+                  >
+                    <span>Corregir ingreso</span>
+                  </button>
                 `
                 : ''
             }
@@ -13114,6 +13385,77 @@
         <input type="hidden" name="groupId" value="${escapeHtml(String(group.id))}" />
         <p style="font-weight:600;margin:8px 0 4px;">Potreros compartidos ahora mismo</p>
         ${checkboxesMarkup}
+      `,
+    });
+  }
+
+  function renderRealPaddockEntryCorrectionModal(state, payload) {
+    const paddock = getRealPaddockById(state, payload.paddockId);
+    if (!paddock) {
+      return renderInfoModal({
+        title: 'Potrero no disponible',
+        subtitle: 'No pudimos reconstruir el potrero para corregir el ingreso.',
+        body: `
+          <div class="modal-detail-card">
+            <strong>Revisá la lectura actual</strong>
+            <span>Probá refrescar la pantalla para volver a cargar el padrón de potreros.</span>
+          </div>
+        `,
+      });
+    }
+
+    const occupyingGroupNames = String(paddock.occupied_groups || '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const group =
+      occupyingGroupNames.length === 1 ? getRealHorseGroupByName(state, occupyingGroupNames[0]) : null;
+
+    if (!group) {
+      return renderInfoModal({
+        title: `Corregir ingreso - ${paddock.name}`,
+        subtitle:
+          occupyingGroupNames.length > 1
+            ? 'Este potrero tiene más de un grupo activo. Corregí el ingreso moviendo el grupo desde Telegram.'
+            : 'Este potrero no tiene un grupo activo para corregir la fecha de ingreso.',
+        body: `
+          <div class="modal-detail-card">
+            <strong>Sin grupo único ocupando este potrero</strong>
+            <span>Esta corrección solo está disponible cuando hay un solo grupo pastoreando el potrero.</span>
+          </div>
+        `,
+        footerButtons: [{ label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } }],
+      });
+    }
+
+    const currentEnteredOn = paddock.occupied_since || todayDateString();
+
+    return renderFormModal({
+      key: 'paddock-entry-correction',
+      title: `Corregir ingreso - ${paddock.name}`,
+      subtitle: `${group.name} figura desde ${formatDateLabel(currentEnteredOn)}. Poné la fecha real de ingreso.`,
+      submitLabel: 'Corregir ingreso',
+      submitIcon: 'check',
+      columns: 1,
+      fields: [
+        {
+          label: 'Fecha real de ingreso',
+          name: 'eventDate',
+          type: 'date',
+          value: currentEnteredOn,
+          required: true,
+        },
+        {
+          label: 'Notas (opcional)',
+          name: 'notes',
+          type: 'textarea',
+          rows: 2,
+          placeholder: 'Ej: se cargó mal la fecha de entrada.',
+        },
+      ],
+      extraBody: `
+        <input type="hidden" name="groupId" value="${escapeHtml(String(group.id))}" />
+        <input type="hidden" name="paddockId" value="${escapeHtml(String(paddock.id))}" />
       `,
     });
   }
@@ -14169,11 +14511,16 @@
       return '';
     }
 
+    const healthEventId = parsePositiveInt(payload?.healthEventId);
+    const isEdit = Boolean(healthEventId);
+
     return renderFormModal({
       key: 'horse-health-event',
-      title: `Registrar veterinaria para ${horse.name}`,
-      subtitle: 'Guardá visitas, tratamientos, vacunas o cualquier observación sanitaria del caballo.',
-      submitLabel: 'Guardar registro',
+      title: isEdit ? `Editar registro de ${horse.name}` : `Registrar veterinaria para ${horse.name}`,
+      subtitle: isEdit
+        ? 'Corregí la fecha, el tipo o la descripción de este registro sanitario.'
+        : 'Guardá visitas, tratamientos, vacunas o cualquier observación sanitaria del caballo.',
+      submitLabel: isEdit ? 'Guardar cambios' : 'Guardar registro',
       submitIcon: 'health',
       columns: 2,
       callout: {
@@ -14239,13 +14586,14 @@
       ],
       extraBody: `
         <input type="hidden" name="horseId" value="${escapeHtml(String(horseId))}" />
+        ${isEdit ? `<input type="hidden" name="healthEventId" value="${escapeHtml(String(healthEventId))}" />` : ''}
         <input type="hidden" name="returnMonth" value="${escapeHtml(String(payload?.returnMonth || ''))}" />
         <input type="hidden" name="returnFeedPlanOpen" value="${escapeHtml(String(payload?.returnFeedPlanOpen || false))}" />
         <input type="hidden" name="returnFeedHistoryOpen" value="${escapeHtml(String(payload?.returnFeedHistoryOpen || false))}" />
       `,
       footerButtons: [
         { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
-        { label: 'Guardar registro', tone: 'primary', icon: 'health', submit: true },
+        { label: isEdit ? 'Guardar cambios' : 'Guardar registro', tone: 'primary', icon: 'health', submit: true },
       ],
     });
   }
@@ -14754,7 +15102,35 @@
                           </div>
                           ${ev.subtitle ? `<span>${escapeHtml(ev.subtitle)}</span>` : ''}
                         </div>
-                        <div class="horse-timeline-date">${escapeHtml(formatCompactDateLabel(ev.sortDate))}</div>
+                        <div class="horse-timeline-date-col">
+                          <div class="horse-timeline-date">${escapeHtml(formatCompactDateLabel(ev.sortDate))}</div>
+                          ${
+                            ev.category === 'health' && ev.healthEventId
+                              ? `
+                                <button
+                                  type="button"
+                                  class="table-icon-button"
+                                  title="Editar registro"
+                                  ${renderActionAttributes({
+                                    action: 'open-modal',
+                                    value: 'horse-health-event',
+                                    meta: {
+                                      horseId: horse.id,
+                                      healthEventId: ev.healthEventId,
+                                      eventType: ev.rawEventType,
+                                      eventDate: ev.sortDate,
+                                      description: ev.rawDescription,
+                                      notes: ev.rawNotes,
+                                      costAmount: ev.rawCostAmount,
+                                    },
+                                  })}
+                                >
+                                  ${renderIcon('edit')}
+                                </button>
+                              `
+                              : ''
+                          }
+                        </div>
                       </article>
                     `).join('')}
                   </div>
@@ -15251,11 +15627,16 @@
     });
   }
 
-  function renderRealNewTaskModal(payload) {
+  function renderRealNewTaskModal(state, payload) {
+    const horseOptions = buildRealHorseSelectOptions(state, {
+      includeBlank: true,
+      blankLabel: 'Sin caballo (evento general del campo)',
+    });
+
     return renderFormModal({
       key: 'new-task',
       title: 'Registrar Evento',
-      subtitle: 'Anotá una visita, cuidado o recordatorio en el calendario',
+      subtitle: 'Anotá una visita, cuidado o recordatorio en el calendario. Si es para un caballo puntual (cirugía, control veterinario, etc.), elegilo abajo para que quede en su historial.',
       submitLabel: 'Guardar',
       submitIcon: 'plus',
       fields: [
@@ -15268,11 +15649,19 @@
           required: true,
         },
         {
+          label: 'Caballo (opcional)',
+          name: 'horseId',
+          type: 'select',
+          value: payload?.horseId ? String(payload.horseId) : '',
+          options: horseOptions,
+          hint: 'Si marcás este evento como hecho, se suma automáticamente al historial de salud del caballo.',
+        },
+        {
           label: 'Título',
           name: 'title',
           type: 'text',
           value: payload?.title || '',
-          placeholder: 'Ej: Visita Ginevra, Desparasitada lote A...',
+          placeholder: 'Ej: Cirugía Imperial, Visita Ginevra, Desparasitada lote A...',
           required: true,
         },
         {
@@ -15976,7 +16365,7 @@
 
       case 'new-task':
         if (isRealSession(state)) {
-          return renderRealNewTaskModal(payload);
+          return renderRealNewTaskModal(state, payload);
         }
 
         return renderFormModal({
@@ -16051,6 +16440,20 @@
       case 'group-shared-paddocks': {
         if (isRealSession(state)) {
           return renderRealGroupSharedPaddocksModal(state, payload);
+        }
+        return '';
+      }
+
+      case 'paddock-entry-correction': {
+        if (isRealSession(state)) {
+          return renderRealPaddockEntryCorrectionModal(state, payload);
+        }
+        return '';
+      }
+
+      case 'paddock-map-upload': {
+        if (isRealSession(state)) {
+          return renderPaddockMapUploadModal(state, payload);
         }
         return '';
       }
@@ -17851,6 +18254,81 @@
     }
   }
 
+  async function submitPaddockEntryCorrectionForm(formData) {
+    const groupId = parsePositiveInt(formData.get('groupId'));
+    const paddockId = parsePositiveInt(formData.get('paddockId'));
+    const eventDate = String(formData.get('eventDate') || '').trim();
+    const notes = String(formData.get('notes') || '').trim();
+
+    if (!groupId || !paddockId) {
+      showToast('No encontramos el grupo o el potrero para corregir el ingreso.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      const payload = await postMutation({
+        action: 'grazing_group_correct_current',
+        groupId,
+        paddockId,
+        eventDate,
+        notes: notes || undefined,
+      });
+
+      const groupName = payload?.group?.name || 'El grupo';
+      const paddockName = payload?.paddock?.name || 'el potrero';
+      await loadAdminDashboards({ closeModal: true });
+      showToast(`${groupName} ahora figura en ${paddockName} desde ${formatDateLabel(eventDate)}.`);
+    } catch (error) {
+      showToast(error.message || 'No pudimos corregir el ingreso.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  async function submitPaddockMapUploadForm(formData) {
+    const viewBox = String(formData.get('viewBox') || '').trim();
+    const boundaryD = String(formData.get('boundaryD') || '').trim();
+    const shapesJson = String(formData.get('shapesJson') || '').trim();
+    const sourceFileName = String(formData.get('sourceFileName') || '').trim();
+
+    if (!viewBox || !shapesJson) {
+      showToast('Subí un SVG válido antes de guardar. Esperá a que termine de leerlo.', 'critical');
+      return;
+    }
+
+    let shapes;
+    try {
+      shapes = JSON.parse(shapesJson);
+    } catch (error) {
+      showToast('No pudimos interpretar los potreros leídos del SVG. Volvé a subir el archivo.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await postMutation({
+        action: 'paddock_map_save',
+        viewBox,
+        boundaryD: boundaryD || undefined,
+        shapes,
+        sourceFileName: sourceFileName || undefined,
+      });
+
+      await loadAdminDashboards({ closeModal: true });
+      showToast('Mapa de potreros actualizado.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar el mapa nuevo.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
   async function submitHorseForm(formData) {
     const currentState = store.getState();
     const isEdit = currentState.modal?.payload?.mode === 'edit';
@@ -18428,6 +18906,8 @@
   async function submitHorseHealthEventForm(formData) {
     const values = formDataToObject(formData);
     const horseId = parsePositiveInt(values.horseId);
+    const healthEventId = parsePositiveInt(values.healthEventId);
+    const isEdit = Boolean(healthEventId);
     const eventType = String(values.eventType || '').trim().toLowerCase();
     const description = String(values.description || '').trim();
     const notes = String(values.notes || '').trim();
@@ -18461,8 +18941,9 @@
         : undefined;
 
       const payload = await postMutation({
-        action: 'health_event_add',
+        action: isEdit ? 'health_event_update' : 'health_event_add',
         horseId,
+        ...(isEdit ? { id: healthEventId } : {}),
         eventType,
         description,
         notes: notes || undefined,
@@ -18473,9 +18954,13 @@
       await restoreHorseHistoryModalAfterSave(formData, horseId);
 
       showToast(
-        `${payload?.horse?.name || 'El caballo'} quedó con registro de ${formatHorseHealthEventTypeLabel(
-          payload?.health_event?.event_type || eventType
-        )}.`
+        isEdit
+          ? `Registro actualizado: ${formatHorseHealthEventTypeLabel(
+              payload?.health_event?.event_type || eventType
+            )}.`
+          : `${payload?.horse?.name || 'El caballo'} quedó con registro de ${formatHorseHealthEventTypeLabel(
+              payload?.health_event?.event_type || eventType
+            )}.`
       );
     } catch (error) {
       showToast(error.message || 'No pudimos guardar el registro veterinario.', 'critical');
@@ -19333,6 +19818,7 @@
     const eventDate = String(values.eventDate || '').trim() || todayDateString();
     const farmName = String(values.farmName || '').trim();
     const notes = String(values.notes || '').trim();
+    const horseId = parsePositiveInt(values.horseId);
 
     if (!title) {
       showToast('Escribí un título para el evento.', 'critical');
@@ -19349,11 +19835,13 @@
         eventDate,
         farmName: farmName || undefined,
         notes: notes || undefined,
+        horseId: horseId || undefined,
       });
 
       await loadAdminDashboards({ closeModal: true });
+      const horseSuffix = payload?.visit?.horse_name ? ` para ${payload.visit.horse_name}` : '';
       showToast(
-        `"${payload?.visit?.title || title}" guardado para el ${formatDateLabel(payload?.visit?.event_date || eventDate)}.`
+        `"${payload?.visit?.title || title}"${horseSuffix} guardado para el ${formatDateLabel(payload?.visit?.event_date || eventDate)}.`
       );
     } catch (error) {
       showToast(error.message || 'No pudimos guardar el evento.', 'critical');
@@ -21350,6 +21838,16 @@
           return;
         }
 
+        if (modalKey === 'paddock-entry-correction') {
+          submitPaddockEntryCorrectionForm(new FormData(modalForm));
+          return;
+        }
+
+        if (modalKey === 'paddock-map-upload') {
+          submitPaddockMapUploadForm(new FormData(modalForm));
+          return;
+        }
+
         if (modalKey === 'horse-form') {
           submitHorseForm(new FormData(modalForm));
           return;
@@ -21492,6 +21990,14 @@
   function handleFieldInput(event) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    if (target.hasAttribute('data-paddock-map-file-input')) {
+      if (event.type !== 'change') {
+        return;
+      }
+      handlePaddockMapFileSelected(target);
       return;
     }
 
