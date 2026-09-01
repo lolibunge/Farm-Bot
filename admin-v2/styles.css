@@ -2043,6 +2043,19 @@ button {
   white-space: nowrap;
 }
 
+.timeline-age-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.timeline-age-col .table-icon-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
 .info-banner,
 .hero-banner {
   padding: 18px;
@@ -2676,11 +2689,21 @@ button {
   border-color: rgba(41, 104, 244, 0.24);
 }
 
+.owner-horse-search {
+  margin-top: 8px;
+}
+
 .modal-check-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
   margin-top: 8px;
+}
+
+.modal-check-grid-empty {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted, #8a93a0);
 }
 
 .modal-check-row {
