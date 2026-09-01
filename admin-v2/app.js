@@ -5857,11 +5857,20 @@
         ? `
           <div class="modal-field modal-field--wide">
             <span>Caballos asignados</span>
-            <div class="modal-check-grid">
+            <label class="search-field owner-horse-search">
+              ${renderIcon('search')}
+              <input
+                type="search"
+                placeholder="Buscar caballo por nombre..."
+                data-owner-horse-filter
+                autocomplete="off"
+              />
+            </label>
+            <div class="modal-check-grid" data-owner-horse-grid>
               ${horses
                 .map(
                   (horse) => `
-                    <label class="modal-check-row">
+                    <label class="modal-check-row" data-owner-horse-name="${escapeHtml(normalizePaddockMapName(horse.name))}">
                       <input
                         type="checkbox"
                         name="horseId"
@@ -5874,6 +5883,7 @@
                 )
                 .join('')}
             </div>
+            <p class="modal-check-grid-empty" data-owner-horse-empty hidden>Ningún caballo coincide con esa búsqueda.</p>
           </div>
         `
         : '',
@@ -8127,6 +8137,30 @@
         mapUploadUnmatchedNames: [],
         mapUploadSkippedCount: 0,
       }));
+    }
+  }
+
+  function filterOwnerHorseCheckboxRows(inputEl) {
+    const grid = inputEl.closest('.modal-field')?.querySelector('[data-owner-horse-grid]');
+    const emptyNote = inputEl.closest('.modal-field')?.querySelector('[data-owner-horse-empty]');
+    if (!grid) {
+      return;
+    }
+
+    const query = normalizePaddockMapName(inputEl.value || '');
+    let visibleCount = 0;
+
+    grid.querySelectorAll('[data-owner-horse-name]').forEach((row) => {
+      const name = row.getAttribute('data-owner-horse-name') || '';
+      const isVisible = !query || name.includes(query);
+      row.style.display = isVisible ? '' : 'none';
+      if (isVisible) {
+        visibleCount += 1;
+      }
+    });
+
+    if (emptyNote) {
+      emptyNote.hidden = visibleCount !== 0;
     }
   }
 
@@ -11596,6 +11630,13 @@
         tone: 'purple',
         icon: 'shield',
         isActive: false,
+        category: 'deworming',
+        dewormEventId: row.id,
+        rawProductName: row.product_name || '',
+        rawEventDate: date,
+        rawSecondDoseDate: row.second_dose_date || '',
+        rawNextDueDate: row.next_due_date || '',
+        rawCostAmount: row.cost_amount != null ? row.cost_amount : '',
       });
     }
 
@@ -11609,6 +11650,12 @@
         tone: 'orange',
         icon: 'work',
         isActive: false,
+        category: 'farrier',
+        farrierEventId: row.id,
+        rawServiceType: row.service_type || '',
+        rawEventDate: date,
+        rawNextDueDate: row.next_due_date || '',
+        rawCostAmount: row.cost_amount != null ? row.cost_amount : '',
       });
     }
 
@@ -11671,7 +11718,22 @@
     return [...rest, ...collapsed];
   }
 
-  function renderRealRecordsTimeline(events, isFiltered) {
+  function getRealHorseIdByName(state, name) {
+    const horses = getRealHorseDashboard(state)?.horses || [];
+    const normalizedName = String(name || '').trim();
+    if (!normalizedName) {
+      return null;
+    }
+    const match = horses.find((horse) => String(horse.name || '').trim() === normalizedName);
+    return match ? match.id : null;
+  }
+
+  function extractIsoDateFromText(text) {
+    const match = /\d{4}-\d{2}-\d{2}/.exec(String(text || ''));
+    return match ? match[0] : '';
+  }
+
+  function renderRealRecordsTimeline(events, isFiltered, state) {
     const sorted = events.slice().sort((a, b) => {
       const ta = a.event_at || a.event_date || '';
       const tb = b.event_at || b.event_date || '';
@@ -11690,6 +11752,40 @@
             const cm = getCalendarCategoryMeta(event.category);
             const detailParts = [event.subtitle, event.detail].filter(Boolean);
             const metaParts = [event.meta, formatCompactDateLabel(event.event_date)].filter(Boolean);
+            const isEditableHealth = event.category === 'health' && /^health-\d+$/.test(String(event.key || ''));
+            const healthHorseId = isEditableHealth ? getRealHorseIdByName(state, event.subtitle) : null;
+            const healthEventId = isEditableHealth
+              ? parsePositiveInt(String(event.key).replace(/^health-/, ''))
+              : null;
+
+            const isEditableFarrier = event.category === 'farrier' && /^farrier-\d+$/.test(String(event.key || ''));
+            const farrierHorseId = isEditableFarrier ? getRealHorseIdByName(state, event.subtitle) : null;
+            const farrierEventId = isEditableFarrier
+              ? parsePositiveInt(String(event.key).replace(/^farrier-/, ''))
+              : null;
+            const farrierNextDueDate = isEditableFarrier ? extractIsoDateFromText(event.detail) : '';
+
+            const isEditableDeworm = event.category === 'deworming' && /^deworm-\d+$/.test(String(event.key || ''));
+            const dewormHorseId = isEditableDeworm ? getRealHorseIdByName(state, event.subtitle) : null;
+            const dewormEventId = isEditableDeworm
+              ? parsePositiveInt(String(event.key).replace(/^deworm-/, ''))
+              : null;
+            const dewormNextDueDate = isEditableDeworm ? extractIsoDateFromText(event.detail) : '';
+            const dewormSecondDoseDate = isEditableDeworm ? extractIsoDateFromText(event.meta) : '';
+
+            const isEditableRain = event.category === 'rain' && /^rain-\d+$/.test(String(event.key || ''));
+            const rainEventId = isEditableRain
+              ? parsePositiveInt(String(event.key).replace(/^rain-/, ''))
+              : null;
+
+            const isEditableFrost = event.category === 'frost' && /^frost-\d+$/.test(String(event.key || ''));
+            const frostEventId = isEditableFrost
+              ? parsePositiveInt(String(event.key).replace(/^frost-/, ''))
+              : null;
+            const frostIntensity = isEditableFrost
+              ? String(event.title || '').toLowerCase().replace(/\s*frost$/, '').trim()
+              : '';
+
             return `
               <article class="timeline-row">
                 <span class="timeline-icon timeline-icon--${escapeHtml(cm.tone)}">${renderIcon(cm.icon)}</span>
@@ -11701,7 +11797,129 @@
                   ${detailParts.length ? `<p>${escapeHtml(detailParts.join(' · '))}</p>` : ''}
                   <span>${escapeHtml(metaParts.join(' · '))}</span>
                 </div>
-                <div class="timeline-age">${escapeHtml(formatCompactDateLabel(event.event_date))}</div>
+                <div class="timeline-age-col">
+                  <div class="timeline-age">${escapeHtml(formatCompactDateLabel(event.event_date))}</div>
+                  ${
+                    healthHorseId && healthEventId
+                      ? `
+                        <button
+                          type="button"
+                          class="table-icon-button"
+                          title="Editar registro"
+                          ${renderActionAttributes({
+                            action: 'open-modal',
+                            value: 'horse-health-event',
+                            meta: {
+                              horseId: healthHorseId,
+                              healthEventId,
+                              eventType: event.title || '',
+                              eventDate: event.event_date || '',
+                              description: event.detail || '',
+                              notes: event.notes || '',
+                            },
+                          })}
+                        >
+                          ${renderIcon('edit')}
+                        </button>
+                      `
+                      : ''
+                  }
+                  ${
+                    farrierHorseId && farrierEventId
+                      ? `
+                        <button
+                          type="button"
+                          class="table-icon-button"
+                          title="Editar registro"
+                          ${renderActionAttributes({
+                            action: 'open-modal',
+                            value: 'horse-farrier-event',
+                            meta: {
+                              horseId: farrierHorseId,
+                              farrierEventId,
+                              serviceType: event.title || '',
+                              eventDate: event.event_date || '',
+                              nextDueDate: farrierNextDueDate,
+                            },
+                          })}
+                        >
+                          ${renderIcon('edit')}
+                        </button>
+                      `
+                      : ''
+                  }
+                  ${
+                    dewormHorseId && dewormEventId
+                      ? `
+                        <button
+                          type="button"
+                          class="table-icon-button"
+                          title="Editar registro"
+                          ${renderActionAttributes({
+                            action: 'open-modal',
+                            value: 'horse-deworm-event-edit',
+                            meta: {
+                              horseId: dewormHorseId,
+                              dewormEventId,
+                              productName: event.title || '',
+                              eventDate: event.event_date || '',
+                              secondDoseDate: dewormSecondDoseDate,
+                              nextDueDate: dewormNextDueDate,
+                            },
+                          })}
+                        >
+                          ${renderIcon('edit')}
+                        </button>
+                      `
+                      : ''
+                  }
+                  ${
+                    rainEventId
+                      ? `
+                        <button
+                          type="button"
+                          class="table-icon-button"
+                          title="Editar registro"
+                          ${renderActionAttributes({
+                            action: 'open-modal',
+                            value: 'register-rain',
+                            meta: {
+                              rainEventId,
+                              rainMm: event.metric_value != null ? event.metric_value : '',
+                              eventDate: event.event_date || '',
+                              notes: event.notes || '',
+                            },
+                          })}
+                        >
+                          ${renderIcon('edit')}
+                        </button>
+                      `
+                      : ''
+                  }
+                  ${
+                    frostEventId
+                      ? `
+                        <button
+                          type="button"
+                          class="table-icon-button"
+                          title="Editar registro"
+                          ${renderActionAttributes({
+                            action: 'open-modal',
+                            value: 'register-frost',
+                            meta: {
+                              frostEventId,
+                              intensity: frostIntensity,
+                              eventDate: event.event_date || '',
+                              notes: event.notes || '',
+                            },
+                          })}
+                        >
+                          ${renderIcon('edit')}
+                        </button>
+                      `
+                      : ''
+                  }
+                </div>
               </article>
             `;
           }).join('')}
@@ -11857,7 +12075,7 @@
           ${filterBar}
           ${loadingBanner}
           ${renderSegmentedTabs(state, 'records', RECORDS_TABS)}
-          ${activeView === 'categories' ? renderRealRecordsByCategory(events, isFiltered, state) : renderRealRecordsTimeline(events, isFiltered)}
+          ${activeView === 'categories' ? renderRealRecordsByCategory(events, isFiltered, state) : renderRealRecordsTimeline(events, isFiltered, state)}
         </div>
       `;
     }
@@ -14421,6 +14639,99 @@
     });
   }
 
+  function renderHorseDewormEventEditModal(state, payload) {
+    const horseId = parsePositiveInt(payload?.horseId);
+    const horse = horseId ? getRealHorseById(state, horseId) : null;
+    if (!horse) {
+      return '';
+    }
+
+    const dewormEventId = parsePositiveInt(payload?.dewormEventId);
+    if (!dewormEventId) {
+      return '';
+    }
+
+    const eventDate = String(payload?.eventDate || todayDateString()).trim() || todayDateString();
+
+    return renderFormModal({
+      key: 'horse-deworm-event-edit',
+      title: `Editar desparasitación de ${horse.name}`,
+      subtitle: 'Corregí el producto, las fechas o el costo de este registro.',
+      submitLabel: 'Guardar cambios',
+      submitIcon: 'shield',
+      columns: 2,
+      callout: {
+        title: 'Editando un registro existente',
+        detail: 'Si cambiás las fechas, recalculamos el próximo ciclo salvo que lo dejes cargado manualmente.',
+      },
+      fields: [
+        {
+          label: 'Producto',
+          name: 'productName',
+          type: 'text',
+          value: payload?.productName || '',
+          placeholder: 'Ej. Eqvalan, ivermectina...',
+          required: true,
+          layout: 'wide',
+          attributes: {
+            'data-care-form-field': 'productName',
+          },
+        },
+        {
+          label: 'Fecha de primera dosis',
+          name: 'eventDate',
+          type: 'date',
+          value: eventDate,
+          required: true,
+          attributes: {
+            'data-care-form-field': 'eventDate',
+          },
+        },
+        {
+          label: 'Fecha de repaso (opcional)',
+          name: 'secondDoseDate',
+          type: 'date',
+          value: payload?.secondDoseDate || '',
+          hint: 'Dejala vacía si todavía no se dio el repaso.',
+          attributes: {
+            'data-care-form-field': 'secondDoseDate',
+          },
+        },
+        {
+          label: 'Próximo ciclo (opcional)',
+          name: 'nextDueDate',
+          type: 'date',
+          value: payload?.nextDueDate || '',
+          hint: 'Si la dejás vacía, la calculamos automático según las fechas cargadas.',
+          attributes: {
+            'data-care-form-field': 'nextDueDate',
+          },
+        },
+        {
+          label: 'Costo ($)',
+          name: 'costAmount',
+          type: 'number',
+          value: payload?.costAmount || '',
+          min: '0',
+          step: 'any',
+          placeholder: 'Opcional',
+          hint: 'Si lo cargás, entra al costo mensual del propietario.',
+        },
+      ],
+      extraBody: `
+        <input type="hidden" name="horseId" value="${escapeHtml(String(horseId))}" />
+        <input type="hidden" name="dewormEventId" value="${escapeHtml(String(dewormEventId))}" />
+        <input type="hidden" name="returnMonth" value="${escapeHtml(String(payload?.returnMonth || ''))}" />
+        <input type="hidden" name="returnFeedPlanOpen" value="${escapeHtml(String(payload?.returnFeedPlanOpen || false))}" />
+        <input type="hidden" name="returnFeedHistoryOpen" value="${escapeHtml(String(payload?.returnFeedHistoryOpen || false))}" />
+      `,
+      footerButtons: [
+        { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Guardar cambios', tone: 'primary', icon: 'shield', submit: true },
+      ],
+    });
+  }
+
   function renderHorseFarrierEventModal(state, payload) {
     const horseId = parsePositiveInt(payload?.horseId);
     const horse = horseId ? getRealHorseById(state, horseId) : null;
@@ -14428,6 +14739,8 @@
       return '';
     }
 
+    const farrierEventId = parsePositiveInt(payload?.farrierEventId);
+    const isEdit = Boolean(farrierEventId);
     const eventDate = String(payload?.eventDate || todayDateString()).trim() || todayDateString();
     const serviceType = normalizeFarrierServiceTypeValue(payload?.serviceType || 'desvasado');
     const autoNextDueDate =
@@ -14435,9 +14748,11 @@
 
     return renderFormModal({
       key: 'horse-farrier-event',
-      title: `Registrar herrero para ${horse.name}`,
-      subtitle: 'Podés cargar desvasado o herrado desde el historial del caballo.',
-      submitLabel: 'Guardar herrero',
+      title: isEdit ? `Editar herrero de ${horse.name}` : `Registrar herrero para ${horse.name}`,
+      subtitle: isEdit
+        ? 'Corregí el servicio, la fecha o el próximo control.'
+        : 'Podés cargar desvasado o herrado desde el historial del caballo.',
+      submitLabel: isEdit ? 'Guardar cambios' : 'Guardar herrero',
       submitIcon: 'work',
       columns: 2,
       callout: {
@@ -14493,13 +14808,14 @@
       ],
       extraBody: `
         <input type="hidden" name="horseId" value="${escapeHtml(String(horseId))}" />
+        ${isEdit ? `<input type="hidden" name="farrierEventId" value="${escapeHtml(String(farrierEventId))}" />` : ''}
         <input type="hidden" name="returnMonth" value="${escapeHtml(String(payload?.returnMonth || ''))}" />
         <input type="hidden" name="returnFeedPlanOpen" value="${escapeHtml(String(payload?.returnFeedPlanOpen || false))}" />
         <input type="hidden" name="returnFeedHistoryOpen" value="${escapeHtml(String(payload?.returnFeedHistoryOpen || false))}" />
       `,
       footerButtons: [
         { label: 'Cancelar', tone: 'secondary', trigger: { action: 'close-modal' } },
-        { label: 'Guardar herrero', tone: 'primary', icon: 'work', submit: true },
+        { label: isEdit ? 'Guardar cambios' : 'Guardar herrero', tone: 'primary', icon: 'work', submit: true },
       ],
     });
   }
@@ -15130,6 +15446,57 @@
                               `
                               : ''
                           }
+                          ${
+                            ev.category === 'farrier' && ev.farrierEventId
+                              ? `
+                                <button
+                                  type="button"
+                                  class="table-icon-button"
+                                  title="Editar registro"
+                                  ${renderActionAttributes({
+                                    action: 'open-modal',
+                                    value: 'horse-farrier-event',
+                                    meta: {
+                                      horseId: horse.id,
+                                      farrierEventId: ev.farrierEventId,
+                                      serviceType: ev.rawServiceType,
+                                      eventDate: ev.rawEventDate,
+                                      nextDueDate: ev.rawNextDueDate,
+                                      costAmount: ev.rawCostAmount,
+                                    },
+                                  })}
+                                >
+                                  ${renderIcon('edit')}
+                                </button>
+                              `
+                              : ''
+                          }
+                          ${
+                            ev.category === 'deworming' && ev.dewormEventId
+                              ? `
+                                <button
+                                  type="button"
+                                  class="table-icon-button"
+                                  title="Editar registro"
+                                  ${renderActionAttributes({
+                                    action: 'open-modal',
+                                    value: 'horse-deworm-event-edit',
+                                    meta: {
+                                      horseId: horse.id,
+                                      dewormEventId: ev.dewormEventId,
+                                      productName: ev.rawProductName,
+                                      eventDate: ev.rawEventDate,
+                                      secondDoseDate: ev.rawSecondDoseDate,
+                                      nextDueDate: ev.rawNextDueDate,
+                                      costAmount: ev.rawCostAmount,
+                                    },
+                                  })}
+                                >
+                                  ${renderIcon('edit')}
+                                </button>
+                              `
+                              : ''
+                          }
                         </div>
                       </article>
                     `).join('')}
@@ -15465,11 +15832,16 @@
   }
 
   function renderRealRainModal(payload) {
+    const rainEventId = parsePositiveInt(payload?.rainEventId);
+    const isEdit = Boolean(rainEventId);
+
     return renderFormModal({
       key: 'register-rain',
-      title: 'Registrar Lluvia',
-      subtitle: 'Guarda precipitaciones para todo el campo',
-      submitLabel: 'Registrar Lluvia',
+      title: isEdit ? 'Editar registro de lluvia' : 'Registrar Lluvia',
+      subtitle: isEdit
+        ? 'Corregí la cantidad, la fecha o las notas de este registro.'
+        : 'Guarda precipitaciones para todo el campo',
+      submitLabel: isEdit ? 'Guardar cambios' : 'Registrar Lluvia',
       submitIcon: 'rain',
       callout: {
         title: 'Registro global',
@@ -15498,19 +15870,28 @@
           name: 'notes',
           type: 'textarea',
           rows: 4,
+          value: payload?.notes || '',
           placeholder: 'Ejemplo: lluvia continua durante la noche.',
           layout: 'wide',
         },
       ],
+      extraBody: isEdit
+        ? `<input type="hidden" name="rainEventId" value="${escapeHtml(String(rainEventId))}" />`
+        : '',
     });
   }
 
   function renderRealFrostModal(payload) {
+    const frostEventId = parsePositiveInt(payload?.frostEventId);
+    const isEdit = Boolean(frostEventId);
+
     return renderFormModal({
       key: 'register-frost',
-      title: 'Registrar Helada',
-      subtitle: 'Anota eventos climáticos para todo el campo',
-      submitLabel: 'Registrar Helada',
+      title: isEdit ? 'Editar registro de helada' : 'Registrar Helada',
+      subtitle: isEdit
+        ? 'Corregí la intensidad, la fecha o las notas de este registro.'
+        : 'Anota eventos climáticos para todo el campo',
+      submitLabel: isEdit ? 'Guardar cambios' : 'Registrar Helada',
       submitIcon: 'snow',
       callout: {
         title: 'Evento climático global',
@@ -15537,10 +15918,14 @@
           name: 'notes',
           type: 'textarea',
           rows: 4,
+          value: payload?.notes || '',
           placeholder: 'Ejemplo: pasto escarchado a primera hora.',
           layout: 'wide',
         },
       ],
+      extraBody: isEdit
+        ? `<input type="hidden" name="frostEventId" value="${escapeHtml(String(frostEventId))}" />`
+        : '',
     });
   }
 
@@ -16934,6 +17319,12 @@
         }
         return '';
 
+      case 'horse-deworm-event-edit':
+        if (isRealSession(state)) {
+          return renderHorseDewormEventEditModal(state, payload);
+        }
+        return '';
+
       case 'horse-farrier-event':
         if (isRealSession(state)) {
           return renderHorseFarrierEventModal(state, payload);
@@ -17234,6 +17625,7 @@
         };
       case 'horse-deworm-event':
       case 'horse-deworm-second-dose':
+      case 'horse-deworm-event-edit':
       case 'horse-farrier-event':
       case 'horse-health-event':
       case 'horse-care-batch-farrier':
@@ -18843,9 +19235,82 @@
     }
   }
 
+  async function submitHorseDewormEventEditForm(formData) {
+    const values = formDataToObject(formData);
+    const horseId = parsePositiveInt(values.horseId);
+    const dewormEventId = parsePositiveInt(values.dewormEventId);
+    const productName = String(values.productName || '').trim();
+    const eventDate = String(values.eventDate || '').trim() || todayDateString();
+    const secondDoseDate = String(values.secondDoseDate || '').trim();
+    const nextDueDate = String(values.nextDueDate || '').trim();
+
+    if (!horseId) {
+      showToast('No encontramos el caballo para editar la desparasitación.', 'critical');
+      return;
+    }
+
+    if (!dewormEventId) {
+      showToast('No encontramos el registro de desparasitación a editar.', 'critical');
+      return;
+    }
+
+    if (!productName) {
+      showToast('Cargá el producto desparasitante.', 'critical');
+      return;
+    }
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida para la desparasitación.', 'critical');
+      return;
+    }
+
+    if (secondDoseDate && !isValidDateString(secondDoseDate)) {
+      showToast('La fecha de repaso tiene que ser válida.', 'critical');
+      return;
+    }
+
+    if (nextDueDate && !isValidDateString(nextDueDate)) {
+      showToast('La próxima fecha de ciclo tiene que ser válida.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+
+    try {
+      const costAmount = values.costAmount !== undefined && values.costAmount !== ''
+        ? parseFloat(values.costAmount)
+        : undefined;
+
+      const payload = await postMutation({
+        action: 'deworm_event_update',
+        id: dewormEventId,
+        horseId,
+        productName,
+        eventDate,
+        secondDoseDate: secondDoseDate || undefined,
+        nextDueDate: nextDueDate || undefined,
+        costAmount,
+      });
+
+      await restoreHorseHistoryModalAfterSave(formData, horseId);
+
+      showToast(
+        `Desparasitación actualizada: ${payload?.deworming_event?.product_name || productName}. Próximo ciclo ${formatDateLabel(
+          payload?.deworming_event?.next_due_date || nextDueDate || shiftIsoDateString(eventDate, 20)
+        )}.`
+      );
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar los cambios de la desparasitación.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
   async function submitHorseFarrierForm(formData) {
     const values = formDataToObject(formData);
     const horseId = parsePositiveInt(values.horseId);
+    const farrierEventId = parsePositiveInt(values.farrierEventId);
+    const isEdit = Boolean(farrierEventId);
     const serviceType = String(values.serviceType || '').trim();
     const eventDate = String(values.eventDate || '').trim() || todayDateString();
     const nextDueDate = String(values.nextDueDate || '').trim();
@@ -18878,8 +19343,9 @@
         : undefined;
 
       const payload = await postMutation({
-        action: 'farrier_event_add',
+        action: isEdit ? 'farrier_event_update' : 'farrier_event_add',
         horseId,
+        ...(isEdit ? { id: farrierEventId } : {}),
         serviceType,
         eventDate,
         nextDueDate: nextDueDate || undefined,
@@ -18889,12 +19355,16 @@
       await restoreHorseHistoryModalAfterSave(formData, horseId);
 
       showToast(
-        `${payload?.horse?.name || 'El caballo'} quedó con ${formatFarrierServiceTypeLabel(
-          payload?.farrier_event?.service_type || serviceType
-        )}. Próximo control ${formatDateLabel(
-          payload?.farrier_event?.next_due_date ||
-            shiftIsoDateString(eventDate, isShoeingServiceType(serviceType) ? 45 : 60)
-        )}.`
+        isEdit
+          ? `Herrero actualizado: ${formatFarrierServiceTypeLabel(
+              payload?.farrier_event?.service_type || serviceType
+            )}. Próximo control ${formatDateLabel(payload?.farrier_event?.next_due_date || nextDueDate)}.`
+          : `${payload?.horse?.name || 'El caballo'} quedó con ${formatFarrierServiceTypeLabel(
+              payload?.farrier_event?.service_type || serviceType
+            )}. Próximo control ${formatDateLabel(
+              payload?.farrier_event?.next_due_date ||
+                shiftIsoDateString(eventDate, isShoeingServiceType(serviceType) ? 45 : 60)
+            )}.`
       );
     } catch (error) {
       showToast(error.message || 'No pudimos guardar el servicio de herrero.', 'critical');
@@ -19726,6 +20196,8 @@
 
   async function submitRainForm(formData) {
     const values = formDataToObject(formData);
+    const rainEventId = parsePositiveInt(values.rainEventId);
+    const isEdit = Boolean(rainEventId);
     const rainMm = Number(values.rainMm);
     const eventDate = String(values.eventDate || '').trim() || todayDateString();
     const notes = String(values.notes || '').trim();
@@ -19735,11 +20207,17 @@
       return;
     }
 
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida para la lluvia.', 'critical');
+      return;
+    }
+
     setState({ loading: true });
 
     try {
       const payload = await postMutation({
-        action: 'rain_save',
+        action: isEdit ? 'rain_event_update' : 'rain_save',
+        ...(isEdit ? { id: rainEventId } : {}),
         rainMm,
         eventDate,
         notes: notes || undefined,
@@ -19750,9 +20228,13 @@
         loadWeatherDashboard().catch(() => {});
       }
       showToast(
-        `Lluvia registrada para todo el campo: ${payload?.rain?.rain_mm ?? rainMm} mm el ${formatDateLabel(
-          payload?.rain?.event_date || eventDate
-        )}.`
+        isEdit
+          ? `Lluvia actualizada: ${payload?.rain?.rain_mm ?? rainMm} mm el ${formatDateLabel(
+              payload?.rain?.event_date || eventDate
+            )}.`
+          : `Lluvia registrada para todo el campo: ${payload?.rain?.rain_mm ?? rainMm} mm el ${formatDateLabel(
+              payload?.rain?.event_date || eventDate
+            )}.`
       );
     } catch (error) {
       showToast(error.message || 'No pudimos guardar la lluvia.', 'critical');
@@ -19763,15 +20245,23 @@
 
   async function submitFrostForm(formData) {
     const values = formDataToObject(formData);
+    const frostEventId = parsePositiveInt(values.frostEventId);
+    const isEdit = Boolean(frostEventId);
     const intensity = String(values.intensity || '').trim() || 'moderate';
     const eventDate = String(values.eventDate || '').trim() || todayDateString();
     const notes = String(values.notes || '').trim();
+
+    if (!isValidDateString(eventDate)) {
+      showToast('Elegí una fecha válida para la helada.', 'critical');
+      return;
+    }
 
     setState({ loading: true });
 
     try {
       const payload = await postMutation({
-        action: 'frost_save',
+        action: isEdit ? 'frost_event_update' : 'frost_save',
+        ...(isEdit ? { id: frostEventId } : {}),
         intensity,
         eventDate,
         notes: notes || undefined,
@@ -19782,9 +20272,13 @@
         loadWeatherDashboard().catch(() => {});
       }
       showToast(
-        `Helada ${formatValueLabel(payload?.frost?.intensity || intensity, FROST_INTENSITY_OPTIONS).toLowerCase()} registrada para todo el campo el ${formatDateLabel(
-          payload?.frost?.event_date || eventDate
-        )}.`
+        isEdit
+          ? `Helada actualizada: ${formatValueLabel(payload?.frost?.intensity || intensity, FROST_INTENSITY_OPTIONS).toLowerCase()} el ${formatDateLabel(
+              payload?.frost?.event_date || eventDate
+            )}.`
+          : `Helada ${formatValueLabel(payload?.frost?.intensity || intensity, FROST_INTENSITY_OPTIONS).toLowerCase()} registrada para todo el campo el ${formatDateLabel(
+              payload?.frost?.event_date || eventDate
+            )}.`
       );
     } catch (error) {
       showToast(error.message || 'No pudimos guardar la helada.', 'critical');
@@ -21953,6 +22447,11 @@
           return;
         }
 
+        if (modalKey === 'horse-deworm-event-edit') {
+          submitHorseDewormEventEditForm(new FormData(modalForm));
+          return;
+        }
+
         if (modalKey === 'horse-farrier-event') {
           submitHorseFarrierForm(new FormData(modalForm));
           return;
@@ -21998,6 +22497,11 @@
         return;
       }
       handlePaddockMapFileSelected(target);
+      return;
+    }
+
+    if (target.hasAttribute('data-owner-horse-filter')) {
+      filterOwnerHorseCheckboxRows(target);
       return;
     }
 

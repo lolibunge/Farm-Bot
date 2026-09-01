@@ -187,6 +187,7 @@ module.exports = async (req, res) => {
             d.product_name,
             d.second_dose_date,
             d.next_due_date,
+            d.cost_amount,
             d.created_at,
             ROW_NUMBER() OVER (
               PARTITION BY LOWER(d.product_name), COALESCE(d.event_date, d.created_at::date)
@@ -203,7 +204,8 @@ module.exports = async (req, res) => {
           event_date,
           product_name,
           second_dose_date,
-          next_due_date
+          next_due_date,
+          cost_amount::float AS cost_amount
         FROM ranked
         WHERE rn = 1
         ORDER BY COALESCE(event_date, created_at::date) DESC, id DESC
@@ -218,7 +220,8 @@ module.exports = async (req, res) => {
           COALESCE(f.event_date::timestamp, f.created_at) AS at,
           f.event_date,
           f.service_type,
-          f.next_due_date
+          f.next_due_date,
+          f.cost_amount::float AS cost_amount
         FROM farrier_events f
         WHERE f.horse_id = $1
         ORDER BY COALESCE(f.event_date, f.created_at::date) DESC, f.id DESC
@@ -303,6 +306,7 @@ module.exports = async (req, res) => {
         product_name: row.product_name,
         second_dose_date: toIsoDateString(row.second_dose_date),
         next_due_date: toIsoDateString(row.next_due_date),
+        cost_amount: row.cost_amount != null ? Number(row.cost_amount) : null,
       })),
       farrier_history: (farrierModuleEnabled ? farrierHistoryResult.rows : []).map((row) => ({
         id: row.id,
@@ -310,6 +314,7 @@ module.exports = async (req, res) => {
         event_date: toIsoDateString(row.event_date),
         service_type: row.service_type,
         next_due_date: toIsoDateString(row.next_due_date),
+        cost_amount: row.cost_amount != null ? Number(row.cost_amount) : null,
       })),
       health_history: (healthModuleEnabled ? healthHistoryResult.rows : []).map((row) => ({
         id: row.id,

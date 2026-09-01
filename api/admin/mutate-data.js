@@ -90,11 +90,11 @@ function getModuleKeyForAdminAction(action) {
     return 'feed';
   }
 
-  if (['deworm_event_add', 'deworm_second_dose_set'].includes(action)) {
+  if (['deworm_event_add', 'deworm_second_dose_set', 'deworm_event_update'].includes(action)) {
     return 'deworm';
   }
 
-  if (action === 'farrier_event_add') {
+  if (action === 'farrier_event_add' || action === 'farrier_event_update') {
     return 'farrier';
   }
 
@@ -106,7 +106,13 @@ function getModuleKeyForAdminAction(action) {
     return 'training';
   }
 
-  if (action === 'rain_save' || action === 'rain_weather_sync' || action === 'frost_save') {
+  if (
+    action === 'rain_save' ||
+    action === 'rain_weather_sync' ||
+    action === 'frost_save' ||
+    action === 'rain_event_update' ||
+    action === 'frost_event_update'
+  ) {
     return 'rain';
   }
 
@@ -2511,6 +2517,155 @@ module.exports = async (req, res) => {
       return;
     }
 
+    if (action === 'farrier_event_update') {
+      const id = parsePositiveInt(body.id);
+      const serviceType = String(body.serviceType || '').trim();
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : '';
+      const nextDueDateRaw = body.nextDueDate ? String(body.nextDueDate).trim() : '';
+      const hasCostAmount = Object.prototype.hasOwnProperty.call(body, 'costAmount');
+      const costAmount = hasCostAmount ? parseNonNegativeNumber(body.costAmount) : undefined;
+
+      if (!id) {
+        res.status(400).json({ ok: false, error: 'id is required' });
+        return;
+      }
+
+      if (!serviceType) {
+        res.status(400).json({ ok: false, error: 'serviceType is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      let nextDueDate = nextDueDateRaw;
+      if (nextDueDate && !isValidDateString(nextDueDate)) {
+        res.status(400).json({ ok: false, error: 'nextDueDate must be YYYY-MM-DD' });
+        return;
+      }
+      if (!nextDueDate) {
+        nextDueDate = addDaysToDateString(eventDateRaw, getFarrierDaysUntilNext(serviceType));
+      }
+
+      const updateResult = await pool.query(
+        `
+        UPDATE farrier_events
+        SET
+          service_type = $1,
+          event_date = $2,
+          next_due_date = $3,
+          cost_amount = CASE WHEN $5 THEN $4 ELSE cost_amount END
+        WHERE id = $6
+        RETURNING id, horse_id, event_date, next_due_date, cost_amount::float AS cost_amount
+        `,
+        [serviceType, eventDateRaw, nextDueDate, costAmount, hasCostAmount, id]
+      );
+
+      if (updateResult.rows.length === 0) {
+        res.status(404).json({ ok: false, error: 'Farrier record not found' });
+        return;
+      }
+
+      const row = updateResult.rows[0];
+      const horseResult = await pool.query(`SELECT id, name FROM horses WHERE id = $1 LIMIT 1`, [row.horse_id]);
+
+      res.status(200).json({
+        ok: true,
+        action,
+        horse: horseResult.rows[0] || null,
+        farrier_event: {
+          id: row.id,
+          service_type: serviceType,
+          event_date: toIsoDateString(row.event_date),
+          next_due_date: toIsoDateString(row.next_due_date),
+          cost_amount: row.cost_amount,
+        },
+      });
+      return;
+    }
+
+    if (action === 'deworm_event_update') {
+      const id = parsePositiveInt(body.id);
+      const productName = String(body.productName || '').trim();
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : '';
+      const secondDoseDateRaw = body.secondDoseDate ? String(body.secondDoseDate).trim() : '';
+      const nextDueDateRaw = body.nextDueDate ? String(body.nextDueDate).trim() : '';
+      const hasCostAmount = Object.prototype.hasOwnProperty.call(body, 'costAmount');
+      const costAmount = hasCostAmount ? parseNonNegativeNumber(body.costAmount) : undefined;
+
+      if (!id) {
+        res.status(400).json({ ok: false, error: 'id is required' });
+        return;
+      }
+
+      if (!productName) {
+        res.status(400).json({ ok: false, error: 'productName is required' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      if (secondDoseDateRaw && !isValidDateString(secondDoseDateRaw)) {
+        res.status(400).json({ ok: false, error: 'secondDoseDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      if (nextDueDateRaw && !isValidDateString(nextDueDateRaw)) {
+        res.status(400).json({ ok: false, error: 'nextDueDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      let nextDueDate = nextDueDateRaw;
+      if (!nextDueDate) {
+        nextDueDate = secondDoseDateRaw
+          ? addMonthsToDateString(secondDoseDateRaw, 3)
+          : addDaysToDateString(eventDateRaw, 20);
+      }
+
+      const updateResult = await pool.query(
+        `
+        UPDATE deworming_events
+        SET
+          product_name = $1,
+          event_date = $2,
+          second_dose_date = $3,
+          next_due_date = $4,
+          cost_amount = CASE WHEN $6 THEN $5 ELSE cost_amount END
+        WHERE id = $7
+        RETURNING id, horse_id, event_date, second_dose_date, next_due_date, cost_amount::float AS cost_amount
+        `,
+        [productName, eventDateRaw, secondDoseDateRaw || null, nextDueDate, costAmount, hasCostAmount, id]
+      );
+
+      if (updateResult.rows.length === 0) {
+        res.status(404).json({ ok: false, error: 'Deworming record not found' });
+        return;
+      }
+
+      const row = updateResult.rows[0];
+      const horseResult = await pool.query(`SELECT id, name FROM horses WHERE id = $1 LIMIT 1`, [row.horse_id]);
+
+      res.status(200).json({
+        ok: true,
+        action,
+        horse: horseResult.rows[0] || null,
+        deworming_event: {
+          id: row.id,
+          product_name: productName,
+          event_date: toIsoDateString(row.event_date),
+          second_dose_date: toIsoDateString(row.second_dose_date),
+          next_due_date: toIsoDateString(row.next_due_date),
+          cost_amount: row.cost_amount,
+        },
+      });
+      return;
+    }
+
     if (action === 'health_event_add') {
       await ensureOwnersSchema();
       const horseId = parsePositiveInt(body.horseId);
@@ -2762,6 +2917,126 @@ module.exports = async (req, res) => {
       );
 
       const row = saveResult.rows[0];
+      res.status(200).json({
+        ok: true,
+        action,
+        frost: {
+          id: row.id,
+          event_date: toIsoDateString(row.event_date),
+          intensity: row.intensity,
+          source: row.source || null,
+          notes: row.notes || null,
+        },
+      });
+      return;
+    }
+
+    if (action === 'rain_event_update') {
+      const id = parsePositiveInt(body.id);
+      const rainMm = Number(body.rainMm);
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : '';
+      const notes = body.notes ? String(body.notes).trim() : '';
+
+      if (!id) {
+        res.status(400).json({ ok: false, error: 'id is required' });
+        return;
+      }
+
+      if (!Number.isFinite(rainMm) || rainMm < 0) {
+        res.status(400).json({ ok: false, error: 'rainMm must be a number >= 0' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      let updateResult;
+      try {
+        updateResult = await pool.query(
+          `
+          UPDATE rain_registry
+          SET event_date = $1, rain_mm = $2, notes = $3, updated_at = NOW()
+          WHERE id = $4
+          RETURNING id, event_date, rain_mm, source, notes
+          `,
+          [eventDateRaw, rainMm, notes || null, id]
+        );
+      } catch (error) {
+        if (error && error.code === '23505') {
+          res.status(400).json({ ok: false, error: 'Ya hay un registro de lluvia para esa fecha.' });
+          return;
+        }
+        throw error;
+      }
+
+      if (updateResult.rows.length === 0) {
+        res.status(404).json({ ok: false, error: 'Rain record not found' });
+        return;
+      }
+
+      const row = updateResult.rows[0];
+      res.status(200).json({
+        ok: true,
+        action,
+        rain: {
+          id: row.id,
+          event_date: toIsoDateString(row.event_date),
+          rain_mm: Number(row.rain_mm),
+          source: row.source || null,
+          notes: row.notes || null,
+        },
+      });
+      return;
+    }
+
+    if (action === 'frost_event_update') {
+      const id = parsePositiveInt(body.id);
+      const intensity = String(body.intensity || '').trim().toLowerCase();
+      const eventDateRaw = body.eventDate ? String(body.eventDate).trim() : '';
+      const notes = body.notes ? String(body.notes).trim() : '';
+
+      if (!id) {
+        res.status(400).json({ ok: false, error: 'id is required' });
+        return;
+      }
+
+      if (!ALLOWED_FROST_INTENSITIES.has(intensity)) {
+        res.status(400).json({ ok: false, error: 'intensity must be light, moderate, or heavy' });
+        return;
+      }
+
+      if (!isValidDateString(eventDateRaw)) {
+        res.status(400).json({ ok: false, error: 'eventDate must be YYYY-MM-DD' });
+        return;
+      }
+
+      let updateResult;
+      try {
+        updateResult = await pool.query(
+          `
+          UPDATE frost_registry
+          SET event_date = $1, intensity = $2, notes = $3, updated_at = NOW()
+          WHERE id = $4
+          RETURNING id, event_date, intensity, source, notes
+          `,
+          [eventDateRaw, intensity, notes || null, id]
+        );
+      } catch (error) {
+        if (error && error.code === '23505') {
+          res.status(400).json({ ok: false, error: 'Ya hay un registro de helada para esa fecha.' });
+          return;
+        }
+        throw error;
+      }
+
+      if (updateResult.rows.length === 0) {
+        res.status(404).json({ ok: false, error: 'Frost record not found' });
+        return;
+      }
+
+      const row = updateResult.rows[0];
       res.status(200).json({
         ok: true,
         action,
@@ -3371,7 +3646,7 @@ module.exports = async (req, res) => {
       res.status(400).json({
         ok: false,
         error:
-        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, paddock_ready_date_set, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, grazing_group_shared_paddocks_set, paddock_map_save, feed_item_save, feed_item_delete, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, farrier_event_add, health_event_add, health_event_update, horse_training_set, rain_save, frost_save, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
+        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, paddock_ready_date_set, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, grazing_group_shared_paddocks_set, paddock_map_save, feed_item_save, feed_item_delete, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, deworm_event_update, farrier_event_add, farrier_event_update, health_event_add, health_event_update, horse_training_set, rain_save, frost_save, rain_event_update, frost_event_update, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
       });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);
