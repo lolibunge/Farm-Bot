@@ -6,6 +6,7 @@ const {
   deleteAdminV2Horse,
 } = require('../../lib/admin-v2/horses');
 const { getAdminV2StockDashboard } = require('../../lib/admin-v2/stock-dashboard');
+const { getWeatherForecast } = require('../../lib/weather-forecast');
 
 async function getJsonBody(req) {
   if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
@@ -45,6 +46,19 @@ module.exports = async (req, res) => {
 
   try {
     if (req.method === 'GET') {
+      if (req.query?.resource === 'weather-forecast') {
+        const forecast = await getWeatherForecast();
+        res.status(200).json({
+          ok: true,
+          configured: forecast.configured,
+          provider: forecast.provider,
+          days: forecast.days,
+          meta: {
+            refreshed_at: forecast.refreshed_at,
+          },
+        });
+        return;
+      }
       if (req.query?._view === 'stock') {
         const payload = await getAdminV2StockDashboard();
         res.status(200).json(payload);

@@ -10,13 +10,38 @@
     }
   },
   "rewrites": [
-    { "source": "/api/admin-v2/stock-dashboard", "destination": "/api/admin-v2/horses?_view=stock" },
-    { "source": "/api/admin-v2/owner-ledger", "destination": "/api/admin-v2/owners?resource=ledger" },
-    { "source": "/api/admin-v2/owner-statement", "destination": "/api/admin-v2/owners?resource=statement" },
-    { "source": "/api/admin-v2/owner-feed-purchases", "destination": "/api/admin-v2/owners?resource=feed-purchases" },
-    { "source": "/api/admin-v2/owner-expense-split", "destination": "/api/admin-v2/owners?resource=expense-split" },
-    { "source": "/api/admin-v2/owner-expense-split-drafts", "destination": "/api/admin-v2/owners?resource=expense-split-drafts" },
-    { "source": "/api/admin-v2/general-expenses", "destination": "/api/admin-v2/owners?resource=general-expenses" }
+    {
+      "source": "/api/admin-v2/weather-forecast",
+      "destination": "/api/admin-v2/horses?resource=weather-forecast"
+    },
+    {
+      "source": "/api/admin-v2/stock-dashboard",
+      "destination": "/api/admin-v2/horses?_view=stock"
+    },
+    {
+      "source": "/api/admin-v2/owner-ledger",
+      "destination": "/api/admin-v2/owners?resource=ledger"
+    },
+    {
+      "source": "/api/admin-v2/owner-statement",
+      "destination": "/api/admin-v2/owners?resource=statement"
+    },
+    {
+      "source": "/api/admin-v2/owner-feed-purchases",
+      "destination": "/api/admin-v2/owners?resource=feed-purchases"
+    },
+    {
+      "source": "/api/admin-v2/owner-expense-split",
+      "destination": "/api/admin-v2/owners?resource=expense-split"
+    },
+    {
+      "source": "/api/admin-v2/owner-expense-split-drafts",
+      "destination": "/api/admin-v2/owners?resource=expense-split-drafts"
+    },
+    {
+      "source": "/api/admin-v2/general-expenses",
+      "destination": "/api/admin-v2/owners?resource=general-expenses"
+    }
   ],
   "crons": [
     {
