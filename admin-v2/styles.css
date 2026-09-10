@@ -2256,6 +2256,147 @@ button {
   min-width: 0;
 }
 
+.weather-forecast-panel {
+  /* Without this, the panel is a grid item of .page-stack with an implicit
+     'auto' column: once .weather-forecast-row scrolls horizontally on
+     mobile (flex-shrink:0 cards), its max-content width blows out that
+     auto column instead of being clipped, and the WHOLE page ends up
+     scrolling horizontally. min-width:0 lets the grid track size to the
+     available width like normal, so the row's own overflow-x can clip it. */
+  min-width: 0;
+}
+
+.weather-forecast-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.weather-forecast-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  text-align: center;
+}
+
+.weather-forecast-weekday {
+  font-weight: 700;
+  font-size: 14px;
+  text-transform: capitalize;
+}
+
+.weather-forecast-date {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.weather-forecast-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  margin: 4px 0;
+}
+
+.weather-forecast-icon .app-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.weather-forecast-icon--orange {
+  background: var(--orange-soft);
+  color: var(--orange);
+}
+
+.weather-forecast-icon--blue {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.weather-forecast-icon--purple {
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+
+.weather-forecast-icon--critical {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.weather-forecast-icon--gray {
+  background: var(--gray-soft);
+  color: var(--muted);
+}
+
+.weather-forecast-condition {
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.weather-forecast-temps {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 16px;
+}
+
+.weather-forecast-temps span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.weather-forecast-rain {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
+}
+
+.weather-forecast-rain .app-icon {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 720px) {
+  .weather-forecast-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .weather-forecast-row {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -18px;
+    padding: 0 18px 4px;
+    scrollbar-width: none;
+  }
+
+  .weather-forecast-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .weather-forecast-card {
+    flex: 0 0 118px;
+    scroll-snap-align: start;
+  }
+}
+
 .weather-period-tabs {
   flex-wrap: wrap;
   margin-bottom: 18px;
@@ -4125,6 +4266,12 @@ button {
 @media (max-width: 960px) {
   .weather-period-tabs {
     border-radius: 10px;
+    /* Desktop wraps these 7 pills onto extra rows; on mobile that turns
+       into a chunky 3-row grid. The rest of the app's segmented-tabs
+       already scroll horizontally on mobile (width:100% + overflow:auto,
+       below) - just stop this one from wrapping so it falls into that
+       same, already-working pattern instead of stacking rows. */
+    flex-wrap: nowrap;
   }
   .screen-shell {
     display: block;
@@ -4254,6 +4401,20 @@ button {
 
   .action-row {
     justify-content: flex-start;
+    flex-wrap: nowrap;
+  }
+
+  .action-row .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 10px;
+  }
+
+  .action-row .btn span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
 
   .toolbar-card {

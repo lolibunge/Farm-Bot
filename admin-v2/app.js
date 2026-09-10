@@ -11,6 +11,7 @@
   const OWNER_EXPENSE_SPLIT_API_URL = '/api/admin-v2/owner-expense-split';
   const OWNER_EXPENSE_SPLIT_DRAFTS_API_URL = '/api/admin-v2/owner-expense-split-drafts';
   const OVERVIEW_API_URL = '/api/admin/overview';
+  const WEATHER_FORECAST_API_URL = '/api/admin-v2/weather-forecast';
   const CALENDAR_EVENTS_API_URL = '/api/admin/calendar-events';
   const HORSE_HISTORY_API_URL = '/api/admin/horse-history';
   const DATA_MUTATE_API_URL = '/api/admin/mutate-data';
@@ -98,6 +99,43 @@
   ];
 
   const WEATHER_RAIN_TARGET_MM = 20;
+
+  // WMO weather codes used by the Open-Meteo forecast API, collapsed into the
+  // icon/label/tone buckets we show on the 5-day forecast strip.
+  const WEATHER_CODE_META = {
+    0: { icon: 'sun', label: 'Despejado', tone: 'orange' },
+    1: { icon: 'sun', label: 'Mayormente despejado', tone: 'orange' },
+    2: { icon: 'cloud', label: 'Parcialmente nublado', tone: 'blue' },
+    3: { icon: 'cloud', label: 'Nublado', tone: 'blue' },
+    45: { icon: 'cloud', label: 'Niebla', tone: 'gray' },
+    48: { icon: 'cloud', label: 'Niebla', tone: 'gray' },
+    51: { icon: 'rain', label: 'Llovizna débil', tone: 'blue' },
+    53: { icon: 'rain', label: 'Llovizna', tone: 'blue' },
+    55: { icon: 'rain', label: 'Llovizna intensa', tone: 'blue' },
+    56: { icon: 'rain', label: 'Llovizna helada', tone: 'blue' },
+    57: { icon: 'rain', label: 'Llovizna helada intensa', tone: 'blue' },
+    61: { icon: 'rain', label: 'Lluvia débil', tone: 'blue' },
+    63: { icon: 'rain', label: 'Lluvia', tone: 'blue' },
+    65: { icon: 'rain', label: 'Lluvia intensa', tone: 'blue' },
+    66: { icon: 'rain', label: 'Lluvia helada', tone: 'blue' },
+    67: { icon: 'rain', label: 'Lluvia helada intensa', tone: 'blue' },
+    71: { icon: 'snow', label: 'Nieve débil', tone: 'purple' },
+    73: { icon: 'snow', label: 'Nieve', tone: 'purple' },
+    75: { icon: 'snow', label: 'Nieve intensa', tone: 'purple' },
+    77: { icon: 'snow', label: 'Granizo fino', tone: 'purple' },
+    80: { icon: 'rain', label: 'Chaparrones débiles', tone: 'blue' },
+    81: { icon: 'rain', label: 'Chaparrones', tone: 'blue' },
+    82: { icon: 'rain', label: 'Chaparrones intensos', tone: 'blue' },
+    85: { icon: 'snow', label: 'Chubascos de nieve', tone: 'purple' },
+    86: { icon: 'snow', label: 'Chubascos de nieve intensos', tone: 'purple' },
+    95: { icon: 'storm', label: 'Tormenta', tone: 'critical' },
+    96: { icon: 'storm', label: 'Tormenta con granizo', tone: 'critical' },
+    99: { icon: 'storm', label: 'Tormenta con granizo intenso', tone: 'critical' },
+  };
+
+  function getWeatherCodeMeta(code) {
+    return WEATHER_CODE_META[code] || { icon: 'cloud', label: 'Sin datos', tone: 'gray' };
+  }
 
   const WEATHER_PERIOD_TYPES = [
     { key: 'day', label: 'Día', source: 'daily', bucketDays: 1, windowSize: 14 },
@@ -1494,6 +1532,28 @@
       month: 'short',
       year: 'numeric',
     }).format(parsed);
+  }
+
+  function formatForecastDayLabel(value, index) {
+    if (!value) {
+      return { weekday: 'Sin datos', date: '' };
+    }
+
+    const parsed = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) {
+      return { weekday: String(value), date: '' };
+    }
+
+    const weekday =
+      index === 0
+        ? 'Hoy'
+        : index === 1
+          ? 'Mañana'
+          : new Intl.DateTimeFormat('es-UY', { weekday: 'short' }).format(parsed).replace(/\.$/, '');
+
+    const date = new Intl.DateTimeFormat('es-UY', { day: 'numeric', month: 'short' }).format(parsed);
+
+    return { weekday, date };
   }
 
   function formatMonthLabel(value) {
@@ -5541,6 +5601,8 @@
       phone: '<path d="M7 5.5c-.8 0-1.5.7-1.5 1.5 0 6.3 5.2 11.5 11.5 11.5.8 0 1.5-.7 1.5-1.5V15l-3.5-1.2-1.7 1.7c-2-.9-3.8-2.7-4.7-4.7l1.7-1.7L9 5.5Z" />',
       shield: '<path d="M12 3.5 18.5 6v5.5c0 4-2.6 6.8-6.5 9-3.9-2.2-6.5-5-6.5-9V6Z" />',
       cloud: '<path d="M7 18h9a4 4 0 0 0 .6-8A5.5 5.5 0 0 0 6 8.5 3.8 3.8 0 0 0 7 18Z" />',
+      sun: '<circle cx="12" cy="12" r="4.5" /><path d="M12 2.5v3" /><path d="M12 18.5v3" /><path d="M2.5 12h3" /><path d="M18.5 12h3" /><path d="m5 5 2.1 2.1" /><path d="m16.9 16.9 2.1 2.1" /><path d="m19 5-2.1 2.1" /><path d="m7.1 16.9-2.1 2.1" />',
+      storm: '<path d="M7 15.5h8a3.8 3.8 0 0 0 .6-7.5A5.3 5.3 0 0 0 6 9 3.6 3.6 0 0 0 7 15.5Z" /><path d="m13 13-2.5 4h3L11 21" />',
     };
 
     return `
@@ -7076,6 +7138,104 @@
       ],
     });
   }
+
+  function renderExpenseSplitReceiptModal(state, payload) {
+    const result = payload?.result;
+    if (!result) {
+      return renderInfoModal({
+        title: 'Gasto repartido',
+        body: '<div class="empty-state-card"><strong>No pudimos generar el comprobante de este reparto.</strong></div>',
+        footerButtons: [{ label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } }],
+      });
+    }
+
+    const description = payload?.description || 'Gasto repartido';
+    const expenseDate = payload?.expenseDate || todayDateString();
+    const category = payload?.category || '';
+    const currency = result.currency || payload?.currency || 'UYU';
+    const charges = Array.isArray(result.charges) ? result.charges : [];
+    const excludedOwners = Array.isArray(result.excluded_owners) ? result.excluded_owners : [];
+
+    return renderInfoModal({
+      size: 'wide',
+      title: 'Comprobante de gasto repartido',
+      subtitle: `${escapeHtml(description)} · ${escapeHtml(formatDateLabel(expenseDate))}`,
+      body: `
+        <div class="statement-print-area">
+          <div class="statement-header">
+            <h2>${escapeHtml(description)}</h2>
+            <div class="stacked-info stacked-info--tight">
+              <span>${renderIcon('calendar')} Fecha: ${escapeHtml(formatDateLabel(expenseDate))}</span>
+              ${category ? `<span>${renderIcon('records')} Categoría: ${escapeHtml(category)}</span>` : ''}
+            </div>
+          </div>
+
+          <div class="modal-summary-grid">
+            <article class="modal-stat-card">
+              <span>Monto total repartido</span>
+              <strong>${formatMoneyLabel(result.total_amount, currency)}</strong>
+              <small>${result.total_horses} caballo(s) en total</small>
+            </article>
+            <article class="modal-stat-card">
+              <span>Costo por caballo</span>
+              <strong>${formatMoneyLabel(result.cost_per_horse, currency)}</strong>
+              <small>${charges.filter((c) => c.entry_type === 'charge').length} propietario(s) con cargo</small>
+            </article>
+            <article class="modal-stat-card">
+              <span>Total cobrado</span>
+              <strong>${formatMoneyLabel(result.total_charged, currency)}</strong>
+              <small>${result.total_credited > 0 ? `${formatMoneyLabel(result.total_credited, currency)} a favor` : 'Sin créditos'}</small>
+            </article>
+          </div>
+
+          <div class="modal-detail-card">
+            <strong>Qué paga cada propietario</strong>
+            ${
+              charges.length > 0
+                ? `
+                  <div class="mini-list" style="margin-top:10px">
+                    ${charges.map((charge) => `
+                      <div class="mini-list-row">
+                        <div>
+                          <strong>${escapeHtml(charge.owner_name)}</strong>
+                          <span>${charge.horse_count} caballo(s)${charge.fronted > 0 ? ` · ya había puesto ${escapeHtml(formatMoneyLabel(charge.fronted, currency))}` : ''}</span>
+                        </div>
+                        <strong class="${charge.entry_type === 'credit' ? 'text-green' : 'text-critical'}">
+                          ${charge.entry_type === 'credit' ? 'A favor ' : ''}${escapeHtml(formatMoneyLabel(charge.amount, currency))}
+                        </strong>
+                      </div>
+                    `).join('')}
+                  </div>
+                `
+                : `<p class="text-muted" style="font-size:13px;margin-top:8px">Nadie quedó con cargos de este gasto.</p>`
+            }
+          </div>
+
+          ${
+            excludedOwners.length > 0
+              ? `
+                <div class="modal-callout">
+                  <strong>No participaron de este reparto</strong>
+                  <span>${excludedOwners.map((o) => escapeHtml(o.name)).join(', ')}</span>
+                </div>
+              `
+              : ''
+          }
+
+          ${
+            result.general_expense
+              ? `<p class="text-muted" style="font-size:13px;margin-top:12px">Este gasto también quedó registrado en Gastos generales del campo.</p>`
+              : ''
+          }
+        </div>
+      `,
+      footerButtons: [
+        { label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } },
+        { label: 'Imprimir / PDF', tone: 'primary', icon: 'check', trigger: { action: 'print-statement' } },
+      ],
+    });
+  }
+
   function getQuarterStartDateString() {
     const now = new Date();
     const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
@@ -11280,6 +11440,103 @@
     `;
   }
 
+  function renderWeatherForecastPanel(state) {
+    if (!isRealSession(state)) {
+      return '';
+    }
+
+    const forecast = state.weatherForecast;
+
+    if (!forecast) {
+      return `
+        <section class="panel weather-forecast-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Pronóstico</h2>
+              <span class="subtle-text">Próximos 5 días</span>
+            </div>
+          </div>
+          <div class="empty-state-card">
+            <strong>Cargando pronóstico...</strong>
+          </div>
+        </section>
+      `;
+    }
+
+    if (!forecast.ok || forecast.configured === false) {
+      return `
+        <section class="panel weather-forecast-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Pronóstico</h2>
+              <span class="subtle-text">Próximos 5 días</span>
+            </div>
+          </div>
+          <div class="empty-state-card">
+            <strong>Falta configurar la ubicación del campo.</strong>
+            <span>Cargá la latitud y longitud en Configuración para activar el pronóstico.</span>
+          </div>
+        </section>
+      `;
+    }
+
+    const days = Array.isArray(forecast.days) ? forecast.days : [];
+
+    if (!days.length) {
+      return `
+        <section class="panel weather-forecast-panel">
+          <div class="panel-head">
+            <div>
+              <h2>Pronóstico</h2>
+              <span class="subtle-text">Próximos 5 días</span>
+            </div>
+          </div>
+          <div class="empty-state-card">
+            <strong>No hay datos de pronóstico disponibles.</strong>
+          </div>
+        </section>
+      `;
+    }
+
+    return `
+      <section class="panel weather-forecast-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Pronóstico</h2>
+            <span class="subtle-text">Próximos ${days.length} días</span>
+          </div>
+        </div>
+        <div class="weather-forecast-row">
+          ${days
+            .map((day, index) => {
+              const meta = getWeatherCodeMeta(day.weathercode);
+              const dayLabel = formatForecastDayLabel(day.event_date, index);
+              const probability =
+                day.precipitation_probability == null ? null : Math.round(day.precipitation_probability);
+
+              return `
+                <article class="weather-forecast-card">
+                  <span class="weather-forecast-weekday">${escapeHtml(dayLabel.weekday)}</span>
+                  <span class="weather-forecast-date">${escapeHtml(dayLabel.date)}</span>
+                  <span class="weather-forecast-icon weather-forecast-icon--${escapeHtml(meta.tone)}">${renderIcon(meta.icon)}</span>
+                  <span class="weather-forecast-condition">${escapeHtml(meta.label)}</span>
+                  <span class="weather-forecast-temps">
+                    <strong>${day.max_temp_c == null ? '-' : Math.round(day.max_temp_c)}°</strong>
+                    <span>${day.min_temp_c == null ? '-' : Math.round(day.min_temp_c)}°</span>
+                  </span>
+                  <span class="weather-forecast-rain">
+                    ${renderIcon('rain')}
+                    ${probability == null ? 'Sin datos' : `${probability}%`}
+                  </span>
+                </article>
+              `;
+            })
+            .join('')}
+        </div>
+      </section>
+    `;
+  }
+
   function renderWeatherView(state) {
     if (!isRealSession(state)) {
       return `
@@ -11321,6 +11578,8 @@
 
     return `
       <div class="page-stack">
+        ${renderWeatherForecastPanel(state)}
+
         ${renderMetricGrid([
           {
             label: 'Lluvia hoy',
@@ -17026,6 +17285,13 @@
         return '';
       }
 
+      case 'expense-split-receipt': {
+        if (isRealSession(state)) {
+          return renderExpenseSplitReceiptModal(state, payload);
+        }
+        return '';
+      }
+
       case 'owner-statement-view': {
         if (isRealSession(state)) {
           return renderOwnerStatementViewModal(state);
@@ -17559,6 +17825,7 @@
     ownersDashboard: null,
     ownerStatement: null,
     weatherDashboard: null,
+    weatherForecast: null,
     weatherPeriodType: 'week',
     weatherOffset: 0,
     calendarEventsByMonth: {},
@@ -18062,6 +18329,20 @@
     return payload;
   }
 
+  async function loadWeatherForecast(options = {}) {
+    if (!isRealSession(store.getState())) {
+      setState({ weatherForecast: null });
+      return null;
+    }
+
+    const payload = await requestJson(WEATHER_FORECAST_API_URL);
+    setState({
+      weatherForecast: payload,
+      ...(options.closeModal ? { modal: null } : {}),
+    });
+    return payload;
+  }
+
   async function loadAdminDashboards(options = {}) {
     if (!isRealSession(store.getState())) {
       setState({
@@ -18070,6 +18351,7 @@
         stockDashboard: null,
         ownersDashboard: null,
         weatherDashboard: null,
+        weatherForecast: null,
         calendarEventsByMonth: {},
       });
       return null;
@@ -20787,7 +21069,7 @@
       });
 
       await Promise.all([
-        loadOwnersDashboard({ closeModal: true }),
+        loadOwnersDashboard({}),
         loadStockDashboard(),
       ]);
 
@@ -20807,6 +21089,17 @@
           ? `Se generaron ${result.charges.length} cargo(s) por un total de ${formatMoneyLabel(result.total_charged, result.currency)}.`
           : 'Gasto repartido entre propietarios.'
       );
+
+      // Show a printable receipt (description + per-owner breakdown) right
+      // away instead of leaving her to hunt for it - "Imprimir / PDF" reuses
+      // the same window.print() mechanism as the owner statement.
+      openModal('expense-split-receipt', {
+        description,
+        expenseDate: values.expenseDate || todayDateString(),
+        category: values.category || '',
+        currency: values.currency || 'UYU',
+        result,
+      });
     } catch (error) {
       showToast(error.message || 'No pudimos repartir el gasto.', 'critical');
     } finally {
@@ -21750,6 +22043,9 @@
 
       if (navKey === 'weather' && isRealSession(store.getState()) && !store.getState().weatherDashboard) {
         loadWeatherDashboard().catch(() => {});
+      }
+      if (navKey === 'weather' && isRealSession(store.getState()) && !store.getState().weatherForecast) {
+        loadWeatherForecast().catch(() => {});
       }
       return;
     }
