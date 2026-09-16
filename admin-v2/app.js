@@ -20470,7 +20470,62 @@
         );
       }
     } catch (error) {
-      showToast(error.message || 'No pudimos mover el grupo.', 'critical');
+      const message = error.message || 'No pudimos mover el grupo.';
+      const isEntryDateConflict = /^Move date cannot be before current paddock entry for:/.test(message);
+
+      if (isEntryDateConflict) {
+        const wantsCorrection = window.confirm(
+          `${message}\n\n¿Querés corregir la fecha de entrada actual de esos caballos a ${formatDateLabel(
+            eventDate
+          )} y continuar el movimiento?`
+        );
+
+        if (wantsCorrection) {
+          try {
+            const retryPayload = await postMutation({
+              action: 'grazing_group_move_in',
+              groupId,
+              paddockId,
+              eventDate,
+              notes: notes || undefined,
+              force: true,
+            });
+
+            const movedCount = Number(retryPayload?.moved_count || 0);
+            const alreadyThereCount = Number(retryPayload?.already_in_paddock_count || 0);
+            const movementDetail =
+              alreadyThereCount > 0
+                ? `${movedCount} movido(s), ${alreadyThereCount} ya estaban ahí.`
+                : `${Number(retryPayload?.group_member_count || movedCount)} caballo(s) alineado(s).`;
+            const successMessage = `${
+              retryPayload?.group?.name || group.name
+            } movido a ${retryPayload?.paddock?.name || paddock.name} el ${formatDateLabel(
+              retryPayload?.entered_at || eventDate
+            )} (con corrección de fecha de entrada). ${movementDetail}`;
+
+            setState({ modal: null });
+
+            try {
+              await loadAdminDashboards({ closeModal: true });
+              showToast(successMessage);
+            } catch (refreshError) {
+              showToast(
+                `${successMessage} El movimiento quedó guardado, pero no pudimos refrescar el tablero: ${
+                  refreshError.message || 'error desconocido'
+                }`,
+                'warning'
+              );
+            }
+          } catch (retryError) {
+            showToast(retryError.message || 'No pudimos corregir y mover el grupo.', 'critical');
+          }
+
+          setState({ loading: false });
+          return;
+        }
+      }
+
+      showToast(message, 'critical');
     } finally {
       setState({ loading: false });
     }

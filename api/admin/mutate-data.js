@@ -1132,6 +1132,7 @@ module.exports = async (req, res) => {
         enteredAt: eventDateRaw,
         entryNotes: notes || null,
         source: 'admin_group',
+        force: Boolean(body.force),
       });
 
       res.status(200).json({
