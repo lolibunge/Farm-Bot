@@ -61,9 +61,7 @@ function buildCalendarQuery(existingTables) {
       COALESCE(NULLIF(TRIM(r.source), ''), 'manual') AS meta,
       r.rain_mm::numeric AS metric_value,
       'mm' AS metric_unit,
-      NULLIF(TRIM(r.notes), '') AS notes,
-    NULL::text AS performed_by,
-    NULL::text AS performed_by_kind
+      NULLIF(TRIM(r.notes), '') AS notes
     FROM rain_registry r
     WHERE
       r.event_date BETWEEN $1::date AND $2::date
@@ -83,9 +81,7 @@ function buildCalendarQuery(existingTables) {
       COALESCE(NULLIF(TRIM(f.source), ''), 'manual') AS meta,
       NULL::numeric AS metric_value,
       NULL::text AS metric_unit,
-      NULLIF(TRIM(f.notes), '') AS notes,
-    NULL::text AS performed_by,
-    NULL::text AS performed_by_kind
+      NULLIF(TRIM(f.notes), '') AS notes
     FROM frost_registry f
     WHERE f.event_date BETWEEN $1::date AND $2::date
   `);
@@ -106,9 +102,7 @@ function buildCalendarQuery(existingTables) {
         END AS meta,
         f.quantity::numeric AS metric_value,
         f.unit AS metric_unit,
-        NULL::text AS notes,
-      NULL::text AS performed_by,
-      NULL::text AS performed_by_kind
+        NULL::text AS notes
       FROM feed_events f
       JOIN horses h ON h.id = f.horse_id
       JOIN feed_items i ON i.id = f.feed_item_id
@@ -132,9 +126,7 @@ function buildCalendarQuery(existingTables) {
         END AS meta,
         NULL::numeric AS metric_value,
         NULL::text AS metric_unit,
-        NULL::text AS notes,
-      NULL::text AS performed_by,
-      NULL::text AS performed_by_kind
+        NULL::text AS notes
       FROM (
         SELECT
           d.*,
@@ -165,9 +157,7 @@ function buildCalendarQuery(existingTables) {
         'Care' AS meta,
         NULL::numeric AS metric_value,
         NULL::text AS metric_unit,
-        NULL::text AS notes,
-      NULL::text AS performed_by,
-      NULL::text AS performed_by_kind
+        NULL::text AS notes
       FROM farrier_events f
       JOIN horses h ON h.id = f.horse_id
       WHERE COALESCE(f.event_date, f.created_at::date) BETWEEN $1::date AND $2::date
@@ -187,9 +177,7 @@ function buildCalendarQuery(existingTables) {
         'Health log' AS meta,
         NULL::numeric AS metric_value,
         NULL::text AS metric_unit,
-        NULLIF(TRIM(hhe.notes), '') AS notes,
-      NULL::text AS performed_by,
-      NULL::text AS performed_by_kind
+        NULLIF(TRIM(hhe.notes), '') AS notes
       FROM horse_health_events hhe
       JOIN horses h ON h.id = hhe.horse_id
       WHERE COALESCE(hhe.event_date, hhe.created_at::date) BETWEEN $1::date AND $2::date
@@ -209,9 +197,7 @@ function buildCalendarQuery(existingTables) {
         'Stock action' AS meta,
         s.quantity::numeric AS metric_value,
         s.unit AS metric_unit,
-        NULLIF(TRIM(s.notes), '') AS notes,
-      NULL::text AS performed_by,
-      NULL::text AS performed_by_kind
+        NULLIF(TRIM(s.notes), '') AS notes
       FROM stock_events s
       JOIN feed_items i ON i.id = s.feed_item_id
       WHERE COALESCE(s.event_date, s.created_at::date) BETWEEN $1::date AND $2::date
@@ -230,9 +216,7 @@ function buildCalendarQuery(existingTables) {
       'Movement' AS meta,
       NULL::numeric AS metric_value,
       NULL::text AS metric_unit,
-      NULLIF(TRIM(ge.entry_notes), '') AS notes,
-    NULL::text AS performed_by,
-    NULL::text AS performed_by_kind
+      NULLIF(TRIM(ge.entry_notes), '') AS notes
     FROM grazing_events ge
     JOIN horses h ON h.id = ge.horse_id
     JOIN paddocks p ON p.id = ge.paddock_id
@@ -251,9 +235,7 @@ function buildCalendarQuery(existingTables) {
       'Movement' AS meta,
       NULL::numeric AS metric_value,
       NULL::text AS metric_unit,
-      NULLIF(TRIM(ge.exit_notes), '') AS notes,
-    NULL::text AS performed_by,
-    NULL::text AS performed_by_kind
+      NULLIF(TRIM(ge.exit_notes), '') AS notes
     FROM grazing_events ge
     JOIN horses h ON h.id = ge.horse_id
     JOIN paddocks p ON p.id = ge.paddock_id
@@ -273,9 +255,7 @@ function buildCalendarQuery(existingTables) {
       'Group move' AS meta,
       NULL::numeric AS metric_value,
       NULL::text AS metric_unit,
-      NULL::text AS notes,
-    NULL::text AS performed_by,
-    NULL::text AS performed_by_kind
+      NULL::text AS notes
     FROM horse_group_membership_history hgh
     JOIN horses h ON h.id = hgh.horse_id
     LEFT JOIN horse_groups hg ON hg.id = hgh.group_id
@@ -294,9 +274,7 @@ function buildCalendarQuery(existingTables) {
       'Group move' AS meta,
       NULL::numeric AS metric_value,
       NULL::text AS metric_unit,
-      NULL::text AS notes,
-    NULL::text AS performed_by,
-    NULL::text AS performed_by_kind
+      NULL::text AS notes
     FROM horse_group_membership_history hgh
     JOIN horses h ON h.id = hgh.horse_id
     LEFT JOIN horse_groups hg ON hg.id = hgh.group_id
@@ -312,19 +290,14 @@ function buildCalendarQuery(existingTables) {
       'paddock' AS category,
       REPLACE(INITCAP(REPLACE(pwe.event_type, '_', ' ')), 'Prep', 'Prep') AS title,
       p.name AS subtitle,
-      CASE
-        WHEN pwe.ready_to_graze_on IS NOT NULL THEN CONCAT('Ready ', pwe.ready_to_graze_on::text)
-        ELSE 'Field work logged'
-      END AS detail,
+      COALESCE(CONCAT('Ready ', pwe.ready_to_graze_on::text), 'Field work logged') AS detail,
       CASE
         WHEN pwe.applies_to_descendants THEN 'Whole block'
         ELSE 'Single paddock'
       END AS meta,
       NULL::numeric AS metric_value,
       NULL::text AS metric_unit,
-      NULLIF(TRIM(pwe.notes), '') AS notes,
-      pwe.performed_by AS performed_by,
-      pwe.performed_by_kind AS performed_by_kind
+      NULLIF(TRIM(pwe.notes), '') AS notes
     FROM paddock_work_events pwe
     JOIN paddocks p ON p.id = pwe.paddock_id
     WHERE pwe.event_date BETWEEN $1::date AND $2::date
@@ -343,9 +316,7 @@ function buildCalendarQuery(existingTables) {
         'Treatment plan' AS meta,
         NULL::numeric AS metric_value,
         NULL::text AS metric_unit,
-        NULL::text AS notes,
-      NULL::text AS performed_by,
-      NULL::text AS performed_by_kind
+        NULL::text AS notes
       FROM treatment_plans tp
       JOIN horses h ON h.id = tp.horse_id
       WHERE COALESCE(tp.start_date, tp.created_at::date) BETWEEN $1::date AND $2::date
@@ -365,9 +336,7 @@ function buildCalendarQuery(existingTables) {
         'Treatment dose' AS meta,
         NULL::numeric AS metric_value,
         NULL::text AS metric_unit,
-        NULL::text AS notes,
-      NULL::text AS performed_by,
-      NULL::text AS performed_by_kind
+        NULL::text AS notes
       FROM treatment_logs tl
       JOIN treatment_plans tp ON tp.id = tl.treatment_plan_id
       JOIN horses h ON h.id = tp.horse_id
@@ -387,9 +356,7 @@ function buildCalendarQuery(existingTables) {
       fv.status AS meta,
       NULL::numeric AS metric_value,
       NULL::text AS metric_unit,
-      NULLIF(TRIM(fv.notes), '') AS notes,
-    NULL::text AS performed_by,
-    NULL::text AS performed_by_kind
+      NULLIF(TRIM(fv.notes), '') AS notes
     FROM farm_visits fv
     LEFT JOIN horses h ON h.id = fv.horse_id
     WHERE fv.event_date BETWEEN $1::date AND $2::date
@@ -407,9 +374,7 @@ function buildCalendarQuery(existingTables) {
       event_rows.meta,
       event_rows.metric_value,
       event_rows.metric_unit,
-      event_rows.notes,
-      event_rows.performed_by,
-      event_rows.performed_by_kind
+      event_rows.notes
     FROM (
       ${parts.join('\n\n      UNION ALL\n\n')}
     ) event_rows
@@ -498,8 +463,6 @@ module.exports = async (req, res) => {
         metric_value: row.metric_value == null ? null : Number(row.metric_value),
         metric_unit: row.metric_unit || null,
         notes: row.notes || null,
-        performed_by: row.performed_by || null,
-        performed_by_kind: row.performed_by_kind || null,
       })),
       enabledModules
     );

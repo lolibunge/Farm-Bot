@@ -12011,7 +12011,6 @@
             const cm = getCalendarCategoryMeta(event.category);
             const detailParts = [event.subtitle, event.detail].filter(Boolean);
             const metaParts = [event.meta, formatCompactDateLabel(event.event_date)].filter(Boolean);
-            const isPaddockWork = event.category === 'paddock';
             const isEditableHealth = event.category === 'health' && /^health-\d+$/.test(String(event.key || ''));
             const healthHorseId = isEditableHealth ? getRealHorseIdByName(state, event.subtitle) : null;
             const healthEventId = isEditableHealth
@@ -12047,27 +12046,7 @@
               : '';
 
             return `
-              <article
-                class="timeline-row${isPaddockWork ? ' timeline-row--clickable' : ''}"
-                ${
-                  isPaddockWork
-                    ? `role="button" tabindex="0" ${renderActionAttributes({
-                        action: 'open-modal',
-                        value: 'paddock-work-detail',
-                        meta: {
-                          workType: event.title || '',
-                          paddockName: event.subtitle || '',
-                          scope: event.meta || '',
-                          readyInfo: event.detail || '',
-                          eventDate: event.event_date || '',
-                          notes: event.notes || '',
-                          performedBy: event.performed_by || '',
-                          performedByKind: event.performed_by_kind || '',
-                        },
-                      })}`
-                    : ''
-                }
-              >
+              <article class="timeline-row">
                 <span class="timeline-icon timeline-icon--${escapeHtml(cm.tone)}">${renderIcon(cm.icon)}</span>
                 <div class="timeline-body">
                   <div class="timeline-title">
@@ -17002,47 +16981,6 @@
             { label: 'Observaciones', name: 'notes', type: 'textarea', rows: 4, placeholder: 'Ejemplo: pasto escarchado a primera hora.', layout: 'wide' },
           ],
         });
-
-      case 'paddock-work-detail': {
-        const readyMatch = /^Ready\s+(\d{4}-\d{2}-\d{2})$/.exec(String(payload.readyInfo || ''));
-        const readyLabel = readyMatch
-          ? `Habilita pastoreo desde ${formatDateLabel(readyMatch[1])}`
-          : 'No quedó fecha de habilitación registrada.';
-        const scopeLabel =
-          payload.scope === 'Whole block'
-            ? 'Todo el bloque (potrero y sub-potreros)'
-            : payload.scope === 'Single paddock'
-              ? 'Solo este potrero'
-              : payload.scope || 'Sin datos';
-        const performedByName = String(payload.performedBy || '').trim();
-        const performedByKind = String(payload.performedByKind || '').trim();
-        const responsibleLabel = performedByName
-          ? performedByKind && performedByKind !== 'unspecified'
-            ? `${performedByName} (${formatResponsibleKindLabel(performedByKind).toLowerCase()})`
-            : performedByName
-          : performedByKind && performedByKind !== 'unspecified'
-            ? formatResponsibleKindLabel(performedByKind)
-            : 'Sin especificar';
-        const notesText = String(payload.notes || '').trim();
-
-        return renderInfoModal({
-          title: payload.workType || 'Trabajo de campo',
-          subtitle: payload.paddockName || '',
-          body: `
-            <dl class="fact-list">
-              <div><dt>Fecha</dt><dd>${escapeHtml(formatDateLabel(payload.eventDate))}</dd></div>
-              <div><dt>Alcance</dt><dd>${escapeHtml(scopeLabel)}</dd></div>
-              <div><dt>Habilitación de pastoreo</dt><dd>${escapeHtml(readyLabel)}</dd></div>
-              <div><dt>Responsable</dt><dd>${escapeHtml(responsibleLabel)}</dd></div>
-            </dl>
-            <span class="subtle-text">${escapeHtml(notesText || 'Sin observaciones adicionales.')}</span>
-          `,
-          footerButtons: [
-            { label: 'Cerrar', tone: 'secondary', trigger: { action: 'close-modal' } },
-            { label: 'Ir a Potreros', tone: 'primary', trigger: { action: 'close-and-nav', value: 'paddocks' } },
-          ],
-        });
-      }
 
       case 'field-work':
         if (isRealSession(state)) {
@@ -23127,22 +23065,7 @@
     lastRenderedModalKey = state?.modal?.key || '';
   });
 
-  function handleRowKeydown(event) {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-
-    const target = event.target.closest('[role="button"]');
-    if (!target) {
-      return;
-    }
-
-    event.preventDefault();
-    target.click();
-  }
-
   appRoot.addEventListener('click', handleClick);
-  appRoot.addEventListener('keydown', handleRowKeydown);
   appRoot.addEventListener('submit', handleSubmit);
   appRoot.addEventListener('input', handleFieldInput);
   appRoot.addEventListener('change', handleFieldInput);
