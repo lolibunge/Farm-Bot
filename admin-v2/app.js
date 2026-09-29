@@ -13803,8 +13803,17 @@
       });
     }
 
-    const occupyingGroupName = String(primaryPaddock.occupied_groups || '').split(',')[0].trim();
-    const group = occupyingGroupName ? getRealHorseGroupByName(state, occupyingGroupName) : null;
+    // A paddock can hold several groups at once (e.g. Manada + Mansos in Potrero 1.3).
+    // Sharing from the paddock applies to every group grazing it, not just the first one.
+    const occupyingGroups = String(primaryPaddock.occupied_groups || '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .map((name) => getRealHorseGroupByName(state, name))
+      .filter(Boolean);
+    const occupyingGroupNames = occupyingGroups.map((row) => row.name);
+    const groupsLabel = occupyingGroupNames.join(' y ');
+    const group = occupyingGroups[0] || null;
 
     if (!group) {
       return renderInfoModal({
@@ -13832,7 +13841,7 @@
       String(candidate.occupied_groups || '')
         .split(',')
         .map((name) => name.trim())
-        .includes(group.name);
+        .some((name) => occupyingGroupNames.includes(name));
 
     const checkboxesMarkup = candidatePaddocks.length
       ? candidatePaddocks
@@ -13858,8 +13867,8 @@
 
     return renderFormModal({
       key: 'group-shared-paddocks',
-      title: `Compartir potreros de ${group.name}`,
-      subtitle: `${group.name} sigue en ${primaryPaddock.name}. Marc\u00e1 qu\u00e9 otros potreros tambi\u00e9n est\u00e1 usando ahora (agua, pastoreo compartido, etc.).`,
+      title: `Compartir potreros de ${groupsLabel}`,
+      subtitle: `${groupsLabel} ${occupyingGroups.length > 1 ? 'siguen' : 'sigue'} en ${primaryPaddock.name}. Marc\u00e1 qu\u00e9 otros potreros tambi\u00e9n est\u00e1 usando ahora (agua, pastoreo compartido, etc.).`,
       submitLabel: 'Guardar accesos compartidos',
       submitIcon: 'check',
       columns: 1,
@@ -13880,7 +13889,7 @@
         },
       ],
       extraBody: `
-        <input type="hidden" name="groupId" value="${escapeHtml(String(group.id))}" />
+        <input type="hidden" name="groupIds" value="${escapeHtml(occupyingGroups.map((row) => row.id).join(','))}" />
         <p style="font-weight:600;margin:8px 0 4px;">Potreros compartidos ahora mismo</p>
         ${checkboxesMarkup}
       `,
@@ -18942,11 +18951,18 @@
   }
 
   async function submitGroupSharedPaddocksForm(formData) {
-    const groupId = parsePositiveInt(formData.get('groupId'));
+    const groupIds = [
+      ...new Set(
+        String(formData.get('groupIds') || formData.get('groupId') || '')
+          .split(',')
+          .map((value) => parsePositiveInt(value))
+          .filter(Boolean)
+      ),
+    ];
     const eventDate = String(formData.get('eventDate') || '').trim() || todayDateString();
     const notes = String(formData.get('notes') || '').trim();
 
-    if (!groupId) {
+    if (groupIds.length === 0) {
       showToast('No encontramos el grupo para actualizar los potreros compartidos.', 'critical');
       return;
     }
@@ -18968,18 +18984,29 @@
 
     setState({ loading: true });
     try {
-      const payload = await postMutation({
-        action: 'grazing_group_shared_paddocks_set',
-        groupId,
-        paddockIds,
-        eventDate,
-        notes: notes || undefined,
-      });
+      const payloads = [];
+      for (const groupId of groupIds) {
+        payloads.push(
+          await postMutation({
+            action: 'grazing_group_shared_paddocks_set',
+            groupId,
+            paddockIds,
+            eventDate,
+            notes: notes || undefined,
+          })
+        );
+      }
 
+      const payload = payloads[0];
+      const groupNames = payloads
+        .map((row) => row?.group?.name)
+        .filter(Boolean)
+        .join(' y ');
+      const verb = payloads.length > 1 ? 'comparten' : 'comparte';
       const sharedNames = (payload?.current_shared_paddocks || []).map((row) => row.name).join(', ');
       const successMessage = sharedNames
-        ? `${payload?.group?.name || ''} ahora también comparte: ${sharedNames}.`
-        : `${payload?.group?.name || ''} ya no comparte potreros extra.`;
+        ? `${groupNames} ahora también ${verb}: ${sharedNames}.`
+        : `${groupNames} ya no ${verb} potreros extra.`;
 
       await loadAdminDashboards({ closeModal: true });
       showToast(successMessage);
