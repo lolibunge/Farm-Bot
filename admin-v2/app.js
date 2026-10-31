@@ -28,6 +28,8 @@
     stock: 'inventory',
     records: 'timeline',
     settings: 'account',
+    paddockMapSummary: 'list',
+    paddockMapStatus: 'all',
   };
 
   const MOBILE_PRIMARY_NAV_KEYS = ['home', 'paddocks', 'horses', 'owners', 'stock'];
@@ -8362,119 +8364,240 @@
     return `${days} ${Number(days) === 1 ? 'día' : 'días'}`;
   }
 
+  const PADDOCK_REST_TARGET_DAYS = 30;
+
+  const PADDOCK_MAP_SUMMARY_GROUPS = [
+    { key: 'occupied', label: 'En uso', chip: 'En uso', tone: 'green', sortHint: 'más días primero' },
+    { key: 'growing', label: 'Sembrado / en preparación', chip: 'Sembrado / preparación', tone: 'orange', sortHint: 'el más cercano a habilitarse primero' },
+    { key: 'resting', label: 'En descanso', chip: 'Descanso', tone: 'blue', sortHint: 'más días primero' },
+    { key: 'ready', label: 'Listos para entrar', chip: 'Listos', tone: 'teal', sortHint: '' },
+    { key: 'inactive', label: 'Inactivos', chip: 'Inactivos', tone: 'gray', sortHint: '' },
+  ];
+
+  function getPaddockGrowingWorkLabel(workType, fallback) {
+    switch (workType) {
+      case 'seeding':
+        return 'Sembrado';
+      case 'soil_prep':
+        return 'Rastra';
+      case 'fertilizer':
+        return 'Fertilizado';
+      case 'spraying':
+        return 'Fumigado';
+      default:
+        return fallback || 'Preparación';
+    }
+  }
+
   function getPaddockMapSummaryRow(paddock) {
     const state = String(paddock.occupancy_state || 'ready');
     const workLabel = paddock.latest_work_type_label
       ? formatPaddockWorkTypeText(paddock.latest_work_type || paddock.latest_work_type_label)
       : '';
     const workDays = getPaddockMapDaysSince(paddock.latest_work_date);
+    const nameKey = String(paddock.name || '');
 
     switch (state) {
       case 'occupied':
         return {
+          state,
           days: paddock.grazing_days,
-          value: formatPaddockMapDays(paddock.grazing_days),
+          unit: 'días ocupado',
+          badge: 'Ocupado',
           detail: paddock.occupied_by ? `Ocupa: ${paddock.occupied_by}` : 'Ocupación activa',
+          extra: paddock.occupied_since ? `Entró el ${formatCompactDateLabel(paddock.occupied_since)}` : '',
+          progress: null,
           sortKey: -(paddock.grazing_days || 0),
+          nameKey,
         };
-      case 'resting':
+      case 'resting': {
+        const restDays = paddock.rest_days;
+        const remaining = restDays == null ? null : PADDOCK_REST_TARGET_DAYS - restDays;
+        let detail = 'En descanso';
+        if (paddock.last_exited_at) {
+          detail = `Salida ${formatCompactDateLabel(paddock.last_exited_at)}${paddock.effective_rest_is_estimated ? ' (estimado)' : ''}`;
+        } else if (paddock.inherited_rest && paddock.effective_rest_paddock_name) {
+          detail = `Descanso de ${paddock.effective_rest_paddock_name}`;
+        }
         return {
-          days: paddock.rest_days,
-          value: formatPaddockMapDays(paddock.rest_days),
-          detail: paddock.last_exited_at
-            ? `Salida ${formatCompactDateLabel(paddock.last_exited_at)}${paddock.effective_rest_is_estimated ? ' (estimado)' : ''}`
-            : paddock.inherited_rest && paddock.effective_rest_paddock_name
-              ? `Descanso de ${paddock.effective_rest_paddock_name}`
-              : 'En descanso',
-          sortKey: -(paddock.rest_days || 0),
+          state,
+          days: restDays,
+          unit: 'días de descanso',
+          badge: 'Descanso',
+          detail,
+          extra: remaining == null
+            ? ''
+            : remaining <= 0
+              ? `Descanso cumplido (+${PADDOCK_REST_TARGET_DAYS})`
+              : `Faltan ${formatPaddockMapDays(remaining)} para ${PADDOCK_REST_TARGET_DAYS}`,
+          progress: restDays == null ? null : Math.min(1, restDays / PADDOCK_REST_TARGET_DAYS),
+          sortKey: -(restDays || 0),
+          nameKey,
         };
+      }
       case 'growing': {
         const remaining = paddock.days_until_ready;
+        const growingLabel = getPaddockGrowingWorkLabel(paddock.latest_work_type, workLabel);
+        const total = workDays != null && remaining != null ? workDays + remaining : null;
         return {
+          state,
           days: workDays,
-          value: workLabel && workDays != null ? `${workLabel} hace ${formatPaddockMapDays(workDays)}` : 'En espera',
-          detail: remaining != null
-            ? `Faltan ${formatPaddockMapDays(remaining)} · listo ${formatCompactDateLabel(paddock.ready_to_graze_on)}`
+          unit: workDays != null ? `días ${growingLabel === 'Rastra' ? 'desde rastra' : growingLabel.toLowerCase()}` : '',
+          badge: growingLabel,
+          detail: workLabel && paddock.latest_work_date
+            ? `${workLabel} el ${formatCompactDateLabel(paddock.latest_work_date)}`
             : 'Esperando habilitación',
+          extra: remaining != null
+            ? `Faltan ${formatPaddockMapDays(remaining)} · listo ${formatCompactDateLabel(paddock.ready_to_graze_on)}`
+            : '',
+          progress: total ? Math.min(1, workDays / total) : null,
           sortKey: remaining != null ? remaining : 9999,
+          nameKey,
         };
       }
       case 'inactive':
         return {
+          state,
           days: null,
-          value: 'Inactivo',
+          unit: '',
+          badge: 'Inactivo',
           detail: 'No disponible para movimientos',
+          extra: '',
+          progress: null,
           sortKey: 0,
+          nameKey,
         };
       default:
         return {
+          state: 'ready',
           days: paddock.rest_days,
-          value: paddock.rest_days != null ? `${formatPaddockMapDays(paddock.rest_days)} sin uso` : 'Disponible',
+          unit: 'días sin uso',
+          badge: 'Listo',
           detail: workLabel && workDays != null
             ? `Último trabajo: ${workLabel} hace ${formatPaddockMapDays(workDays)}`
             : 'Listo para entrar',
+          extra: paddock.ready_to_graze_on ? `Habilitado el ${formatCompactDateLabel(paddock.ready_to_graze_on)}` : 'Disponible',
+          progress: null,
           sortKey: -(paddock.rest_days || 0),
+          nameKey,
         };
     }
   }
 
-  function renderPaddockMapStatusSummary(paddocks) {
+  function renderPaddockMapSummaryProgress(row, color) {
+    if (row.progress == null) {
+      return row.extra ? `<span class="paddock-summary-extra">${escapeHtml(row.extra)}</span>` : '';
+    }
+    return `
+      <span class="paddock-summary-progress" aria-hidden="true"><span style="width:${Math.round(row.progress * 100)}%;background:${color}"></span></span>
+      ${row.extra ? `<span class="paddock-summary-extra">${escapeHtml(row.extra)}</span>` : ''}
+    `;
+  }
+
+  function renderPaddockMapSummaryDays(row) {
+    if (row.days == null) {
+      return '<span class="paddock-summary-days paddock-summary-days--empty">—</span>';
+    }
+    return `<span class="paddock-summary-days"><strong>${escapeHtml(String(row.days))}</strong> ${escapeHtml(row.unit)}</span>`;
+  }
+
+  function renderPaddockMapStatusSummary(state, paddocks) {
     if (!paddocks.length) {
       return '';
     }
 
-    const groups = [
-      { key: 'occupied', label: 'En uso', tone: 'green' },
-      { key: 'resting', label: 'En descanso', tone: 'blue' },
-      { key: 'growing', label: 'Sembrado / en preparación', tone: 'orange' },
-      { key: 'ready', label: 'Listos para entrar', tone: 'teal' },
-      { key: 'inactive', label: 'Inactivos', tone: 'gray' },
-    ];
+    const layout = getActiveView(state, 'paddockMapSummary') === 'cards' ? 'cards' : 'list';
+    const statusFilter = getActiveView(state, 'paddockMapStatus') || 'all';
 
-    const columns = groups
-      .map((group) => {
-        const rows = paddocks
-          .filter((paddock) => String(paddock.occupancy_state || 'ready') === group.key)
-          .map((paddock) => ({ paddock, row: getPaddockMapSummaryRow(paddock) }))
-          .sort((a, b) => a.row.sortKey - b.row.sortKey || String(a.paddock.name).localeCompare(String(b.paddock.name), 'es', { numeric: true }));
+    const grouped = PADDOCK_MAP_SUMMARY_GROUPS.map((group) => ({
+      ...group,
+      color: getPaddockMapToneColor(group.tone),
+      rows: paddocks
+        .map((paddock) => ({ paddock, row: getPaddockMapSummaryRow(paddock) }))
+        .filter(({ row }) => row.state === group.key)
+        .sort((a, b) => a.row.sortKey - b.row.sortKey || a.row.nameKey.localeCompare(b.row.nameKey, 'es', { numeric: true })),
+    }));
 
-        if (!rows.length) {
-          return '';
-        }
-
-        const color = getPaddockMapToneColor(group.tone);
-        return `
-          <div class="paddock-map-summary-group">
-            <div class="paddock-map-summary-head">
-              <span class="paddock-map-legend-swatch" style="background:${color}"></span>
-              <strong>${escapeHtml(group.label)}</strong>
-              <span class="paddock-map-summary-count">${rows.length}</span>
-            </div>
-            <ul class="paddock-map-summary-list">
-              ${rows.map(({ paddock, row }) => `
-                <li>
-                  <button
-                    type="button"
-                    class="paddock-map-summary-item"
-                    style="--summary-tone:${color}"
-                    ${renderActionAttributes({ action: 'open-modal', value: 'paddock-detail', meta: { paddockId: paddock.id } })}
-                  >
-                    <span class="paddock-map-summary-name">${escapeHtml(paddock.name)}</span>
-                    <span class="paddock-map-summary-value">${escapeHtml(row.value)}</span>
-                    <span class="paddock-map-summary-detail">${escapeHtml(row.detail)}</span>
-                  </button>
-                </li>
-              `).join('')}
-            </ul>
-          </div>
-        `;
-      })
+    const chips = [{ key: 'all', chip: 'Todos', tone: 'all', count: paddocks.length }]
+      .concat(grouped.map((group) => ({ key: group.key, chip: group.chip, tone: group.tone, count: group.rows.length })))
+      .filter((chip) => chip.key === 'all' || chip.count > 0)
+      .map((chip) => `
+        <button
+          type="button"
+          class="paddock-summary-chip paddock-summary-chip--${chip.tone}${statusFilter === chip.key ? ' is-active' : ''}"
+          data-view-nav="paddockMapStatus"
+          data-view-key="${chip.key}"
+          aria-pressed="${statusFilter === chip.key ? 'true' : 'false'}"
+        >${escapeHtml(chip.chip)} · ${chip.count}</button>
+      `)
       .join('');
 
+    const visibleGroups = grouped.filter(
+      (group) => group.rows.length && (statusFilter === 'all' || statusFilter === group.key)
+    );
+
+    const openAttrs = (paddock) =>
+      renderActionAttributes({ action: 'open-modal', value: 'paddock-detail', meta: { paddockId: paddock.id } });
+
+    const listMarkup = `
+      <div class="paddock-summary-table-wrap">
+        <div class="paddock-summary-table">
+          <div class="paddock-summary-tr paddock-summary-tr--head">
+            <span>Potrero</span><span>Estado</span><span>Días</span><span>Detalle</span><span>Avance</span>
+          </div>
+          ${visibleGroups.map((group) => `
+            <div class="paddock-summary-group-row paddock-summary-tone--${group.tone}">
+              ${escapeHtml(group.label)} · ${group.rows.length}
+              ${group.sortHint ? `<span>(${escapeHtml(group.sortHint)})</span>` : ''}
+            </div>
+            ${group.rows.map(({ paddock, row }) => `
+              <button type="button" class="paddock-summary-tr" ${openAttrs(paddock)}>
+                <strong class="paddock-summary-name">${escapeHtml(paddock.name)}</strong>
+                <span><span class="paddock-summary-badge paddock-summary-tone--${group.tone}"><span style="background:${group.color}"></span>${escapeHtml(row.badge)}</span></span>
+                ${renderPaddockMapSummaryDays(row)}
+                <span class="paddock-summary-detail">${escapeHtml(row.detail)}</span>
+                <span class="paddock-summary-advance">${renderPaddockMapSummaryProgress(row, group.color)}</span>
+              </button>
+            `).join('')}
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+    const cardsMarkup = visibleGroups.map((group) => `
+      <div class="paddock-summary-card-group">
+        <h4 class="paddock-summary-card-title paddock-summary-tone--${group.tone}">
+          ${escapeHtml(group.label)} · ${group.rows.length}
+          ${group.sortHint ? `<span>${escapeHtml(group.sortHint)}</span>` : ''}
+        </h4>
+        <div class="paddock-summary-card-grid">
+          ${group.rows.map(({ paddock, row }) => `
+            <button type="button" class="paddock-summary-card" style="border-top-color:${group.color}" ${openAttrs(paddock)}>
+              <span class="paddock-summary-name">${escapeHtml(paddock.name)}</span>
+              ${row.days != null ? renderPaddockMapSummaryDays(row) : ''}
+              ${row.progress != null ? `<span class="paddock-summary-progress" aria-hidden="true"><span style="width:${Math.round(row.progress * 100)}%;background:${group.color}"></span></span>` : ''}
+              <span class="paddock-summary-detail">${escapeHtml(row.detail)}</span>
+              ${row.extra ? `<span class="paddock-summary-extra">${escapeHtml(row.extra)}</span>` : ''}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `).join('');
+
     return `
-      <div class="paddock-map-summary">
-        <h3 class="paddock-map-summary-title">Estado de cada potrero</h3>
-        <div class="paddock-map-summary-grid">${columns}</div>
+      <div class="paddock-summary">
+        <div class="paddock-summary-header">
+          <div>
+            <h3 class="paddock-summary-title">Estado de cada potrero</h3>
+            <p class="paddock-summary-subtitle">${paddocks.length} potreros · tocá uno para abrir su ficha</p>
+          </div>
+          ${renderSegmentedTabs(state, 'paddockMapSummary', [
+            { key: 'list', label: 'Lista' },
+            { key: 'cards', label: 'Tarjetas' },
+          ])}
+        </div>
+        <div class="paddock-summary-chips">${chips}</div>
+        ${layout === 'cards' ? `<div class="paddock-summary-cards">${cardsMarkup}</div>` : listMarkup}
       </div>
     `;
   }
@@ -8578,7 +8701,7 @@
         </div>
         ${unmatchedNote}
         ${mapSourceNote}
-        ${renderPaddockMapStatusSummary(paddocks)}
+        ${renderPaddockMapStatusSummary(state, paddocks)}
       </section>
     `;
   }

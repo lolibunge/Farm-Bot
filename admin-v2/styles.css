@@ -659,99 +659,241 @@ button {
   font-style: italic;
 }
 
-.paddock-map-summary {
+.paddock-summary {
   margin-top: 24px;
-  padding-top: 20px;
+  padding-top: 24px;
   border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.paddock-map-summary-title {
-  margin: 0 0 14px;
-  font-size: 16px;
-  font-weight: 700;
+.paddock-summary-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.paddock-summary-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
   color: var(--text);
 }
 
-.paddock-map-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
-  align-items: start;
+.paddock-summary-subtitle {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #5b6572;
 }
 
-.paddock-map-summary-group {
-  background: var(--surface-soft);
+.paddock-summary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.paddock-summary-chip {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 8px 14px;
+  min-height: 36px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.paddock-summary-chip.is-active {
+  box-shadow: 0 0 0 2px var(--text) inset;
+}
+
+.paddock-summary-chip--all { background: var(--surface); border-color: var(--line-strong); color: var(--text); }
+.paddock-summary-chip--all.is-active { background: var(--text); color: #fff; }
+.paddock-summary-chip--green,
+.paddock-summary-tone--green { background: #e8f9ef; color: #0a6d2c; }
+.paddock-summary-chip--blue,
+.paddock-summary-tone--blue { background: #edf3ff; color: #1d4fc4; }
+.paddock-summary-chip--orange,
+.paddock-summary-tone--orange { background: #fff3e9; color: #a8400a; }
+.paddock-summary-chip--teal,
+.paddock-summary-tone--teal { background: #ebfcff; color: #08707a; }
+.paddock-summary-chip--gray,
+.paddock-summary-tone--gray { background: #f2f4f7; color: #4d5663; }
+
+/* Lista */
+.paddock-summary-table-wrap {
+  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: 12px;
 }
 
-.paddock-map-summary-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  font-size: 14px;
-  color: var(--text);
+.paddock-summary-table {
+  min-width: 820px;
 }
 
-.paddock-map-summary-count {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 2px 8px;
-}
-
-.paddock-map-summary-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 6px;
-  max-height: 420px;
-  overflow-y: auto;
-}
-
-.paddock-map-summary-item {
+.paddock-summary-tr {
   width: 100%;
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 2px 10px;
-  text-align: left;
+  grid-template-columns: 190px 160px 170px minmax(0, 1fr) 200px;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 20px;
+  border: 0;
+  border-top: 1px solid #eef1f6;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--summary-tone, var(--line-strong));
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
   font: inherit;
+  font-size: 14px;
   color: var(--text);
+  text-align: left;
   cursor: pointer;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
-.paddock-map-summary-item:hover {
-  box-shadow: var(--shadow-soft);
+button.paddock-summary-tr:hover {
+  background: var(--surface-soft);
 }
 
-.paddock-map-summary-name {
+.paddock-summary-tr--head {
+  border-top: 0;
+  background: var(--surface-soft);
+  font-size: 12px;
   font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5b6572;
+  cursor: default;
+}
+
+.paddock-summary-group-row {
+  padding: 10px 20px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.paddock-summary-group-row span {
+  font-weight: 500;
+}
+
+.paddock-summary-name {
+  font-weight: 700;
+}
+
+.paddock-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.paddock-summary-badge > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.paddock-summary-days {
+  color: #5b6572;
+  font-size: 13px;
+}
+
+.paddock-summary-days strong {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.paddock-summary-detail {
+  color: #3d4757;
   font-size: 13.5px;
 }
 
-.paddock-map-summary-value {
-  font-weight: 700;
-  font-size: 13px;
-  text-align: right;
+.paddock-summary-advance {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.paddock-map-summary-detail {
-  grid-column: 1 / -1;
+.paddock-summary-progress {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.paddock-summary-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.paddock-summary-extra {
   font-size: 12px;
-  color: var(--muted);
+  color: #5b6572;
+}
+
+/* Tarjetas */
+.paddock-summary-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.paddock-summary-card-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.paddock-summary-card-title span {
+  font-weight: 500;
+  font-size: 12.5px;
+}
+
+.paddock-summary-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.paddock-summary-card {
+  font: inherit;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  cursor: pointer;
+  transition: box-shadow 0.12s ease;
+}
+
+.paddock-summary-card:hover {
+  box-shadow: var(--shadow-soft);
+}
+
+.paddock-summary-card .paddock-summary-name {
+  font-size: 15px;
+}
+
+.paddock-summary-card .paddock-summary-days strong {
+  font-size: 26px;
 }
 
 .paddock-map-upload-error {
