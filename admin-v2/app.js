@@ -8341,6 +8341,144 @@
     }
   }
 
+  function getPaddockMapDaysSince(isoDate) {
+    if (!isoDate) {
+      return null;
+    }
+    const match = String(isoDate).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) {
+      return null;
+    }
+    const start = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    const now = new Date();
+    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.max(0, Math.round((today - start) / 86400000));
+  }
+
+  function formatPaddockMapDays(days) {
+    if (days == null) {
+      return '—';
+    }
+    return `${days} ${Number(days) === 1 ? 'día' : 'días'}`;
+  }
+
+  function getPaddockMapSummaryRow(paddock) {
+    const state = String(paddock.occupancy_state || 'ready');
+    const workLabel = paddock.latest_work_type_label
+      ? formatPaddockWorkTypeText(paddock.latest_work_type || paddock.latest_work_type_label)
+      : '';
+    const workDays = getPaddockMapDaysSince(paddock.latest_work_date);
+
+    switch (state) {
+      case 'occupied':
+        return {
+          days: paddock.grazing_days,
+          value: formatPaddockMapDays(paddock.grazing_days),
+          detail: paddock.occupied_by ? `Ocupa: ${paddock.occupied_by}` : 'Ocupación activa',
+          sortKey: -(paddock.grazing_days || 0),
+        };
+      case 'resting':
+        return {
+          days: paddock.rest_days,
+          value: formatPaddockMapDays(paddock.rest_days),
+          detail: paddock.last_exited_at
+            ? `Salida ${formatCompactDateLabel(paddock.last_exited_at)}${paddock.effective_rest_is_estimated ? ' (estimado)' : ''}`
+            : paddock.inherited_rest && paddock.effective_rest_paddock_name
+              ? `Descanso de ${paddock.effective_rest_paddock_name}`
+              : 'En descanso',
+          sortKey: -(paddock.rest_days || 0),
+        };
+      case 'growing': {
+        const remaining = paddock.days_until_ready;
+        return {
+          days: workDays,
+          value: workLabel && workDays != null ? `${workLabel} hace ${formatPaddockMapDays(workDays)}` : 'En espera',
+          detail: remaining != null
+            ? `Faltan ${formatPaddockMapDays(remaining)} · listo ${formatCompactDateLabel(paddock.ready_to_graze_on)}`
+            : 'Esperando habilitación',
+          sortKey: remaining != null ? remaining : 9999,
+        };
+      }
+      case 'inactive':
+        return {
+          days: null,
+          value: 'Inactivo',
+          detail: 'No disponible para movimientos',
+          sortKey: 0,
+        };
+      default:
+        return {
+          days: paddock.rest_days,
+          value: paddock.rest_days != null ? `${formatPaddockMapDays(paddock.rest_days)} sin uso` : 'Disponible',
+          detail: workLabel && workDays != null
+            ? `Último trabajo: ${workLabel} hace ${formatPaddockMapDays(workDays)}`
+            : 'Listo para entrar',
+          sortKey: -(paddock.rest_days || 0),
+        };
+    }
+  }
+
+  function renderPaddockMapStatusSummary(paddocks) {
+    if (!paddocks.length) {
+      return '';
+    }
+
+    const groups = [
+      { key: 'occupied', label: 'En uso', tone: 'green' },
+      { key: 'resting', label: 'En descanso', tone: 'blue' },
+      { key: 'growing', label: 'Sembrado / en preparación', tone: 'orange' },
+      { key: 'ready', label: 'Listos para entrar', tone: 'teal' },
+      { key: 'inactive', label: 'Inactivos', tone: 'gray' },
+    ];
+
+    const columns = groups
+      .map((group) => {
+        const rows = paddocks
+          .filter((paddock) => String(paddock.occupancy_state || 'ready') === group.key)
+          .map((paddock) => ({ paddock, row: getPaddockMapSummaryRow(paddock) }))
+          .sort((a, b) => a.row.sortKey - b.row.sortKey || String(a.paddock.name).localeCompare(String(b.paddock.name), 'es', { numeric: true }));
+
+        if (!rows.length) {
+          return '';
+        }
+
+        const color = getPaddockMapToneColor(group.tone);
+        return `
+          <div class="paddock-map-summary-group">
+            <div class="paddock-map-summary-head">
+              <span class="paddock-map-legend-swatch" style="background:${color}"></span>
+              <strong>${escapeHtml(group.label)}</strong>
+              <span class="paddock-map-summary-count">${rows.length}</span>
+            </div>
+            <ul class="paddock-map-summary-list">
+              ${rows.map(({ paddock, row }) => `
+                <li>
+                  <button
+                    type="button"
+                    class="paddock-map-summary-item"
+                    style="--summary-tone:${color}"
+                    ${renderActionAttributes({ action: 'open-modal', value: 'paddock-detail', meta: { paddockId: paddock.id } })}
+                  >
+                    <span class="paddock-map-summary-name">${escapeHtml(paddock.name)}</span>
+                    <span class="paddock-map-summary-value">${escapeHtml(row.value)}</span>
+                    <span class="paddock-map-summary-detail">${escapeHtml(row.detail)}</span>
+                  </button>
+                </li>
+              `).join('')}
+            </ul>
+          </div>
+        `;
+      })
+      .join('');
+
+    return `
+      <div class="paddock-map-summary">
+        <h3 class="paddock-map-summary-title">Estado de cada potrero</h3>
+        <div class="paddock-map-summary-grid">${columns}</div>
+      </div>
+    `;
+  }
+
   function renderRealPaddockMapView(state, dashboard) {
     const paddocks = Array.isArray(dashboard?.paddocks) ? dashboard.paddocks : [];
     const byName = new Map();
@@ -8440,6 +8578,7 @@
         </div>
         ${unmatchedNote}
         ${mapSourceNote}
+        ${renderPaddockMapStatusSummary(paddocks)}
       </section>
     `;
   }
