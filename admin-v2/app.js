@@ -3810,6 +3810,29 @@
       });
     }
 
+    const pastureConfigForAlerts = getPastureConfig(state);
+    const pastureDepleted = (getRealPaddockDashboard(state)?.paddocks || []).filter((paddock) => {
+      const outlook = getPastureOccupiedOutlook(
+        paddock,
+        getPastureEstimate(paddock, pastureConfigForAlerts),
+        pastureConfigForAlerts
+      );
+      return outlook && outlook.remaining <= 0;
+    });
+    if (pastureDepleted.length) {
+      alerts.push({
+        alertKey: 'pasture-depleted',
+        title: 'Pasto agotado',
+        detail: pastureDepleted
+          .slice(0, 3)
+          .map((paddock) => paddock.name)
+          .join(', '),
+        count: pastureDepleted.length,
+        tone: 'warning',
+        navKey: 'paddocks',
+      });
+    }
+
     if (paddocksPreparing.length) {
       const nextReadyDate = paddocksPreparing
         .map((paddock) => paddock.ready_to_graze_on)
@@ -8390,6 +8413,16 @@
   }
 
   function getPaddockMapSummaryRow(paddock) {
+    const row = getPaddockMapSummaryRowBase(paddock);
+    const pasture = paddock?.latest_pasture;
+    if (pasture && pasture.kg_dm_per_ha != null && (row.state === 'resting' || row.state === 'ready')) {
+      const ageDays = getPaddockMapDaysSince(pasture.measured_on);
+      row.detail = `${row.detail} · Pasto ${formatPastureKg(pasture.kg_dm_per_ha)} kg MS/ha${ageDays ? ` (hace ${ageDays} d)` : ''}`;
+    }
+    return row;
+  }
+
+  function getPaddockMapSummaryRowBase(paddock) {
     const state = String(paddock.occupancy_state || 'ready');
     const workLabel = paddock.latest_work_type_label
       ? formatPaddockWorkTypeText(paddock.latest_work_type || paddock.latest_work_type_label)
@@ -12912,9 +12945,10 @@
     `;
   }
 
-  function renderSettingsGeneral() {
+  function renderSettingsGeneral(state) {
     return `
       <div class="stack-gap">
+        ${renderPastureSettingsPanel(state)}
         <section class="panel">
           <div class="panel-head informacion-del-campo">
             <h2>Información del Campo</h2>
@@ -13086,7 +13120,7 @@
             : activeView === 'security'
               ? renderSettingsSecurity(state)
               : activeView === 'general'
-                ? renderSettingsGeneral()
+                ? renderSettingsGeneral(state)
                 : activeView === 'notifications'
                   ? renderSettingsNotifications()
                   : activeView === 'users'
@@ -13699,6 +13733,603 @@
       .slice(0, 6);
   }
 
+  // ---- Medición de pasto (método del cuadro) ----
+  const PASTURE_CONFIG_FALLBACK = {
+    horse_weight_kg: 450,
+    intake_pct: 2.2,
+    utilization_pct: 60,
+    stale_days: 15,
+  };
+
+  function getPastureConfig(state) {
+    return { ...PASTURE_CONFIG_FALLBACK, ...(getRealPaddockDashboard(state)?.pasture_config || {}) };
+  }
+
+  function getPastureDailyIntakeKg(config) {
+    return (Number(config.horse_weight_kg) * Number(config.intake_pct)) / 100;
+  }
+
+  function formatPastureKg(value) {
+    if (value == null || !Number.isFinite(Number(value))) {
+      return '—';
+    }
+    return Math.round(Number(value)).toLocaleString('es-UY');
+  }
+
+  function addDaysToIsoDate(isoDate, days) {
+    const match = String(isoDate || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) {
+      return '';
+    }
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    date.setUTCDate(date.getUTCDate() + Math.round(days));
+    return date.toISOString().slice(0, 10);
+  }
+
+  function getPastureSuggestedDryMatterPct(isoDate) {
+    const month = Number(String(isoDate || todayDateString()).slice(5, 7)) || new Date().getMonth() + 1;
+    if (month >= 9 && month <= 11) {
+      return { pct: 20, label: 'primavera: 18–22 %' };
+    }
+    if (month === 12 || month <= 2) {
+      return { pct: 27, label: 'verano: 25–30 %' };
+    }
+    if (month >= 3 && month <= 5) {
+      return { pct: 22, label: 'otoño: 20–25 %' };
+    }
+    return { pct: 18, label: 'invierno: 15–20 %' };
+  }
+
+  function computePastureKgPerHa({ samples, frameAreaM2, weighMode, dryMatterPct }) {
+    const valid = (samples || [])
+      .map((value) => Number(String(value).replace(',', '.')))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const frame = Number(frameAreaM2) || 1;
+    if (!valid.length) {
+      return { count: 0, avg: null, gm2: null, kgHa: null };
+    }
+    const avg = valid.reduce((sum, value) => sum + value, 0) / valid.length;
+    const perM2 = avg / frame;
+    const gm2 = weighMode === 'dry' ? perM2 : (perM2 * (Number(String(dryMatterPct).replace(',', '.')) || 0)) / 100;
+    return { count: valid.length, avg, gm2, kgHa: gm2 * 10 };
+  }
+
+  function getPastureEstimate(paddock, config) {
+    const measurement = paddock?.latest_pasture;
+    if (!measurement || measurement.kg_dm_per_ha == null) {
+      return null;
+    }
+    const sizeHa = paddock.size_ha != null ? Number(paddock.size_ha) : measurement.size_ha;
+    const kgHa = Number(measurement.kg_dm_per_ha);
+    const total = sizeHa != null ? kgHa * sizeHa : null;
+    const usable = total != null ? (total * Number(config.utilization_pct)) / 100 : null;
+    const ageDays = getPaddockMapDaysSince(measurement.measured_on);
+    return {
+      measurement,
+      sizeHa,
+      kgHa,
+      total,
+      usable,
+      ageDays,
+      stale: ageDays != null && ageDays > Number(config.stale_days),
+    };
+  }
+
+  function getPastureDaysFor(estimate, horseCount, config) {
+    const intake = getPastureDailyIntakeKg(config);
+    if (!estimate || estimate.usable == null || !horseCount || !(intake > 0)) {
+      return null;
+    }
+    return estimate.usable / (Number(horseCount) * intake);
+  }
+
+  // Para potreros ocupados: cuántos días de pasto quedan con los caballos que están adentro.
+  function getPastureOccupiedOutlook(paddock, estimate, config) {
+    if (!estimate || paddock?.occupancy_state !== 'occupied' || !paddock.horse_count) {
+      return null;
+    }
+    const totalDays = getPastureDaysFor(estimate, paddock.horse_count, config);
+    if (totalDays == null) {
+      return null;
+    }
+    const measuredOn = estimate.measurement.measured_on;
+    const start = paddock.occupied_since && paddock.occupied_since > measuredOn ? paddock.occupied_since : measuredOn;
+    const elapsed = getPaddockMapDaysSince(start) || 0;
+    return {
+      totalDays,
+      remaining: totalDays - elapsed,
+      endDate: addDaysToIsoDate(start, totalDays),
+    };
+  }
+
+  function getPastureGroupsForEstimate(state) {
+    const horseDashboard = getRealHorseDashboard(state);
+    if (!horseDashboard) {
+      return [];
+    }
+    return buildRealHorseGroups(horseDashboard)
+      .filter((group) => Number(group.count) > 0)
+      .sort((left, right) => Number(left.count) - Number(right.count));
+  }
+
+  function renderPaddockPastureSection(state, paddock, detail) {
+    const config = getPastureConfig(state);
+    const estimate = getPastureEstimate(paddock, config);
+    const intake = getPastureDailyIntakeKg(config);
+    const measureButton = `
+      <button
+        type="button"
+        class="btn btn-primary"
+        ${renderActionAttributes({ action: 'open-modal', value: 'pasture-measure', meta: { paddockId: paddock.id } })}
+      >
+        ${renderIcon('plus')}
+        <span>Medir pasto</span>
+      </button>
+    `;
+
+    if (!estimate) {
+      return `
+        <section class="paddock-detail-section pasture-section">
+          <div class="pasture-section-head">
+            <div>
+              <strong>Pasto disponible</strong>
+              <small>Todavía no hay mediciones. Medí el pasto antes de que entren los caballos para saber cuántos días alcanza.</small>
+            </div>
+            ${measureButton}
+          </div>
+        </section>
+      `;
+    }
+
+    const measurement = estimate.measurement;
+    const methodLabel =
+      measurement.weigh_mode === 'dry'
+        ? 'pesado en seco'
+        : `en verde · ${formatPastureKg(measurement.dry_matter_pct)} % MS`;
+    const measuredLabel =
+      estimate.ageDays === 0 ? 'hoy' : estimate.ageDays === 1 ? 'ayer' : `hace ${estimate.ageDays} días`;
+    const outlook = getPastureOccupiedOutlook(paddock, estimate, config);
+    const groups = getPastureGroupsForEstimate(state).slice(0, 6);
+    const maxDays = Math.max(
+      1,
+      ...groups.map((group) => getPastureDaysFor(estimate, group.count, config) || 0)
+    );
+
+    const history = Array.isArray(detail?.pasture_history) ? detail.pasture_history : [];
+    const maxHistoryKg = Math.max(1, ...history.map((item) => Number(item.kg_dm_per_ha) || 0));
+    let growthNote = '';
+    if (history.length >= 2) {
+      const [latest, previous] = history;
+      const gap = getPaddockMapDaysSince(previous.measured_on) - getPaddockMapDaysSince(latest.measured_on);
+      if (gap > 0 && latest.kg_dm_per_ha != null && previous.kg_dm_per_ha != null) {
+        const rate = (latest.kg_dm_per_ha - previous.kg_dm_per_ha) / gap;
+        growthNote =
+          rate >= 0
+            ? `El pasto creció ≈ ${formatPastureKg(rate)} kg MS/ha por día desde la medición anterior.`
+            : `Bajó ≈ ${formatPastureKg(-rate)} kg MS/ha por día desde la medición anterior.`;
+      }
+    }
+
+    return `
+      <section class="paddock-detail-section pasture-section">
+        <div class="pasture-section-head">
+          <div>
+            <strong>Pasto disponible</strong>
+            <small>Medido ${escapeHtml(measuredLabel)} (${escapeHtml(formatCompactDateLabel(measurement.measured_on))}) · ${escapeHtml(String(measurement.sample_grams.length))} muestras ${escapeHtml(methodLabel)}</small>
+          </div>
+          ${measureButton}
+        </div>
+
+        ${
+          estimate.stale
+            ? `<div class="pasture-warning">${renderIcon('circleAlert')}<span><strong>La medición tiene más de ${escapeHtml(String(config.stale_days))} días.</strong> Conviene volver a medir antes de meter caballos.</span></div>`
+            : ''
+        }
+
+        <div class="pasture-metrics">
+          <article class="pasture-metric pasture-metric--accent">
+            <span>Disponibilidad</span>
+            <strong>${escapeHtml(formatPastureKg(estimate.kgHa))}</strong>
+            <small>kg MS / ha</small>
+          </article>
+          <article class="pasture-metric">
+            <span>Pasto total</span>
+            <strong>${escapeHtml(formatPastureKg(estimate.total))}</strong>
+            <small>${estimate.sizeHa != null ? `kg MS en ${escapeHtml(String(estimate.sizeHa).replace('.', ','))} ha` : 'Cargá las hectáreas del potrero'}</small>
+          </article>
+          <article class="pasture-metric">
+            <span>Aprovechable</span>
+            <strong>${escapeHtml(formatPastureKg(estimate.usable))}</strong>
+            <small>kg MS (${escapeHtml(String(config.utilization_pct))} %)</small>
+          </article>
+        </div>
+
+        ${
+          outlook
+            ? `<div class="pasture-outlook${outlook.remaining <= 0 ? ' pasture-outlook--over' : ''}">
+                Con los ${escapeHtml(String(paddock.horse_count))} caballos que están adentro:
+                <strong>${
+                  outlook.remaining > 0
+                    ? `quedan ≈ ${escapeHtml(formatPastureKg(outlook.remaining))} días (hasta ${escapeHtml(formatCompactDateLabel(outlook.endDate))})`
+                    : `el pasto estimado se terminó el ${escapeHtml(formatCompactDateLabel(outlook.endDate))}`
+                }</strong>
+              </div>`
+            : ''
+        }
+
+        ${
+          estimate.usable != null && groups.length
+            ? `
+              <div class="pasture-days">
+                <span class="pasture-subtitle">¿Para cuántos días alcanza?</span>
+                <div class="pasture-days-table">
+                  ${groups
+                    .map((group) => {
+                      const days = getPastureDaysFor(estimate, group.count, config);
+                      return `
+                        <div class="pasture-days-row">
+                          <span><strong>${escapeHtml(group.name)}</strong> <small>· ${escapeHtml(String(group.count))} caballos</small></span>
+                          <small>${escapeHtml(formatPastureKg(group.count * intake))} kg MS/día</small>
+                          <span class="pasture-days-value">
+                            <span class="pasture-bar"><span style="width:${Math.round(Math.min(1, days / maxDays) * 100)}%"></span></span>
+                            <strong>≈ ${escapeHtml(formatPastureKg(days))} días</strong>
+                          </span>
+                        </div>
+                      `;
+                    })
+                    .join('')}
+                </div>
+                <small class="pasture-footnote">Consumo estimado: ${escapeHtml(String(config.intake_pct).replace('.', ','))} % del peso vivo por día, ${escapeHtml(String(config.horse_weight_kg))} kg por caballo. Se cambia en Configuración › General.</small>
+              </div>
+            `
+            : ''
+        }
+
+        ${
+          history.length
+            ? `
+              <div class="pasture-history">
+                <span class="pasture-subtitle">Historial de mediciones</span>
+                ${history
+                  .map(
+                    (item, index) => `
+                      <div class="pasture-history-row">
+                        <span>${escapeHtml(formatDateLabel(item.measured_on))}</span>
+                        <span class="pasture-bar pasture-bar--wide"><span class="${index === 0 ? '' : 'is-muted'}" style="width:${Math.round(((Number(item.kg_dm_per_ha) || 0) / maxHistoryKg) * 100)}%"></span></span>
+                        <span><strong>${escapeHtml(formatPastureKg(item.kg_dm_per_ha))}</strong> <small>kg/ha</small></span>
+                      </div>
+                    `
+                  )
+                  .join('')}
+                ${growthNote ? `<small class="pasture-footnote">${escapeHtml(growthNote)}</small>` : ''}
+              </div>
+            `
+            : ''
+        }
+      </section>
+    `;
+  }
+
+  function getPastureMeasurePayloadDefaults(payload) {
+    const measuredOn = payload?.measuredOn || todayDateString();
+    const samples = Array.isArray(payload?.samples) && payload.samples.length ? payload.samples : ['', '', '', '', ''];
+    return {
+      paddockId: payload?.paddockId,
+      measuredOn,
+      frameAreaM2: payload?.frameAreaM2 || '1',
+      cutHeight: payload?.cutHeight || 'A 5 cm (remanente)',
+      weighMode: payload?.weighMode === 'dry' ? 'dry' : 'green',
+      dryMatterPct:
+        payload?.dryMatterPct != null && payload.dryMatterPct !== ''
+          ? String(payload.dryMatterPct)
+          : String(getPastureSuggestedDryMatterPct(measuredOn).pct),
+      samples,
+      notes: payload?.notes || '',
+    };
+  }
+
+  function renderPastureMeasureModal(state, payload) {
+    const paddock = getRealPaddockById(state, payload?.paddockId);
+    if (!paddock) {
+      return '';
+    }
+    const values = getPastureMeasurePayloadDefaults(payload);
+    const suggestion = getPastureSuggestedDryMatterPct(values.measuredOn);
+    const fieldAttr = 'data-pasture-field="1"';
+    const liveAttr = 'data-pasture-live="1"';
+
+    const option = (value, label, current) =>
+      `<option value="${escapeHtml(value)}"${String(current) === value ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+
+    return renderModalShell({
+      size: 'wide',
+      title: `Medir pasto · ${paddock.name}`,
+      subtitle: 'Cortá el pasto dentro del cuadro en varios puntos y cargá lo que pesó cada muestra.',
+      content: `
+        <form class="modal-form pasture-form" data-modal-form data-modal-key="pasture-measure">
+          <input type="hidden" name="paddockId" value="${escapeHtml(String(paddock.id))}" />
+          <div class="pasture-form-grid">
+            <label class="modal-field">
+              <span>Fecha de la medición</span>
+              <input type="date" name="measuredOn" value="${escapeHtml(values.measuredOn)}" required ${fieldAttr} />
+            </label>
+            <label class="modal-field">
+              <span>Tamaño del cuadro</span>
+              <select name="frameAreaM2" ${fieldAttr}>
+                ${option('1', '1 m × 1 m (1 m²)', values.frameAreaM2)}
+                ${option('0.25', '50 × 50 cm (0,25 m²)', values.frameAreaM2)}
+              </select>
+            </label>
+            <label class="modal-field">
+              <span>Altura de corte</span>
+              <select name="cutHeight" ${fieldAttr}>
+                ${option('A 5 cm (remanente)', 'A 5 cm (remanente)', values.cutHeight)}
+                ${option('A ras del suelo', 'A ras del suelo', values.cutHeight)}
+              </select>
+            </label>
+          </div>
+
+          <fieldset class="pasture-mode">
+            <legend>¿Cómo pesaste el pasto?</legend>
+            <label class="pasture-mode-option${values.weighMode === 'green' ? ' is-active' : ''}">
+              <input type="radio" name="weighMode" value="green"${values.weighMode === 'green' ? ' checked' : ''} ${fieldAttr} />
+              <strong>En verde (recién cortado)</strong>
+              <small>Usamos un % de materia seca según la época</small>
+            </label>
+            <label class="pasture-mode-option${values.weighMode === 'dry' ? ' is-active' : ''}">
+              <input type="radio" name="weighMode" value="dry"${values.weighMode === 'dry' ? ' checked' : ''} ${fieldAttr} />
+              <strong>Seco (horno o microondas)</strong>
+              <small>El peso ya es materia seca, más preciso</small>
+            </label>
+          </fieldset>
+          ${
+            values.weighMode === 'green'
+              ? `
+                <label class="pasture-ms-row">
+                  <span>Materia seca estimada</span>
+                  <input type="number" name="dryMatterPct" min="1" max="100" step="0.1" value="${escapeHtml(values.dryMatterPct)}" ${liveAttr} aria-label="Porcentaje de materia seca" />
+                  <span>%</span>
+                  <small>Sugerido para ${escapeHtml(suggestion.label)}</small>
+                </label>
+              `
+              : ''
+          }
+
+          <div class="pasture-samples">
+            <div class="pasture-samples-head">
+              <span>Peso de cada muestra (gramos)</span>
+              <small>Recomendado: 5 a 10 muestras repartidas por el potrero</small>
+            </div>
+            <div class="pasture-samples-grid">
+              ${values.samples
+                .map(
+                  (sample, index) => `
+                    <label class="pasture-sample">
+                      <small>Muestra ${index + 1}</small>
+                      <span class="pasture-sample-input">
+                        <input type="number" name="sample" min="0" step="any" inputmode="decimal" value="${escapeHtml(String(sample))}" ${liveAttr} aria-label="Gramos de la muestra ${index + 1}" />
+                        <small>g</small>
+                      </span>
+                    </label>
+                  `
+                )
+                .join('')}
+              <button type="button" class="pasture-add-sample" data-action="pasture-add-sample">+ Agregar muestra</button>
+            </div>
+          </div>
+
+          <div class="pasture-result" data-pasture-result>
+            ${renderPastureMeasureResult(state, paddock, values)}
+          </div>
+
+          <label class="modal-field">
+            <span>Notas (opcional)</span>
+            <textarea name="notes" rows="2" placeholder="Ej: zona del bajo más alta, trébol en flor..." ${liveAttr}>${escapeHtml(values.notes)}</textarea>
+          </label>
+
+          ${renderModalFooter([
+            { label: 'Cancelar', tone: 'secondary', trigger: { action: 'open-modal', value: 'paddock-detail', meta: { paddockId: paddock.id } } },
+            { label: 'Guardar medición', tone: 'primary', icon: 'check', submit: true },
+          ])}
+        </form>
+      `,
+    });
+  }
+
+  function renderPastureMeasureResult(state, paddock, values) {
+    const config = getPastureConfig(state);
+    const result = computePastureKgPerHa(values);
+    const sizeHa = paddock.size_ha != null ? Number(paddock.size_ha) : null;
+    const total = result.kgHa != null && sizeHa != null ? result.kgHa * sizeHa : null;
+    const usable = total != null ? (total * config.utilization_pct) / 100 : null;
+    const estimateLike = usable != null ? { usable } : null;
+    const groups = getPastureGroupsForEstimate(state).slice(-2).reverse();
+
+    return `
+      <span class="pasture-result-label">Resultado</span>
+      <div class="pasture-metrics">
+        <article class="pasture-metric">
+          <span>Disponibilidad</span>
+          <strong>${escapeHtml(formatPastureKg(result.kgHa))}</strong>
+          <small>kg MS / ha</small>
+        </article>
+        <article class="pasture-metric">
+          <span>Pasto total${sizeHa != null ? ` (${escapeHtml(String(sizeHa).replace('.', ','))} ha)` : ''}</span>
+          <strong>${escapeHtml(formatPastureKg(total))}</strong>
+          <small>${sizeHa != null ? 'kg MS' : 'Falta cargar las hectáreas del potrero'}</small>
+        </article>
+        <article class="pasture-metric">
+          <span>Aprovechable (${escapeHtml(String(config.utilization_pct))} %)</span>
+          <strong class="pasture-metric-green">${escapeHtml(formatPastureKg(usable))}</strong>
+          <small>kg MS para comer</small>
+        </article>
+      </div>
+      ${
+        result.count
+          ? `<p class="pasture-result-note">
+              Promedio <strong>${escapeHtml(formatPastureKg(result.avg))} g</strong> por muestra →
+              <strong>${escapeHtml(formatPastureKg(result.gm2))} g MS/m²</strong> × 10 = ${escapeHtml(formatPastureKg(result.kgHa))} kg MS/ha
+              ${
+                estimateLike && groups.length
+                  ? `<br>Alcanza para ${groups
+                      .map(
+                        (group) =>
+                          `≈ <strong>${escapeHtml(formatPastureKg(getPastureDaysFor(estimateLike, group.count, config)))} días</strong> con ${escapeHtml(group.name)} (${escapeHtml(String(group.count))} caballos)`
+                      )
+                      .join(' · ')}`
+                  : ''
+              }
+            </p>`
+          : '<p class="pasture-result-note">Cargá el peso de las muestras para ver el resultado.</p>'
+      }
+    `;
+  }
+
+  // Actualiza solo el bloque de resultado mientras se escribe, sin redibujar el formulario
+  // (así no se pierde el foco del campo).
+  function updatePastureMeasureLive(form) {
+    const state = store.getState();
+    const modal = state.modal;
+    if (!modal || modal.key !== 'pasture-measure') {
+      return;
+    }
+    const values = readPastureMeasureForm(form);
+    if (modal.payload && typeof modal.payload === 'object') {
+      Object.assign(modal.payload, values, {
+        dryMatterPct: values.dryMatterPct ?? modal.payload.dryMatterPct,
+      });
+    }
+    const paddock = getRealPaddockById(state, values.paddockId);
+    const target = form.querySelector('[data-pasture-result]');
+    if (paddock && target) {
+      target.innerHTML = renderPastureMeasureResult(
+        state,
+        paddock,
+        getPastureMeasurePayloadDefaults({ ...(modal.payload || {}), ...values })
+      );
+    }
+  }
+
+  function readPastureMeasureForm(form) {
+    const formData = new FormData(form);
+    return {
+      paddockId: String(formData.get('paddockId') || ''),
+      measuredOn: String(formData.get('measuredOn') || ''),
+      frameAreaM2: String(formData.get('frameAreaM2') || '1'),
+      cutHeight: String(formData.get('cutHeight') || ''),
+      weighMode: String(formData.get('weighMode') || 'green'),
+      dryMatterPct: formData.has('dryMatterPct') ? String(formData.get('dryMatterPct') || '') : undefined,
+      samples: formData.getAll('sample').map((value) => String(value)),
+      notes: String(formData.get('notes') || ''),
+    };
+  }
+
+  async function submitPastureMeasureForm(form) {
+    const values = readPastureMeasureForm(form);
+    const current = store.getState().modal?.payload || {};
+    const merged = getPastureMeasurePayloadDefaults({ ...current, ...values, dryMatterPct: values.dryMatterPct ?? current.dryMatterPct });
+    const paddockId = parsePositiveInt(merged.paddockId);
+    const sampleGrams = merged.samples
+      .map((value) => Number(String(value).replace(',', '.')))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
+    if (!paddockId) {
+      showToast('No encontramos el potrero.', 'critical');
+      return;
+    }
+    if (!isValidDateString(merged.measuredOn)) {
+      showToast('Elegí una fecha válida.', 'critical');
+      return;
+    }
+    if (!sampleGrams.length) {
+      showToast('Cargá el peso de al menos una muestra.', 'critical');
+      return;
+    }
+
+    setState({ loading: true });
+    try {
+      await postMutation({
+        action: 'pasture_measurement_save',
+        paddockId,
+        measuredOn: merged.measuredOn,
+        frameAreaM2: merged.frameAreaM2,
+        cutHeight: merged.cutHeight,
+        weighMode: merged.weighMode,
+        dryMatterPct: merged.weighMode === 'green' ? merged.dryMatterPct : null,
+        sampleGrams,
+        notes: merged.notes,
+      });
+      await loadAdminDashboards({ closeModal: true });
+      openModal('paddock-detail', { paddockId });
+      loadPaddockDetail(paddockId).catch(() => {});
+      showToast('Medición de pasto guardada.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar la medición.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  function renderPastureConfigModal(state) {
+    const config = getPastureConfig(state);
+    return renderFormModal({
+      key: 'pasture-config',
+      title: 'Parámetros de pastoreo',
+      subtitle: 'Se usan para calcular cuántos días alcanza el pasto de cada potrero.',
+      submitLabel: 'Guardar',
+      submitIcon: 'check',
+      columns: 2,
+      fields: [
+        { label: 'Peso promedio por caballo (kg)', name: 'horseWeightKg', type: 'number', value: String(config.horse_weight_kg), required: true, attributes: { min: '50', max: '1500', step: '1' }, hint: 'Se usa si el caballo no tiene peso cargado.' },
+        { label: 'Consumo diario (% del peso vivo)', name: 'intakePct', type: 'number', value: String(config.intake_pct), required: true, attributes: { min: '0.5', max: '6', step: '0.1' }, hint: 'Habitual: 2 a 2,5 % en materia seca.' },
+        { label: 'Aprovechamiento del pasto (%)', name: 'utilizationPct', type: 'number', value: String(config.utilization_pct), required: true, attributes: { min: '10', max: '100', step: '1' }, hint: 'Lo que realmente comen; en caballos suele ser 50–65 %.' },
+        { label: 'Avisar si la medición tiene más de (días)', name: 'staleDays', type: 'number', value: String(config.stale_days), required: true, attributes: { min: '1', max: '365', step: '1' } },
+      ],
+    });
+  }
+
+  async function submitPastureConfigForm(formData) {
+    const values = formDataToObject(formData);
+    setState({ loading: true });
+    try {
+      await postMutation({
+        action: 'pasture_config_save',
+        horseWeightKg: values.horseWeightKg,
+        intakePct: values.intakePct,
+        utilizationPct: values.utilizationPct,
+        staleDays: values.staleDays,
+      });
+      await loadAdminDashboards({ closeModal: true });
+      showToast('Parámetros de pastoreo guardados.');
+    } catch (error) {
+      showToast(error.message || 'No pudimos guardar los parámetros.', 'critical');
+    } finally {
+      setState({ loading: false });
+    }
+  }
+
+  function renderPastureSettingsPanel(state) {
+    const config = getPastureConfig(state);
+    return `
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Pastoreo</h2>
+        </div>
+        <p class="pasture-settings-copy">Valores para estimar cuántos días alcanza el pasto medido en cada potrero.</p>
+        <div class="pasture-settings-grid">
+          <div><span>Peso por caballo</span><strong>${escapeHtml(String(config.horse_weight_kg))} kg</strong></div>
+          <div><span>Consumo diario</span><strong>${escapeHtml(String(config.intake_pct).replace('.', ','))} % del peso</strong></div>
+          <div><span>Aprovechamiento</span><strong>${escapeHtml(String(config.utilization_pct))} %</strong></div>
+          <div><span>Aviso de medición vieja</span><strong>${escapeHtml(String(config.stale_days))} días</strong></div>
+        </div>
+        <button type="button" class="btn btn-secondary" ${renderActionAttributes({ action: 'open-modal', value: 'pasture-config' })}>
+          ${renderIcon('edit')}
+          <span>Editar parámetros</span>
+        </button>
+      </section>
+    `;
+  }
+
   function renderRealPaddockDetailModal(state, payload) {
     const paddock = getRealPaddockById(state, payload.paddockId);
     if (!paddock) {
@@ -13803,6 +14434,8 @@
               </article>
             </div>
           </section>
+
+          ${renderPaddockPastureSection(state, paddock, detail)}
 
           <section class="paddock-detail-section">
             <div class="paddock-detail-section-head">
@@ -16319,17 +16952,39 @@
       includeBlank: true,
       blankLabel: 'Seleccionar grupo',
     });
-    const paddockOptions = buildRealPaddockSelectOptions(state, {
-      includeBlank: false,
-    });
     const group =
-      payload?.groupId != null
+      payload?.groupId != null && payload.groupId !== ''
         ? getRealHorseGroupById(state, payload.groupId)
         : getRealHorseGroupByName(state, payload?.groupName || '');
+    const pastureConfig = getPastureConfig(state);
+    const paddockOptions = buildRealPaddockSelectOptions(state, {
+      includeBlank: false,
+    }).map((option) => {
+      const optionPaddock = getRealPaddockById(state, option.value);
+      const optionEstimate = getPastureEstimate(optionPaddock, pastureConfig);
+      if (!optionEstimate) {
+        return option;
+      }
+      const optionDays = group?.count ? getPastureDaysFor(optionEstimate, group.count, pastureConfig) : null;
+      return {
+        ...option,
+        label:
+          optionDays != null
+            ? `${option.label} · ≈ ${formatPastureKg(optionDays)} días de pasto`
+            : `${option.label} · ${formatPastureKg(optionEstimate.kgHa)} kg MS/ha`,
+      };
+    });
     const selectedPaddockId =
       payload?.paddockId != null && payload.paddockId !== ''
         ? String(payload.paddockId)
         : String(paddockOptions[0]?.value || '');
+    const eventDate = payload?.eventDate || todayDateString();
+    const pastureCallout = renderMoveGroupPastureCallout(state, {
+      group,
+      paddock: getRealPaddockById(state, selectedPaddockId),
+      eventDate,
+      config: pastureConfig,
+    });
 
     return renderFormModal({
       key: 'move-group',
@@ -16353,6 +17008,7 @@
           value: group?.id ? String(group.id) : '',
           options: groupOptions,
           required: true,
+          attributes: { 'data-care-form-field': 'groupId' },
         },
         {
           label: 'Potrero Destino',
@@ -16361,25 +17017,78 @@
           value: selectedPaddockId,
           options: paddockOptions,
           required: true,
+          attributes: { 'data-care-form-field': 'paddockId' },
         },
         {
           label: 'Fecha del movimiento',
           name: 'eventDate',
           type: 'date',
-          value: payload?.eventDate || todayDateString(),
+          value: eventDate,
           hint: 'Podés cargar una fecha anterior si registrás la movida unos días más tarde.',
           required: true,
+          attributes: { 'data-care-form-field': 'eventDate' },
         },
         {
           label: 'Notas (opcional)',
           name: 'notes',
           type: 'textarea',
           rows: 4,
+          value: payload?.notes || '',
           placeholder: 'Motivo del movimiento...',
           layout: 'wide',
         },
       ],
+      extraBody: pastureCallout,
     });
+  }
+
+  function renderMoveGroupPastureCallout(state, { group, paddock, eventDate, config }) {
+    if (!paddock) {
+      return '';
+    }
+    const estimate = getPastureEstimate(paddock, config);
+    if (!estimate) {
+      return `
+        <div class="pasture-move-callout pasture-move-callout--empty modal-field--wide">
+          <span><strong>${escapeHtml(paddock.name)}</strong> no tiene pasto medido todavía.</span>
+          <button type="button" class="btn btn-secondary" ${renderActionAttributes({ action: 'open-modal', value: 'pasture-measure', meta: { paddockId: paddock.id } })}>Medir pasto ahora</button>
+        </div>
+      `;
+    }
+    const days = group?.count ? getPastureDaysFor(estimate, group.count, config) : null;
+    const intake = getPastureDailyIntakeKg(config);
+    const exitDate = days != null ? addDaysToIsoDate(eventDate, days) : '';
+    return `
+      <div class="pasture-move-callout modal-field--wide">
+        <div class="pasture-move-callout-head">
+          <div>
+            <span class="pasture-result-label">Pasto en ${escapeHtml(paddock.name)}</span>
+            ${
+              days != null
+                ? `<p>Alcanza para <strong class="pasture-move-days">≈ ${escapeHtml(formatPastureKg(days))} días</strong> con ${escapeHtml(group.name)}</p>`
+                : `<p>Elegí un grupo para calcular cuántos días alcanza.</p>`
+            }
+          </div>
+          <small>Medido ${escapeHtml(formatCompactDateLabel(estimate.measurement.measured_on))}<br>${escapeHtml(formatPastureKg(estimate.kgHa))} kg MS/ha</small>
+        </div>
+        ${
+          days != null
+            ? `
+              <div class="pasture-move-dates">
+                <span>Entra ${escapeHtml(formatCompactDateLabel(eventDate))}</span>
+                <span>Sugerido sacar ≈ ${escapeHtml(formatCompactDateLabel(exitDate))}</span>
+              </div>
+              <small class="pasture-footnote">${escapeHtml(formatPastureKg(estimate.usable))} kg aprovechables ÷ (${escapeHtml(String(group.count))} caballos × ${escapeHtml(formatPastureKg(intake))} kg MS/día)</small>
+            `
+            : ''
+        }
+        ${
+          estimate.stale
+            ? `<small class="pasture-move-stale">La medición tiene ${escapeHtml(String(estimate.ageDays))} días: conviene volver a medir.</small>`
+            : ''
+        }
+      </div>
+    `;
   }
 
   function renderRealRainModal(payload) {
@@ -17358,6 +18067,12 @@
             { label: 'Descripción', name: 'notes', type: 'textarea', rows: 3, placeholder: 'Añade instrucciones o contexto...' },
           ],
         });
+
+      case 'pasture-measure':
+        return isRealSession(state) ? renderPastureMeasureModal(state, payload) : '';
+
+      case 'pasture-config':
+        return renderPastureConfigModal(state);
 
       case 'paddock-detail': {
         if (isRealSession(state)) {
@@ -22565,6 +23280,25 @@
       return;
     }
 
+    if (action === 'pasture-add-sample') {
+      const modalForm = button.closest('[data-modal-form]');
+      const values = modalForm ? readPastureMeasureForm(modalForm) : {};
+      updateActiveModalPayload((currentPayload) => {
+        const samples = Array.isArray(values.samples)
+          ? values.samples
+          : Array.isArray(currentPayload.samples)
+            ? currentPayload.samples
+            : [];
+        return {
+          ...currentPayload,
+          ...values,
+          dryMatterPct: values.dryMatterPct ?? currentPayload.dryMatterPct,
+          samples: samples.concat(['']).slice(0, 30),
+        };
+      });
+      return;
+    }
+
     if (action === 'calendar-shift') {
       const currentOffset = store.getState().calendarMonthOffset || 0;
       const nextOffset = currentOffset + Number(actionValue || 0);
@@ -23029,6 +23763,16 @@
           return;
         }
 
+        if (modalKey === 'pasture-measure') {
+          submitPastureMeasureForm(modalForm);
+          return;
+        }
+
+        if (modalKey === 'pasture-config') {
+          submitPastureConfigForm(new FormData(modalForm));
+          return;
+        }
+
         if (modalKey === 'group-shared-paddocks') {
           submitGroupSharedPaddocksForm(new FormData(modalForm));
           return;
@@ -23266,6 +24010,31 @@
       }
 
       toggleHorseFeedCalendarSlot(horseId, feedSlot, eventDate, target.checked);
+      return;
+    }
+
+    if (target.getAttribute('data-pasture-live')) {
+      const modalForm = target.closest('[data-modal-form]');
+      if (modalForm) {
+        updatePastureMeasureLive(modalForm);
+      }
+      return;
+    }
+
+    if (target.getAttribute('data-pasture-field')) {
+      if (event.type !== 'change') {
+        return;
+      }
+      const modalForm = target.closest('[data-modal-form]');
+      if (!modalForm) {
+        return;
+      }
+      const values = readPastureMeasureForm(modalForm);
+      updateActiveModalPayload((currentPayload) => ({
+        ...currentPayload,
+        ...values,
+        dryMatterPct: values.dryMatterPct ?? currentPayload.dryMatterPct,
+      }));
       return;
     }
 

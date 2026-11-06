@@ -28,7 +28,16 @@ const {
   isAdminModuleEnabled,
   saveAdminModuleSettings,
 } = require('../../lib/admin-modules');
-const { ensureFarmSettingsTable, saveFarmSettings, savePaddockMapConfig } = require('../../lib/farm-settings');
+const {
+  ensureFarmSettingsTable,
+  saveFarmSettings,
+  savePaddockMapConfig,
+  savePastureConfig,
+} = require('../../lib/farm-settings');
+const {
+  savePastureMeasurement,
+  deletePastureMeasurement,
+} = require('../../lib/pasture-measurements');
 const { ensureRainRegistryTable } = require('../../lib/rain-registry');
 const { ensureFrostRegistryTable } = require('../../lib/frost-registry');
 const { ensureFarmVisitsTable, updateFarmVisitStatus } = require('../../lib/farm-visits');
@@ -64,6 +73,9 @@ function getModuleKeyForAdminAction(action) {
       'grazing_group_move_out',
       'grazing_group_shared_paddocks_set',
       'paddock_map_save',
+      'pasture_measurement_save',
+      'pasture_measurement_delete',
+      'pasture_config_save',
     ].includes(action)
   ) {
     return 'paddocks';
@@ -935,6 +947,75 @@ module.exports = async (req, res) => {
         paddock_work_event: data.paddock_work_event,
         active_wait_event: data.active_wait_event,
       });
+      return;
+    }
+
+    if (action === 'pasture_measurement_save') {
+      const paddockId = parsePositiveInt(body.paddockId);
+      const measuredOn = String(body.measuredOn || '').trim() || todayDateString();
+      const weighMode = body.weighMode === 'dry' ? 'dry' : 'green';
+      const frameAreaM2 = Number(String(body.frameAreaM2 || '1').replace(',', '.'));
+      const dryMatterPct = Number(String(body.dryMatterPct || '').replace(',', '.'));
+      const sampleGrams = (Array.isArray(body.sampleGrams) ? body.sampleGrams : [])
+        .map((value) => Number(String(value).replace(',', '.')))
+        .filter((value) => Number.isFinite(value) && value > 0);
+
+      if (!paddockId) {
+        res.status(400).json({ ok: false, error: 'paddockId is required' });
+        return;
+      }
+      if (!isValidDateString(measuredOn)) {
+        res.status(400).json({ ok: false, error: 'measuredOn is invalid' });
+        return;
+      }
+      if (!Number.isFinite(frameAreaM2) || frameAreaM2 <= 0 || frameAreaM2 > 10) {
+        res.status(400).json({ ok: false, error: 'frameAreaM2 is invalid' });
+        return;
+      }
+      if (weighMode === 'green' && (!Number.isFinite(dryMatterPct) || dryMatterPct <= 0 || dryMatterPct > 100)) {
+        res.status(400).json({ ok: false, error: 'dryMatterPct must be between 1 and 100' });
+        return;
+      }
+      if (!sampleGrams.length) {
+        res.status(400).json({ ok: false, error: 'At least one sample weight is required' });
+        return;
+      }
+
+      const measurement = await savePastureMeasurement({
+        paddockId,
+        measuredOn,
+        frameAreaM2,
+        weighMode,
+        dryMatterPct: weighMode === 'green' ? dryMatterPct : null,
+        cutHeight: String(body.cutHeight || '').trim().slice(0, 60) || null,
+        sampleGrams,
+        notes: String(body.notes || '').trim() || null,
+        createdBy: 'admin_panel',
+      });
+
+      res.status(200).json({ ok: true, action, pasture_measurement: measurement });
+      return;
+    }
+
+    if (action === 'pasture_measurement_delete') {
+      const measurementId = parsePositiveInt(body.measurementId);
+      if (!measurementId) {
+        res.status(400).json({ ok: false, error: 'measurementId is required' });
+        return;
+      }
+      const measurement = await deletePastureMeasurement(measurementId);
+      res.status(200).json({ ok: true, action, pasture_measurement: measurement });
+      return;
+    }
+
+    if (action === 'pasture_config_save') {
+      const config = await savePastureConfig({
+        horseWeightKg: body.horseWeightKg,
+        intakePct: body.intakePct,
+        utilizationPct: body.utilizationPct,
+        staleDays: body.staleDays,
+      });
+      res.status(200).json({ ok: true, action, pasture_config: config });
       return;
     }
 
@@ -3647,7 +3728,7 @@ module.exports = async (req, res) => {
       res.status(400).json({
         ok: false,
         error:
-        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, paddock_ready_date_set, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, grazing_group_shared_paddocks_set, paddock_map_save, feed_item_save, feed_item_delete, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, deworm_event_update, farrier_event_add, farrier_event_update, health_event_add, health_event_update, horse_training_set, rain_save, frost_save, rain_event_update, frost_event_update, rain_weather_sync, farm_settings_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
+        'Unsupported action. Use horse_add, horse_rename, paddock_save, paddock_work_save, paddock_work_update, paddock_ready_date_set, horse_group_save, horse_group_memberships_set, grazing_move_in, grazing_move_out, grazing_group_move_in, grazing_group_correct_current, grazing_group_move_out, grazing_group_shared_paddocks_set, paddock_map_save, feed_item_save, feed_item_delete, stock_purchase_save, stock_event_delete, set, add, use, feed_event_add, horse_feed_plan_save, horse_feed_slot_toggle, deworm_event_add, deworm_second_dose_set, deworm_event_update, farrier_event_add, farrier_event_update, health_event_add, health_event_update, horse_training_set, rain_save, frost_save, rain_event_update, frost_event_update, rain_weather_sync, farm_settings_save, pasture_measurement_save, pasture_measurement_delete, pasture_config_save, feed_event_update, feed_event_delete, horse_profile_save, admin_modules_save, or farm_visit_save.',
       });
   } catch (error) {
     console.error('ADMIN DATA MUTATE ERROR:', error);
